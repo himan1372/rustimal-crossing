@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rust Town Plan - 3D Preview</title>
+<style>
+:root{color-scheme:dark;--ink:#e7f0e5;--panel:#17231e;--edge:#35463b;--mint:#a9d9a8;--gold:#e5c982}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0d1515;color:var(--ink);font:14px/1.45 "Segoe UI",Arial,sans-serif}
+#view{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.panel{position:absolute;top:16px;left:16px;width:min(330px,calc(100vw - 32px));padding:16px 18px;background:#17231eeb;border:1px solid var(--edge);border-radius:12px;box-shadow:0 10px 36px #0008;backdrop-filter:blur(8px)}
+h1{font-size:19px;line-height:1.2;margin:0 0 5px;color:#f5f1df}.sub{color:#aab9ad;font-size:12px;margin-bottom:14px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:13px}.stat{padding:8px 9px;border:1px solid #344339;border-radius:8px;background:#202e26}.stat b{display:block;font-size:15px;color:var(--mint)}.stat span{font-size:11px;color:#aab9ad}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;color:#cad6ca;font-size:12px;margin:11px 0 14px}.chip{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.toggles{display:grid;grid-template-columns:1fr 1fr;gap:7px 10px;border-top:1px solid #35463b;padding-top:12px}.toggles label{display:flex;align-items:center;gap:6px;font-size:12px;color:#d7e0d5}.toggles input{accent-color:#94c98c}
+button{margin-top:13px;width:100%;border:1px solid #5d775f;background:#314b38;color:#eff7ed;padding:8px 10px;border-radius:7px;font-weight:600;cursor:pointer}button:hover{background:#42634a}
+.help{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);padding:7px 12px;border:1px solid #41534c;background:#15201dcc;border-radius:99px;color:#d1ded5;font-size:12px;white-space:nowrap}
+.notice{position:absolute;right:14px;bottom:14px;max-width:350px;padding:8px 11px;border:1px solid #41534c;background:#15201dcc;border-radius:8px;color:#bac9bd;font-size:11px}
+@media(max-width:640px){.panel{top:8px;left:8px;padding:12px;width:260px}.legend{gap:4px}.help{bottom:8px;font-size:10px}.notice{display:none}}
+</style>
+</head>
+<body>
+<canvas id="view" aria-label="Interactive 3D procedural town map"></canvas>
+<section class="panel">
+  <h1>Procedural Town · 3D</h1>
+  <div class="sub">Rust rewrite planner · generated seed <span id="seed"></span></div>
+  <div class="stats">
+    <div class="stat"><b>5 × 6</b><span>playable acres</span></div>
+    <div class="stat"><b id="residents"></b><span>resident homes</span></div>
+    <div class="stat"><b id="tiers"></b><span>elevation tiers</span></div>
+    <div class="stat"><b id="bridges"></b><span>bridge markers</span></div>
+  </div>
+  <div class="legend">
+    <span><i class="chip" style="background:#60a45d"></i>Grass</span>
+    <span><i class="chip" style="background:#55b7dc"></i>River / ocean</span>
+    <span><i class="chip" style="background:#a87955"></i>Cliff face</span>
+    <span><i class="chip" style="background:#b98b63"></i>Resident home</span>
+    <span><i class="chip" style="background:#648d56"></i>Tree canopy</span>
+    <span><i class="chip" style="background:#dfc88c"></i>Facility</span>
+  </div>
+  <div class="toggles">
+    <label><input id="showBuildings" type="checkbox" checked>Buildings & bridges</label>
+    <label><input id="showPlants" type="checkbox" checked>Vegetation</label>
+    <label><input id="showWater" type="checkbox" checked>Water</label>
+    <label><input id="showGrid" type="checkbox">Acre grid</label>
+  </div>
+  <button id="reset">Reset camera</button>
+</section>
+<div class="help">Drag to orbit · Wheel to zoom · Shift-drag to pan</div>
+<div class="notice">Clean-room visualization of rewrite-owned town data. It uses simple generated geometry and no game assets.</div>
+<script>
+"use strict";
+const TOWN=__TOWN_DATA__;
+const ACRES_X=5,ACRES_Z=6,UNITS=16,WORLD_X=ACRES_X*UNITS,WORLD_Z=ACRES_Z*UNITS;
+const canvas=document.getElementById("view"),gl=canvas.getContext("webgl",{antialias:true,alpha:false});
+document.getElementById("seed").textContent=TOWN.seed;
+document.getElementById("residents").textContent=TOWN.villagerCount;
+document.getElementById("tiers").textContent=Math.max(...TOWN.acres.map(a=>a.elevation));
+document.getElementById("bridges").textContent=TOWN.acres.filter(a=>a.infra&1).length;
+if(!gl){document.body.innerHTML='<div style="padding:2rem;color:white;font:16px Segoe UI">WebGL is unavailable in this browser. Open this preview in a browser with WebGL enabled.</div>';throw new Error("WebGL unavailable");}
+const vertexSource=`attribute vec3 aPosition;attribute vec3 aColor;uniform mat4 uMvp;varying vec3 vColor;void main(){gl_Position=uMvp*vec4(aPosition,1.0);vColor=aColor;}`;
+const fragmentSource=`precision mediump float;varying vec3 vColor;void main(){gl_FragColor=vec4(vColor,1.0);}`;
+function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vertexSource));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragmentSource));gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));gl.useProgram(program);
+const positionLoc=gl.getAttribLocation(program,"aPosition"),colorLoc=gl.getAttribLocation(program,"aColor"),mvpLoc=gl.getUniformLocation(program,"uMvp");
+const batches={terrain:[],water:[],buildings:[],plants:[],grid:[]};
+function addTri(batch,a,b,c,color){const arr=batches[batch];for(const p of [a,b,c])arr.push(p[0],p[1],p[2],color[0],color[1],color[2]);}
+function addQuad(batch,a,b,c,d,color){addTri(batch,a,b,c,color);addTri(batch,a,c,d,color);}
+function shade(c,f){return c.map(v=>Math.max(0,Math.min(1,v*f)));}
+function box(batch,cx,cy,cz,sx,sy,sz,color){const x0=cx-sx/2,x1=cx+sx/2,y0=cy-sy/2,y1=cy+sy/2,z0=cz-sz/2,z1=cz+sz/2;
+  addQuad(batch,[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1],shade(color,1.12));
+  addQuad(batch,[x0,y0,z1],[x1,y0,z1],[x1,y0,z0],[x0,y0,z0],shade(color,.62));
+  addQuad(batch,[x0,y0,z0],[x0,y1,z0],[x0,y1,z1],[x0,y0,z1],shade(color,.78));
+  addQuad(batch,[x1,y0,z1],[x1,y1,z1],[x1,y1,z0],[x1,y0,z0],shade(color,.9));
+  addQuad(batch,[x0,y0,z1],[x0,y1,z1],[x1,y1,z1],[x1,y0,z1],shade(color,1.0));
+  addQuad(batch,[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z0],shade(color,.72));}
+function pyramid(batch,cx,baseY,cz,width,height,color){const x0=cx-width/2,x1=cx+width/2,z0=cz-width/2,z1=cz+width/2,apex=[cx,baseY+height,cz];
+  addTri(batch,[x0,baseY,z0],[x1,baseY,z0],apex,shade(color,.92));addTri(batch,[x1,baseY,z0],[x1,baseY,z1],apex,shade(color,1.08));
+  addTri(batch,[x1,baseY,z1],[x0,baseY,z1],apex,shade(color,.82));addTri(batch,[x0,baseY,z1],[x0,baseY,z0],apex,shade(color,1.0));}
+function gable(batch,cx,baseY,cz,width,depth,height,color){const x0=cx-width/2,x1=cx+width/2,z0=cz-depth/2,z1=cz+depth/2,xm=cx,peak=baseY+height;
+  addQuad(batch,[x0,baseY,z0],[xm,peak,z0],[xm,peak,z1],[x0,baseY,z1],shade(color,1.04));
+  addQuad(batch,[xm,peak,z0],[x1,baseY,z0],[x1,baseY,z1],[xm,peak,z1],shade(color,.82));
+  addTri(batch,[x0,baseY,z0],[x1,baseY,z0],[xm,peak,z0],shade(color,.9));addTri(batch,[x1,baseY,z1],[x0,baseY,z1],[xm,peak,z1],shade(color,1.1));}
+function groundY(acre){return acre.elevation*1.7;}
+function addWall(a,b,top,bottom,color){if(top<=bottom)return;addQuad("terrain",[a[0],bottom,a[1]],[b[0],bottom,b[1]],[b[0],top,b[1]],[a[0],top,a[1]],color);}
+function riverStrip(a,b,y,width,bend,batch="water"){const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz)||1,px=-dz/len,pz=dx/len;
+  const mid=[(a[0]+b[0])/2+px*bend,(a[1]+b[1])/2+pz*bend];let prev=a;
+  for(let i=1;i<=7;i++){const t=i/7,u=1-t,q=[u*u*a[0]+2*u*t*mid[0]+t*t*b[0],u*u*a[1]+2*u*t*mid[1]+t*t*b[1]];const tx=2*u*(mid[0]-a[0])+2*t*(b[0]-mid[0]),tz=2*u*(mid[1]-a[1])+2*t*(b[1]-mid[1]),l=Math.hypot(tx,tz)||1,ox=-tz/l*width/2,oz=tx/l*width/2;
+    const pu=2*(1-(i-1)/7)*(mid[0]-a[0])+2*((i-1)/7)*(b[0]-mid[0]),pv=2*(1-(i-1)/7)*(mid[1]-a[1])+2*((i-1)/7)*(b[1]-mid[1]),pl=Math.hypot(pu,pv)||1,px=-pv/pl*width/2,pz=pu/pl*width/2;
+    addQuad(batch,[prev[0]+px,y,prev[1]+pz],[prev[0]-px,y,prev[1]-pz],[q[0]-ox,y,q[1]-oz],[q[0]+ox,y,q[1]+oz],[.19,.58,.76]);prev=q;}}
+function acreOrigin(i){return [(i%ACRES_X)*UNITS,Math.floor(i/ACRES_X)*UNITS];}
+function addGrass(){
+  for(let ai=0;ai<TOWN.acres.length;ai++){const acre=TOWN.acres[ai],[ox,oz]=acreOrigin(ai),y=groundY(acre);
+    for(let z=0;z<UNITS;z++)for(let x=0;x<UNITS;x++){
+      const index=z*UNITS+x,cell=acre.cells[index];let col;
+      if(acre.ground===1)col=[.72,.67,.43];else{const variation=((x*13+z*7+ai*19)%11-5)*.004;const pattern=acre.pattern===1?-.025:acre.pattern===2?.018:0;col=[.30+variation+pattern,.57+variation,.27+variation];}
+      const x0=ox+x,x1=x0+1,z0=oz+z,z1=z0+1;
+      addQuad("terrain",[x0,y,z0],[x1,y,z0],[x1,y,z1],[x0,y,z1],col);
+    }
+  }
+  // Expose acre ledges where adjacent elevations step down.
+  for(let z=0;z<ACRES_Z;z++)for(let x=0;x<ACRES_X;x++){const i=z*ACRES_X+x,a=TOWN.acres[i],[ox,oz]=acreOrigin(i),top=groundY(a),face=[.48,.31,.22];
+    if(x+1<ACRES_X){const b=TOWN.acres[i+1],low=groundY(b);if(top>low)for(let u=0;u<UNITS;u++)addWall([ox+16,oz+u],[ox+16,oz+u+1],top,low,face);}
+    if(x>0){const b=TOWN.acres[i-1],low=groundY(b);if(top>low)for(let u=0;u<UNITS;u++)addWall([ox,oz+u+1],[ox,oz+u],top,low,shade(face,.86));}
+    if(z+1<ACRES_Z){const b=TOWN.acres[i+ACRES_X],low=groundY(b);if(top>low)for(let u=0;u<UNITS;u++)addWall([ox+u+1,oz+16],[ox+u,oz+16],top,low,shade(face,.78));}
+    if(z>0){const b=TOWN.acres[i-ACRES_X],low=groundY(b);if(top>low)for(let u=0;u<UNITS;u++)addWall([ox+u,oz],[ox+u+1,oz],top,low,shade(face,1.0));}
+  }
+}
+function addWater(){
+  // A shallow ocean strip makes the south-bound river outlet and dock visible.
+  addQuad("water",[0,.08,WORLD_Z],[WORLD_X,.08,WORLD_Z],[WORLD_X,.08,WORLD_Z+15],[0,.08,WORLD_Z+15],[.13,.46,.64]);
+  for(let i=0;i<TOWN.acres.length;i++){const a=TOWN.acres[i],[ox,oz]=acreOrigin(i),y=groundY(a)+.12,center=[ox+8,oz+8],edge=a.river;
+    const bend=((TOWN.seed^(i*2654435761))>>>0)%61/10-3;
+    if(edge&1)riverStrip(center,[ox+8,oz],y,3.8,bend);
+    if(edge&2)riverStrip(center,[ox+16,oz+8],y,3.8,-bend*.7);
+    if(edge&4)riverStrip(center,[ox+8,oz+16],y,3.8,bend*.6);
+    if(edge&8)riverStrip(center,[ox,oz+8],y,3.8,-bend);
+    if(a.infra&2){const r=3.5,n=12;for(let k=0;k<n;k++){const t0=k*2*Math.PI/n,t1=(k+1)*2*Math.PI/n;addTri("water",[ox+8,y,oz+8],[ox+8+Math.cos(t0)*r,y,oz+8+Math.sin(t0)*r],[ox+8+Math.cos(t1)*r,y,oz+8+Math.sin(t1)*r],[.18,.54,.72]);}}
+    if(a.waterfall&4){const low=Math.max(.2,y-1.7);addQuad("water",[ox+6,low,oz+16],[ox+10,low,oz+16],[ox+10,y,oz+16],[ox+6,y,oz+16],[.38,.74,.86]);}
+  }
+}
+function addHouse(x,y,z){box("buildings",x,y+.16,z,3,.32,3,[.47,.31,.20]);box("buildings",x,y+1.42,z,2.65,2.25,2.65,[.79,.68,.48]);gable("buildings",x,y+2.55,z,3.2,3.1,1.65,[.60,.24,.19]);box("buildings",x,y+1.05,z+1.34,.55,1.25,.08,[.34,.23,.16]);box("buildings",x-0.63,y+1.58,z+1.35,.48,.55,.08,[.49,.73,.77]);box("buildings",x+0.63,y+1.58,z+1.35,.48,.55,.08,[.49,.73,.77]);}
+function addSign(x,y,z){box("buildings",x,y+.58,z,.13,1.15,.13,[.38,.24,.13]);box("buildings",x,y+1.0,z,.95,.56,.16,[.55,.35,.19]);box("buildings",x,y+1.0,z+.09,.48,.05,.025,[.86,.78,.59]);}
+function addFeature(a,i){if(!a.feature)return;const [ox,oz]=acreOrigin(i),x=ox+8,z=oz+8,y=groundY(a),colors={1:[.44,.35,.25],2:[.83,.58,.25],3:[.73,.61,.42],4:[.77,.62,.42],5:[.39,.63,.57],6:[.53,.56,.48],7:[.64,.48,.34],8:[.72,.46,.52],9:[.48,.41,.31]},c=colors[a.feature]||[.74,.6,.4];
+  if(a.feature===9){box("buildings",x,y+.16,z+8,5,.32,18,[.49,.34,.2]);for(let k=-2;k<=2;k+=2)box("buildings",x+k,y+.35,z+8,.12,.72,.12,[.36,.26,.17]);return;}
+  const size=a.feature===1?8:6.3;box("buildings",x,y+1.5,z,size,3,size,c);gable("buildings",x,y+3,z,size+1,size+1,2.1,shade(c,.72));box("buildings",x,y+1,z+size/2+.04,1.15,1.9,.08,[.31,.24,.17]);
+  if(a.feature===5){box("buildings",x,y+4.5,z,1.1,.35,1.1,[.79,.78,.67]);}
+}
+function addVegetation(a,i){const [ox,oz]=acreOrigin(i),y=groundY(a);
+  for(let z=0;z<UNITS;z++)for(let x=0;x<UNITS;x++){const kind=a.cells[z*UNITS+x],wx=ox+x+.5,wz=oz+z+.5;
+    if(kind===2){box("plants",wx,y+.62,wz,.34,1.24,.34,[.42,.27,.15]);pyramid("plants",wx,y+1.0,wz,1.65,2.25,[.18,.42,.2]);pyramid("plants",wx,y+2.0,wz,1.22,1.75,[.24,.51,.22]);}
+    else if(kind===3){pyramid("plants",wx,y,wz,1.1,.85,[.43,.46,.43]);}
+    else if(kind===1){box("plants",wx,y+.26,wz,.08,.52,.08,[.2,.43,.19]);box("plants",wx,y+.45,wz,.38,.12,.38,[.91,.57,.64]);box("plants",wx,y+.52,wz,.13,.13,.13,[.96,.82,.47]);}
+    else if(kind===4){pyramid("plants",wx,y,wz,.3,.45,[.34,.53,.24]);}
+    else if(kind===5){box("plants",wx,y+.05,wz,.24,.1,.24,[.43,.3,.19]);}
+    else if(kind===7){addHouse(wx,y,wz);}
+    else if(kind===8){addSign(wx,y,wz);}
+  }
+  addFeature(a,i);
+}
+function addBridgeAndSlope(a,i){const [ox,oz]=acreOrigin(i),y=groundY(a),infra=a.infra;if(infra&1){const northSouth=!!(a.river&5);const sx=northSouth?7:3,sz=northSouth?3:7;box("buildings",ox+8,y+.38,oz+8,sx,.3,sz,[.52,.34,.19]);for(let n=-2;n<=2;n++){if(northSouth){box("buildings",ox+8+n*1.2,y+.6,oz+8, .12,.18,3,[.36,.25,.14]);}else{box("buildings",ox+8,y+.6,oz+8+n*1.2,3,.18,.12,[.36,.25,.14]);}}}
+  if(infra&4){for(let step=0;step<5;step++){box("buildings",ox+8,y-step*.3,oz+13+step*.8,4,.3,.9,[.55,.39,.27]);}}
+}
+function addGrid(){for(let i=0;i<TOWN.acres.length;i++){const a=TOWN.acres[i],[ox,oz]=acreOrigin(i),y=groundY(a)+.05;box("grid",ox,y,oz+8,.055,.035,16,[.1,.22,.16]);box("grid",ox+8,y,oz,.16,.035,.055,[.1,.22,.16]);if(i%ACRES_X===ACRES_X-1)box("grid",ox+16,y,oz+8,.055,.035,16,[.1,.22,.16]);if(i>=ACRES_X*(ACRES_Z-1))box("grid",ox+8,y,oz+16,16,.035,.055,[.1,.22,.16]);}}
+addGrass();addWater();addGrid();
+for(let i=0;i<TOWN.acres.length;i++){const a=TOWN.acres[i];addVegetation(a,i);addBridgeAndSlope(a,i);}
+const meshes={};for(const name of Object.keys(batches)){const data=new Float32Array(batches[name]);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);meshes[name]={buffer,count:data.length/6};}
+function normalize(v){const n=Math.hypot(v[0],v[1],v[2])||1;return v.map(x=>x/n);}function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+function lookAt(eye,target){const z=normalize([eye[0]-target[0],eye[1]-target[1],eye[2]-target[2]]),x=normalize(cross([0,1,0],z)),y=cross(z,x);return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,eye),-dot(y,eye),-dot(z,eye),1]);}
+function perspective(fov,aspect,near,far){const f=1/Math.tan(fov/2),nf=1/(near-far);return new Float32Array([f/aspect,0,0,0,0,f,0,0,0,0,(far+near)*nf,-1,0,0,2*far*near*nf,0]);}
+function multiply(a,b){const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];return o;}
+let yaw=.72,pitch=.62,distance=155,target=[WORLD_X/2,2,WORLD_Z/2],drag=null;
+function render(){const dpr=Math.min(devicePixelRatio||1,2),w=Math.floor(innerWidth*dpr),h=Math.floor(innerHeight*dpr);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);}gl.enable(gl.DEPTH_TEST);gl.clearColor(.37,.58,.65,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const cp=Math.cos(pitch),eye=[target[0]+distance*cp*Math.cos(yaw),target[1]+distance*Math.sin(pitch),target[2]+distance*cp*Math.sin(yaw)],mvp=multiply(perspective(.78,w/h,.1,800),lookAt(eye,target));gl.uniformMatrix4fv(mvpLoc,false,mvp);
+  const show={terrain:true,water:document.getElementById("showWater").checked,buildings:document.getElementById("showBuildings").checked,plants:document.getElementById("showPlants").checked,grid:document.getElementById("showGrid").checked};
+  for(const name of Object.keys(meshes)){if(!show[name])continue;const m=meshes[name];gl.bindBuffer(gl.ARRAY_BUFFER,m.buffer);gl.enableVertexAttribArray(positionLoc);gl.vertexAttribPointer(positionLoc,3,gl.FLOAT,false,24,0);gl.enableVertexAttribArray(colorLoc);gl.vertexAttribPointer(colorLoc,3,gl.FLOAT,false,24,12);gl.drawArrays(gl.TRIANGLES,0,m.count);}}
+canvas.addEventListener("pointerdown",e=>{canvas.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,pan:e.shiftKey};});canvas.addEventListener("pointermove",e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;if(drag.pan){const scale=distance/450;target[0]-=dx*scale;target[2]+=dy*scale;}else{yaw+=dx*.008;pitch=Math.max(.12,Math.min(1.35,pitch+dy*.006));}});canvas.addEventListener("pointerup",()=>drag=null);canvas.addEventListener("wheel",e=>{e.preventDefault();distance=Math.max(65,Math.min(280,distance*Math.exp(e.deltaY*.001)));},{passive:false});
+document.getElementById("reset").addEventListener("click",()=>{yaw=.72;pitch=.62;distance=155;target=[WORLD_X/2,2,WORLD_Z/2];});for(const id of ["showBuildings","showPlants","showWater","showGrid"])document.getElementById(id).addEventListener("change",render);addEventListener("resize",render);function frame(){render();requestAnimationFrame(frame);}frame();
+</script>
+</body>
+</html>

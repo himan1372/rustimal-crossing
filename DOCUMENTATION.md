@@ -1,0 +1,435 @@
+# Animal Crossing PC Port — Developer Documentation
+
+PC port of Animal Crossing GameCube built on top of a 99.52% complete C decompilation.
+
+## Architecture Overview
+
+The game's rendering has 3 tiers:
+
+```
+Game code (N64 display lists) → emu64 (DL interpreter) → GX (GameCube GPU API) → [OpenGL]
+```
+
+Within the graphics pipeline, we replace **only tier 3** (GX → OpenGL 3.3). The longer-term goal is a Rust rewrite advanced through source-verified, ABI-compatible slices. Unported emu64, scene logic, and game code remain in C/C++, with `#ifdef TARGET_PC` guards where platform differences require them.
+
+The PC disc reader, DVD filesystem shim, ARAM shim, GBI runtime-pointer adapter, frame profiler, video interface/frame-pacing shim, PC matrix/vector replacements, villager-mail repeat check, and rewrite-owned procedural town planner are built from `pc/rust` as a `staticlib`. Existing C entry points retain their ABI. The town planner has its own new C ABI and is conditionally connected to PC save-table initialization through `pc/src/pc_town_adapter.c`; the legacy generator remains the per-town fallback and the non-PC implementation.
+
+### Boot Chain
+
+```
+main() [pc_main.c]
+  → pc_settings_load()          # load settings.ini
+  → pc_platform_init()          # SDL2, GL 3.3, GLAD
+  → pc_disc_init()              # find & open disc image (CISO/ISO/GCM)
+  → pc_assets_init()            # extract DOL/REL from disc, load all ~2500 assets
+  → pc_texture_pack_init()      # scan texture_pack/ for HD replacements
+  → ac_entry()                  # game's main.c: sets HotStartEntry = &entry
+  → boot_main()                 # boot.c: OSInit, DVD, archives
+    → entry() → mainproc() → graph_proc()   # THE MAIN LOOP
+
+graph_proc() loops over scenes via game_dlftbls[]:
+  first_game → second_game → trademark → select (title demo)
+  → player_select (scene 19) → play (gameplay)
+  OR: --model-viewer → model_viewer_init (scene 10)
+
+Each frame: graph_main()
+  → game_main() → scene->exec()         # builds N64 display lists
+  → graph_task_set00() → emu64_taskstart()  # processes DLs → GX → GL
+  → VIWaitForRetrace() [pc/rust/src/vi.rs]  # SDL swap + event pump + frame pacing
+```
+
+## Runtime Asset Loading
+
+The original decomp compiles ~16,400 binary `.inc` files directly into the executable. The PC port instead loads assets at runtime from a GameCube disc image, eliminating the need for the decomp's asset extraction pipeline.
+
+### Pipeline
+
+```
+User provides disc image (.ciso/.iso/.gcm)
+  → pc_disc_init() opens and parses GCM filesystem
+  → pc_assets_init() extracts main.dol + foresta.rel.szs into memory
+  → ~2500 assets loaded from DOL/REL data at their original ROM offsets
+  → Byte-swap applied per asset (SWAP_NONE/SWAP_U16/SWAP_U32/SWAP_VTX)
+  → Source files use lazy-load pattern for function-local static data
+```
+
+### Code Generation
+
+`pc/tools/gen_runtime_assets.py` (632 lines) scans all `src/*.c` files for `#include "assets/*.inc"` patterns and:
+
+1. **Transforms source files in-place**: replaces inline `#include` with sized-array declarations and lazy-load code under `#ifdef TARGET_PC`
+2. **Generates `pc/src/pc_assets.c`** (~30K lines): central loader with asset table mapping ~2500 assets to their ROM offsets, byte-swap types, and source (DOL or REL)
+3. **Generates `pc/include/pc_assets.h`**: public API (`pc_assets_init`, `pc_load_asset`)
+4. **Copies `.bin` fallback files** to `pc/build32/bin/assets/` for non-disc-image builds
+
+### Fallback Chain
+
+1. **Primary**: Disc image in `rom/`, `orig/`, or current directory
+2. **Secondary**: Pre-extracted DOL + REL files in `orig/GAFE01_00/`
+3. **Tertiary**: Individual `.bin` files in `assets/`
+
+### Disc Image Support
+
+`pc/rust/src/lib.rs` handles CISO (block-mapped, 32KB headers), ISO, and GCM (raw) formats. It includes Yaz0 decompression for compressed REL files and parses the GCM File System Table. The Rust `dvd.rs` module implements the PC DVD filesystem shim: it registers paths, opens entries from the disc image or the extracted-file fallback, and provides the synchronous reads and callbacks expected by the PC port. It retains the Dolphin `DVD*` C ABI and uses the `DVDFileInfo` fields at offsets `0x18`, `0x30`, and `0x34` defined by `include/dolphin/dvd.h` (`0x3C` bytes total).
+
+The former C implementation, `pc/src/pc_dvd.c`, remains in the source tree as a reference and is excluded from the active PC target; C and C++ call sites continue to use the Dolphin declarations in `include/dolphin/dvd.h`.
+
+The image's rendering/presentation panel aligns with a documented runtime boundary here: `pc/rust/src/vi.rs` provides the PC-facing VI frame boundary (event polling, deferred GX drain, swap, pacing, and retrace count). Display-list production, scene rendering decisions, camera behavior, and game presentation logic remain in the C/C++ decompilation. The image's world, character, and gameplay panels are leads only; their detailed behavior must be traced in source before any future migration.
+
+## Runtime Port Progress: Procedural Town Generation
+
+### Source findings
+
+The procedural-town infographic was checked against `include/m_field_make.h`, `src/game/m_random_field_ovl.c`, `src/game/m_random_field.c`, and `src/game/m_field_make.c`.
+
+- **Verified dimensions:** the save layout has a 7 by 10 block grid. `FG_BLOCK_X_NUM` and `FG_BLOCK_Z_NUM` define a 5 by 6 playable-acre region (30 acres). Each foreground acre contains 16 by 16 actor/unit entries (`UT_X_NUM`, `UT_Z_NUM`, and `mFM_fg_c`); calling these graphical tiles would be imprecise.
+- **Verified elevation selection:** `mRF_GetRandomStepMode` selects the three-step path when `RANDOM(100) < 15`. Two-step generation is the other path. `l_mRF_step3_blockss` contains 10 source-defined three-step base layouts.
+- **Verified random source:** `RANDOM(n)` expands through `fqrand`; `src/static/libc64/qrand.c` updates the state with `state * 0x19660D + 0x3C6EF35F` (decimal increment 1,013,904,223). `src/system/sys_math.c:init_rnd` seeds it from `osGetCount()`, and `src/second_game.c` calls `init_rnd`. This supports the image's approximate multiplier/increment and timer-seed claims. The generator itself consumes this shared stream rather than owning a town-only seed.
+- **Verified placement contract:** the base map fixes the station and player-house acres. `mRF_SetUniqueRailBlock` chooses one shop and one post office, one in each outer rail pair. `mRF_SetNeedleworkAndWharfBlock` puts the port at full-grid `(5,6)` and selects the tailor from a random index among the first three remaining `BEACH` blocks in full-grid row 6. The Rust plan maps the port to playable-acre `(4,5)` and currently chooses the tailor from `(0..2,5)` as a simpler rewrite rule; that exact coordinate restriction is a design choice, not a source guarantee. `mRF_SetUniqueFlatBlock` selects the shrine below the cliff on a preferred river side, the police box on the opposite side when possible, and the museum below the cliff on either side. Bridge, slope, pool, and beach-river placements are source functions in the same file. The generator rebuilds candidate layouts until required placement bits are present, selects concrete acre combinations from the supplied combination table, then copies generated heights into the save table.
+- **Verified source boundary:** `mFM_InitFgCombiSaveData` calls the C generator and populates the original 7 by 10 save table and foreground arrays. The PC build now runs a Rust-plan adapter after that C generation and before save-table/foreground population; the legacy generator remains the fallback and remains the implementation on non-PC targets.
+- **Verified resident setup and house sites:** `include/m_npc_personal_id.h` defines six look classes. `mNpc_DecideLivingNpcMax` selects one eligible `mNpc_GROW_STARTER` resident per look class from a shuffled roster; `ANIMAL_NUM_MAX` is 15. In `mNpc_MakeReservedListBeforeFieldct`, `mNpc_InitNpcData` gathers reserved foreground units by scanning the 5 by 6 playable acres and applying `mNT_IS_RESERVE`, with a bounded list of 60 sites. `mNpc_SetNpcHome` assigns distinct reserved sites to residents that do not already have saved homes. `mNpc_BuildHouseBeforeFieldct` requires an in-acre center unit with coordinates 1 through 14 and builds a 3 by 3 footprint: house at the center, signboard at offset (-1,+1), and the other seven cells marked unavailable; displaced items are handled through the source's mailbox/deposit path. The infographic's exact “~27 excluded” count is not established here.
+- **Verified population growth limits:** `mNpc_CheckGrow` uses town field rank, a minimum elapsed interval of one day, and a check that the local player has talked to all current residents; `mNpc_CheckGrowFieldRank` uses per-rank probabilities from 40% through 100%. Forced removal runs only at capacity and waits at least 10 days. These lifecycle rules remain C; a moving-box depiction was not verified in this pass.
+- **Verified environment scoring:** `src/game/m_field_assessment.c` counts trees, flowers, weeds, and trash outside the dump by acre. Tree bands are <=8, 9–11, 12–14, 15–17, and >=18, worth 0/1/2/1/0 points; flowers offset weed count, and three or more effective weeds or any outside-dump trash zero that acre. Town score adds perfect acres plus half of good acres, but five or more outside-dump trash zeroes it. The rank thresholds are 0, 2, 4, 7, 12, and 16. `mFAs_PERFECT_DAY_STREAK_MAX` is 15 and the header comments associate it with the golden-axe reward; a wishing-well visitor checklist is not established by this scoring code.
+
+### Rust rewrite implementation
+
+`pc/rust/src/town_gen.rs` adds a clean-room, deterministic first town-planning subsystem for the Rust rewrite. It uses the source-backed 5 by 6 acre/16 by 16 unit dimensions and facility placement constraints, and generates semantic data only: elevation tiers, reciprocal river-edge connections ending at the southern beach, cliff/waterfall edge flags, facility roles, bridge, slope and pond markers, grass-pattern selectors, decoration cell kinds, and caller-supplied resident IDs with house-center slots. Resident placement reserves a complete, non-overlapping 3 by 3 unit footprint for each resident. The center is `House`, the signboard marker is one unit southwest at offset (-1,+1), and the remaining seven units are `HouseReserved`; the saved `house_units` value is the center's linear acre-unit index. A separate selector chooses one already-eligible resident from each of the six source look classes for initial town setup. The maximum resident slots match the source cap of 15. The module also exposes a source-based field assessment over generated vegetation, with outside-dump trash counts supplied by the caller. Its seedable 32-bit RNG ports the repository's verified `qrand` LCG recurrence and float conversion. It does not reproduce the original town generator's exact RNG call order or its source-authored acre tables.
+
+The three-tier probability is set to the source-observed 15%. The module's explicit seed input, simplified river routing, cliff geometry, bridge/pond/slope markers, grass-pattern selection, decoration probabilities, and house-site selection are **rewrite design choices**. The footprint shape and sign offset mirror `mNpc_BuildHouseBeforeFieldct`, but the Rust planner synthesizes candidate sites on grass acres with no facility, river, bridge, or slope marker; it permits sites on acres with cliff edges because the footprint is contained within that acre's 16 by 16 grid. It does not consume the source field's authored `RSV` reserve tokens, emulate their ordering, or reproduce the C home-selection RNG sequence. Although its LCG matches the shared `qrand` algorithm, its outputs will differ from the original because it has its own seed input and call sequence, and it does not use the authored acre variants. The starting-roster helper and field-scoring thresholds are source-based, but callers supply eligible resident IDs and outside-dump trash counts. Version-specific roster exclusions, resident growth/departure timing, and visitor eligibility remain separate work. No game art or copyrighted assets are included.
+
+The `pc_town_generate` API and matching layout are declared in `pc/include/pc_town_gen.h`. `pc/src/pc_town_adapter.c` bridges a generated `TownPlan` into the existing `mFM_combination_c` table, and `src/game/m_field_make.c:mFM_InitFgCombiSaveData` calls it on PC after the source generator. The adapter now takes semantic facility locations from the Rust plan and maps them to the corresponding existing block types: station, shop, post office, player house, shrine/wishing well, police box, museum, needlework/tailor, and port/dock. It maps the Rust-owned rail row's facility roles and river connector while retaining non-semantic track decoration from the legacy row; the Rust river must still join the C-selected `TRACKS_RIVER` location. The other playable acres map through existing `data_combi_table` block types and receive the planned elevation tiers. Before mapping, the adapter checks the one-of-each facility counts and their source-backed fixed/eligible regions. It only commits if every mapped acre has an authored block type, terrain/facility constraints hold, and exactly two bridge combinations are represented. Unsupported river/waterfall shapes, conflicts, or missing authored combination types reject the whole Rust plan and leave the C-generated map intact. Bridge markers are constrained to flat river acres because the authored table has no cliff/waterfall bridge combinations. The seed comes from `osGetCount()` and does not advance the shared `RANDOM` stream.
+
+This is a gameplay connection, not a full replacement of legacy field behavior. Existing C foreground arrays and moving-actor/save initialization still run from the adapted combination table. Semantic building positions—including the port/dock—now come from Rust instead of being copied back from the C plan. Rust now creates resident home-footprint semantics and center coordinates in `TownPlan`, but these values are not yet projected into the game's foreground actor/save arrays; live NPC home assignment and house construction remain in C and continue to use saved home data and source-authored reserve sites. Generated river/cliff layouts that cannot be represented by authored block types fall back to the C map. In particular, waterfalls currently adapt only when the legacy combination table has a supported straight horizontal-cliff form. Facility region constraints follow source structures, but randomized locations and the full authored acre-selection process are not bit-exact ports. The adapter adds a PC-only internal function and does not change an existing C ABI or affect non-PC generation.
+
+### Standalone x86 prototype
+
+`pc/town_prototype` is an asset-free Rust console app that imports `pc/rust/src/town_gen.rs` directly. It prints acre roles and resident home coordinates, then writes a standalone WebGL HTML view driven by the generated plan. The view renders the 80 by 96 unit surface, tiered acre shelves, cliff faces, seeded curved river channels, waterfall drops, bridge markers, resident houses/signs, facility buildings, vegetation, and the southern ocean boundary. Camera orbit/zoom/pan and layer toggles work in Edge without a local server or network access. It accepts `--seed` and `--villagers` (1 through 15); IDs are sample values. The CLI retries up to 64 consecutive seeds only when its requested plan is unplaceable and reports the seed actually rendered. Home candidates may use cliff-edge acres, while each 3 by 3 footprint remains inside one grass acre and excludes facilities, rivers, bridges, and slopes. Build with `pc/town_prototype/build_x86.bat` (defaults to `C:\msys64`; override via `MSYS2_ROOT`), then run `pc/town_prototype/run.bat --seed 305419896 --villagers 6`. This uses the existing `i686-pc-windows-gnu` Rust target and outputs `outputs/ac_town_prototype.exe` and `outputs/ac_town_preview.html`, independently of the game build and without game assets. The x86 executable built successfully using `C:\msys64\mingw32\bin`; the executable ran and its HTML preview rendered in Edge. No tests were run. See `pc/town_prototype/README.md` for controls. This is a visualization of rewrite-owned semantic data, not original town geometry or live C gameplay.
+
+### Validation
+
+The Rust module has isolated unit checks for deterministic output, fixed facility regions, reciprocal river edges and a southern outlet, resident roster selection, distinct resident homes with complete non-overlapping 3 by 3 footprints and source sign offsets, field-assessment rules, C record sizes, and invalid inputs. `pc/tests/pc_town_adapter_checks.c` adds a standalone C check target that exercises the actual adapter against a synthetic table containing every authored block type. It checks Rust facility-to-block placement, elevation transfer, river-to-rail alignment, bridge count, out-of-bounds preservation, and all-or-nothing behavior for rejected layouts. In an MSYS2 MINGW32 build directory, build it with `mingw32-make pc_town_adapter_checks` and run it with `ctest -R pc_town_adapter_checks --output-on-failure`. Neither the Rust nor C checks have been run, per the current instruction. The 32-bit CMake/MSYS2 build is still required to validate C compilation and linker integration on this checkout. Do not infer bit-exact original town reproduction from the module tests or adapter checks.
+
+### Runtime Port Progress: Video Interface
+
+The image shows a game/rendering path ending in a platform presentation step. Repository code supports a narrower fact: the PC `VIWaitForRetrace` implementation polls SDL events, drains pending GX work, swaps the window, applies frame pacing, records profiler data, and advances the PC frame counter. Those operations now live in `pc/rust/src/vi.rs`; calls still enter through the Dolphin VI API in `include/dolphin/vi.h`. This does not move scene logic, display-list generation, GX rendering, or gameplay into Rust.
+
+`pc/src/pc_vi.c` remains as a source reference and is excluded from the active PC target. `VIConfigurePan` remains in `pc/src/pc_stubs.c`; it was not part of this migration. The image's world simulation, character AI, save details, and proposed clean-room architecture are not established by this change and need separate source tracing before design or migration.
+
+### Runtime Port Progress: Villager Mail Check
+
+The infographic's seven letter-scoring checks are present in `src/game/m_mail_check_ovl.c`; `mNpc_CheckNormalMail_nes` applies the source thresholds (`>=100` good, `<50` bad, and the middle band remains the neutral rank). The infographic's abbreviated weights need care: the code has separate punctuation/capitalization, trigram, repetition, whitespace, run-on, and block-spacing checks, with behavior defined by the source loops.
+
+This increment ports the bounded repeated-character scan `mNpc_CheckNormalMail_sub` from `src/game/m_npc.c` to `pc/rust/src/villager_mail.rs`, retaining its C ABI. It counts non-space bytes in the fixed `MAIL_BODY_LEN` buffer and flags ordinary-character and selected punctuation/control-code runs at different thresholds. `mNpc_CheckNormalMail_length` uses this result, and `mQst_GetMailRank` in `src/game/m_quest.c` uses that length/rank for the letter-contest bonus. The C definition remains for non-PC builds. The source's friendship clamp is `0..=127` in `mNpc_AddFriendship`; the infographic's `0..255` scale is contradicted by that implementation.
+
+The US trigram table comment in `m_mail_check_ovl.c` confirms missing `0x7F` terminators in the original table data and describes a scan continuing into adjacent bytes until a terminator or match. The PC `BUGFIXES` path supplies table terminators. The image's numeric comparison to another region and its claim about the number of accepted trigrams are not established by repository code. The personality demographics, conversation pipeline summary, and move-in/move-out description remain leads pending their own source traces.
+
+## File Reference
+
+### PC Port Layer (what we wrote)
+
+#### Core
+
+| File | Purpose |
+|------|---------|
+| `pc/src/pc_main.c` | Entry point, SDL2/GL init, CLI flags, DPI scaling |
+| `pc/src/pc_gx.c` | GX → OpenGL: all GX API functions, vertex submission, state, draw dispatch, dirty-flag uniform system |
+| `pc/src/pc_gx_tev.c` | TEV shader: GLSL program loading, uniform upload |
+| `pc/src/pc_gx_texture.c` | 10 GC texture format decoders, 2048-entry cache with FNV-1a |
+| `pc/src/pc_os.c` | Dolphin OS: memory arena, timers, calendar time, message queues, thread stubs |
+| `pc/rust/src/dvd.rs` | Rust PC DVD filesystem shim; preserves the Dolphin `DVD*` C ABI and disc/extracted-file lookup behavior |
+| `pc/rust/src/vi.rs` | Rust PC Video Interface shim; preserves VI APIs, frame counter globals, event/swap boundary, pacing and retrace counting |
+| `pc/rust/src/villager_mail.rs` | Rust port of the fixed-size villager-mail repeat check; preserves `mNpc_CheckNormalMail_sub` C ABI |
+| `pc/rust/src/aram.rs` | Rust 16 MiB ARAM buffer, bump allocator, DMA and synchronous ARQ compatibility |
+| `pc/rust/src/gbi_runtime.rs` | Rust GBI runtime pointer pack/unpack shim used by N64 display-list macros |
+| `pc/rust/src/profiler.rs` | Rust frame profiler using SDL's cross-platform performance counter and the existing `pc_profiler_*` C ABI |
+| `pc/rust/src/mtx.rs` | Rust matrix/vector and libultra fixed-point helpers used by the C game and renderer |
+| `pc/src/pc_misc.c` | HW register arrays, EXI/SI/PPC stubs, malloc wrappers, trig |
+
+#### Asset Loading
+
+| File | Purpose |
+|------|---------|
+| `pc/rust/src/lib.rs` | Rust GC disc image I/O (CISO/ISO/GCM), FST parsing, Yaz0 decompression; C ABI |
+| `pc/rust/Cargo.toml` | Rust static library manifest for the PC runtime layer |
+| `pc/src/pc_assets.c` | Auto-generated: ROM extraction, asset table, per-file loaders, byte-swap |
+| `pc/tools/gen_runtime_assets.py` | Source scanner: transforms .inc includes to runtime loads, generates pc_assets.c |
+
+#### I/O and Storage
+
+| File | Purpose |
+|------|---------|
+| `pc/src/pc_card.c` | Memory card API → local file save/load |
+| `pc/src/pc_m_card.c` | Memory card manager: GCI save/load, village generation, ARAM data blocks |
+| `pc/src/pc_save_bswap.c` | GCI save file bidirectional LE↔BE byte-swap (Dolphin-compatible) |
+| `pc/src/pc_pad.c` | Keyboard + SDL2 gamepad input (GC button format) |
+| `pc/src/pc_audio.c` | SDL2 audio: 32kHz s16 stereo, dedicated producer thread + SPSC ring buffer |
+| `pc/rust/src/aram.rs` | 16 MiB ARAM buffer, bump allocator, DMA and synchronous ARQ compatibility |
+
+#### Enhancements
+
+| File | Purpose |
+|------|---------|
+| `pc/src/pc_settings.c` | Runtime `settings.ini` parser/writer (resolution up to 4K, fullscreen, vsync, MSAA) |
+| `pc/src/pc_texture_pack.c` | Dolphin-compatible HD texture pack loader (XXHash64 matching, DDS, preloading) |
+| `pc/src/pc_model_viewer.c` | Debug model viewer: 75 building/structure models, orbit camera |
+
+#### Support
+
+| File | Purpose |
+|------|---------|
+| `pc/src/pc_stubs.c` | Remaining link stubs (GBA, famicom, libultra, threads) |
+| `pc/src/pc_stubs_cpp.cpp` | JSystem C++ vtable stubs |
+| `pc/src/pc_fontdata.c` | Embedded font (byte-swapped for LE) |
+| `pc/shaders/default.vert` | GLSL vertex shader (runtime-loaded, required) |
+| `pc/shaders/default.frag` | GLSL fragment shader (runtime-loaded, uniform-driven TEV stages with bias/scale/clamp/swap) |
+
+#### Headers
+
+| File | Purpose |
+|------|---------|
+| `pc/include/pc_platform.h` | Platform config, 32-bit guard, SDL2/GL includes, crash API, widescreen defs |
+| `pc/include/pc_gx_internal.h` | PCGXState, PCGXVertex, PCGXTevStage, indirect texture structs |
+| `pc/include/pc_save_bswap.h` | GCI save byte-swap API |
+| `pc/include/pc_model_viewer.h` | Model viewer struct and init/cleanup |
+| `pc/include/pc_bswap.h` | `pc_bswap16/32/64` macros + array swap helpers |
+| `pc/include/pc_settings.h` | Settings struct and load/save/apply API |
+| `pc/include/pc_texture_pack.h` | Texture pack init/lookup/shutdown API |
+| `pc/include/pc_disc.h` | Disc image I/O and FST lookup API |
+| `pc/include/pc_assets.h` | Asset loader init and per-asset load API |
+| `pc/include/pc_types.h` | Platform type definitions |
+| `pc/include/pc_diag.h` | Diagnostic output macros (PC_DIAG) |
+
+### Critical Decomp Modifications
+
+These are the most-modified files from the upstream decompilation:
+
+| File | Why |
+|------|-----|
+| `src/static/libforest/emu64/emu64.c` | Texture cache routing, TEXEL1, vertex colors, fog guard, per-stage texture binding, widescreen NOOPTag handling |
+| `include/libforest/gbi_extensions.h` | 30 GBI bitfield structs reversed for LE x86 |
+| `src/static/libforest/emu64/emu64_utility.c` | seg2k0 proximity heuristic, N64Mtx byte-swap |
+| `src/static/boot.c` | Arena init, REL skip, actable endian swap |
+| `src/graph.c` | Frame loop diagnostics, model viewer routing |
+| `src/padmgr.c` | GC→N64 button conversion, once-per-frame guard |
+| `src/game/m_play.c` | Scene transition diagnostics, fog BG fix, widescreen stretch markers |
+| `src/game/m_player_lib.c` | Player palette byte-swap from ARAM |
+| `src/game/m_field_make.c` | FG data u16 byte-swap (3 swap sites) |
+| `src/game/m_room_type.c` | Room wall/floor palette u16 byte-swap |
+| `src/game/m_scene.c` | Scene_Word_u endianness fix |
+| `src/sys_matrix.c` | Matrix_MtxtoMtxF endian swap, suMtxMakeTS/SRT/SRT_ZXY fixes |
+| `src/game/m_npc.c` | Title demo animal slot cleanup: clear before write, skip sentinel entries |
+| `src/game/m_trademark.c` | Clear npclist before demo repopulation, sentinel entry for demo_npc_list |
+| `src/actor/npc/ac_npc_think_wander.c_inc` | Clamp `looks` before indexing decide_boarder[] (latent OOB bug) |
+| `src/game.c` | Frame timing and game exec dispatch |
+| `src/jaudio_NES/na_combo.c` | Melody sequence u16 offset byte-swap |
+
+About ~100 decomp files total are modified. Most changes are small `#ifdef TARGET_PC` blocks for byte-swapping or platform adaptation.
+
+## Rendering Pipeline
+
+### Vertex Submission
+
+Deferred commit model. A position call commits the *previous* vertex. Auto-flush via `pc_gx_flush_if_begin_complete()` when expected vertex count is reached (handles missing GXEnd). Explicit GXEnd calls added at end of dl_G_TRIN/dl_G_QUADN/dl_G_TRI2 to prevent batches from flushing after viewport changes.
+
+VAO attribute pointers and quad-to-triangle EBO are set up once at init, not per draw.
+
+### SHARED vs NONSHARED Vertices
+
+- **SHARED** (GX_PNMTX0, slot 0): pre-transformed at load time for seamless character joints
+- **NONSHARED** (GX_PNMTX1, slot 1): transformed by GX matrix each frame
+
+Do NOT force all vertices to NONSHARED — it breaks character joint seams.
+
+### TEV Pipeline
+
+Up to 3 stages, KONST colors, swap tables, per-stage texture binding. Single GLSL program with uniform-driven stages. Shaders loaded from `pc/shaders/` at runtime (required — no embedded fallback).
+
+Per-stage uniforms:
+- **Bias**: ADDHALF (+0.5), SUBHALF (-0.5) applied after TEV blend
+- **Scale**: SCALE_2 (x2), SCALE_4 (x4), DIVIDE_2 (x0.5) applied after bias
+- **Clamp**: per-channel clamp to [0,1] at output register write
+- **Output register**: stages can write to PREV, REG0, REG1, or REG2
+- **Swap tables**: 4 configurable tables (ivec4 channel remap), per-stage selection for texture and rasterizer colors
+
+### Texture Cache
+
+2048-entry cache keyed by (ptr, w, h, fmt, tlut_name, content_hash). ~100% hit rate at steady state. 10 GC texture formats decoded: I4, I8, IA4, IA8, RGB565, RGB5A3, RGBA8, CI4, CI8, CI14x2, CMPR (S3TC).
+
+Stale GL texture IDs are cleaned up on cache eviction to prevent GPU resource leaks.
+
+### Uniform Dirty-Flag System
+
+`pc_gx.c` uses per-uniform dirty flags to skip redundant `glUniform*` calls. Flags are set when GX state changes and cleared after upload. Reduces GL call overhead by ~12%.
+
+### Widescreen (3-state system)
+
+Controlled by `g_pc_widescreen_stretch`:
+- **0 (hor+)**: full-window viewport, FOV-corrected projection. Default, resets each frame.
+- **1 (stretch)**: full-window, no correction. For fullscreen transitions/inventory backgrounds.
+- **2 (pillarbox)**: centered 4:3 viewport with black bars. For inventory UI alignment.
+
+m_play.c inserts NOOPTag markers in POLY_OPA display lists to toggle between states. emu64 reads these during DL processing. Frustum culling bounds are widened for hor+ to prevent side-of-screen popping.
+
+## Endianness
+
+All ROM/ARAM data is big-endian. Multi-byte fields must be byte-swapped after loading.
+
+Pattern: `#ifdef TARGET_PC` byte-swap block right after `_JW_GetResourceAram` call.
+
+Known swap sites:
+- RARC archives (JKRAramArchive.cpp)
+- FG data: 3 sites in m_field_make.c
+- Messages: mMsg_Get_BodyParam
+- Player palettes: m_player_lib.c
+- Room wall/floor palettes: m_room_type.c
+- N64Mtx s16 pairs: emu64_utility.c
+- Scene_Word_u: m_scene.c
+- Billboard matrices: sys_matrix.c (Matrix_MtxtoMtxF, suMtxMakeTS/SRT/SRT_ZXY)
+- NPC clothing: ac_npc_cloth.c_inc (both DMA paths)
+- Raw binary actables: 6 files swapped once at boot via mFM_InitActableEndian()
+- Melody sequences: na_combo.c (u16 offsets)
+- TLUT palettes: clock face, furniture, museum items (fd629a59)
+- ADSR phase bitfield: stereo pan/reverb flags (d6e4b1ae)
+
+**Cannot centralize**: ARAM data has mixed layouts (u8 textures, u16 palettes, u32 offsets). A bulk swap at the `_JW_GetResourceAram` layer would corrupt byte-level data.
+
+**EFB-copied textures** are generated in little-endian format on PC, unlike ROM-sourced textures which are big-endian. Endianness fixes to texture decoders must account for both paths.
+
+## Audio
+
+jaudio_NES engine compiled and linked (59 source files, ~23K lines). SDL2 backend at 32kHz s16 stereo. rspsim software DSP processes ADPCM/RESAMP/ENVMIX.
+
+All effects enabled: reverb, comb filter, Haas effect, Dolby surround.
+
+### Threaded Architecture
+
+Audio production runs on a dedicated SDL thread, matching the GC's `neosproc` thread model:
+
+- **Game thread**: `Na_GameFrame()` queues audio commands via thread-safe message queues (SDL_mutex-protected `Z_osSendMesg`/`Z_osRecvMesg`)
+- **Audio producer thread**: Loops calling `pc_audio_process_frame()` → `CreateAudioTask` → `RspStart2` (rspsim), writes samples into SPSC ring buffer (32768 samples = ~512ms)
+- **SDL callback thread**: Reads from ring buffer → speakers
+
+This decoupling prevents OS thread preemption of the game thread from causing audio dropouts. Frame pacing uses timer-based 60fps with spin-wait (no longer tied to audio buffer fill level).
+
+### Known audio issue
+
+Subtle bass distortion in specific rooms (museum dinosaur room). Present since early audio implementation. Root cause likely in A_CMD_UNK3 implementation accuracy (reverse-engineered from table data, no original microcode reference).
+
+## Save System
+
+GCI format only (64-byte CARDDir header + 0x72000 raw data). Bidirectional LE↔BE byte-swap for all ~300+ multi-byte fields.
+
+- Save file: `save/DobutsunomoriP_MURA.gci`
+- Also scans for Dolphin naming format (`8P-GAFE-...`)
+- Backup rotation: up to 3 `.bak` files on each save
+- Recovery: tries temp file, then backups if main save is missing
+- Compatible with Dolphin emulator (can import/export saves)
+
+## Enhancement Features
+
+Compiled under `PC_ENHANCEMENTS` define (enabled by default in CMakeLists.txt).
+
+### Settings (`settings.ini`)
+
+```ini
+[Graphics]
+window_width = 1280
+window_height = 720
+fullscreen = 0          # 0=windowed, 1=fullscreen, 2=borderless
+vsync = 0
+msaa = 4                # 0/2/4/8
+```
+
+Auto-generated with defaults on first run. Resolution presets up to 4K supported. Custom resolutions can be set in the .ini file. DPI-aware on Windows (respects system scaling).
+
+### HD Texture Packs
+
+Drop Dolphin-compatible HD texture packs into `texture_pack/` directory. Uses XXHash64 for matching (identical algorithm to Dolphin). Supports DDS files with BC7, BC1, BC3, or uncompressed RGBA.
+
+Filename format: `tex1_{W}x{H}_{hash}[_{tlut_hash}]_{fmt}.dds`
+
+Wildcard palette support: `tex1_WxH_DATAHASH_$_FMT.dds` matches any palette variant.
+
+### 4x MSAA
+
+Anti-aliasing via multisampled framebuffer. Configurable in `settings.ini` (0/2/4/8 samples).
+
+## Input
+
+Keyboard mapping:
+- **WASD** = analog stick
+- **Arrow keys** = C-stick
+- **Space** = A, **LShift** = B, **Enter** = Start
+- **IJKL** = D-pad
+- **Q/E** = L/R triggers, **Z** = Z trigger
+- **F3** = toggle frame limiter
+- **ESC** = quit
+
+SDL2 gamepad with hotplug, analog sticks (deadzone 500), triggers, D-pad, and rumble.
+
+PADRead returns GC button format. Conversion to N64 format happens in `padmgr_UpdatePC()`.
+
+## Fault Handling
+
+The PC port does not install a VEH/signal crash recovery handler. Faults are allowed to propagate to the OS/debugger.
+Actor profile validation remains in `m_actor.c` to skip NULL/invalid profiles before dispatch.
+
+## Build System
+
+32-bit MinGW GCC 15.x (i686) + CMake + SDL2 2.30.10 + GLAD2 (GL 3.3 Core).
+
+**Must compile as 32-bit** — decomp code casts pointers to u32 everywhere.
+
+### Quick Start
+
+```bash
+# 1. Place disc image in pc/build32/bin/rom/
+# 2. Build (from MSYS2 MINGW32 shell):
+./build_pc.sh
+
+# 3. Run:
+pc/build32/bin/AnimalCrossing.exe --verbose
+```
+
+`build_pc.sh` handles CMake configuration and build in one step.
+
+### Cross-Compilation
+
+| Toolchain | File | Target |
+|-----------|------|--------|
+| Linux i686 | `pc/cmake/Toolchain-linux32.cmake` | Native Linux 32-bit |
+| MinGW from Linux | `pc/cmake/Toolchain-mingw32.cmake` | Windows 32-bit cross-compile |
+
+### CLI Flags
+
+| Flag | Effect |
+|------|--------|
+| `--verbose` / `-v` | Enable diagnostic output |
+| `--no-framelimit` | Disable the frame limiter |
+| `--model-viewer [N]` | Launch model viewer (optional start index) |
+| `--time HOUR` | Override in-game hour (0-23) |
+| `--help` / `-h` | Show help |
+
+## Platform Support
+
+| Platform | Status |
+|----------|--------|
+| Windows (MinGW i686) | Primary target, fully tested |
+| Linux (i686) | Compiles and links, mmap arena |
+
+Linux support uses POSIX equivalents: `mmap()` instead of `VirtualAlloc()`, `mkdir()` guards for directory creation.
+
+## Common Pitfalls
+
+- **32-bit required**: 64-bit builds crash in JKRHeap (pointer→u32 casts).
+- **`__attribute__((weak))`** doesn't work on MinGW/PE. Use regular definitions.
+- **libc64/malloc.c** is excluded — it redefines system malloc and crashes the CRT.
+- **NDEBUG must always be defined**: decomp asserts have side effects. Without NDEBUG, assert macros run and cause texture corruption.
+- **Optimization must be -O0**: any optimization (-O1+) exposes UB in decomp code (infinite spawn loops, crashes).
+- **windows.h macros**: always `#undef near` / `#undef far` after including.
+- **GC address space**: emu64 uses 0x80000000-0x83000000 range. Guard with TARGET_PC.
+- **glClear respects write masks**: must set glDepthMask(GL_TRUE) + glColorMask(all TRUE) before glClear.
+- **seg2k0 collision**: PC heap pointers can collide with N64 segment addresses. Fixed with proximity heuristic + VirtualAlloc/mmap arena at >=0x10000000.
+- **`#included .c` files**: emu64_utility.c, emu64_print.cpp, jsyswrapper_ext.cpp, jsyswrapper_main.cpp, ac_animal_logo_misc.c, m_item_debug.c, ac_npc_shop_common.c — these are compiled as part of their parent file, not standalone.
+- **Title demo OOB**: `demo_npc_list` has 14 valid entries but `mNpc_SetAnimalTitleDemo` loops 15 times. On GC, the garbage 15th read was benign; on PC it produced invalid NPC `looks` → OOB crash in wander logic. Fixed with sentinel entry, slot clearing, and looks clamp.
+- **EFB-copied textures are LE**: ROM textures are BE, but EFB copies are generated in LE on PC. Texture decoder endianness fixes must not break EFB copies.
