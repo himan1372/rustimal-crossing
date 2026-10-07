@@ -17,6 +17,7 @@ use std::sync::Mutex;
 mod aram;
 mod dvd;
 mod gbi_runtime;
+mod letter_score;
 mod mtx;
 mod profiler;
 mod town_gen;

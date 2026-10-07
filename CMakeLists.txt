@@ -297,6 +297,8 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/town_gen.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/vi.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/villager_mail.rs"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/letter_score.rs"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/letter_score_tables.rs"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/rust"
     COMMENT "Building Rust PC runtime layer (${PC_RUST_TARGET})"
     VERBATIM

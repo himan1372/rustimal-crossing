@@ -26,7 +26,7 @@ fn is_mail_symbol(character: u8) -> bool {
         || (CHAR_CONTROL_CODE..=CHAR_INTERPUNCT).contains(&character)
 }
 
-fn check_normal_mail(body: &[u8; MAIL_BODY_LEN]) -> (i32, i32) {
+pub(crate) fn check_normal_mail(body: &[u8; MAIL_BODY_LEN]) -> (i32, i32) {
     let mut last_character = CHAR_SPACE;
     let mut run_length = 1;
     let mut character_count = 0;

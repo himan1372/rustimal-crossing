@@ -123,6 +123,18 @@ This increment ports the bounded repeated-character scan `mNpc_CheckNormalMail_s
 
 The US trigram table comment in `m_mail_check_ovl.c` confirms missing `0x7F` terminators in the original table data and describes a scan continuing into adjacent bytes until a terminator or match. The PC `BUGFIXES` path supplies table terminators. The image's numeric comparison to another region and its claim about the number of accepted trigrams are not established by repository code. The personality demographics, conversation pipeline summary, and move-in/move-out description remain leads pending their own source traces.
 
+### Runtime Port Progress: Letter Scoring Engine
+
+This increment ports the full letter scoring system to `pc/rust/src/letter_score.rs` (with generated trigram data in `pc/rust/src/letter_score_tables.rs`), building on the earlier `villager_mail.rs` repeat-check port. All algorithms were verified line-by-line against the decompilation (`src/game/m_mail_check_ovl.c`, `src/game/m_npc.c`, `src/game/m_quest.c`) before porting.
+
+The normal-letter scorer (`mMck_check_key_hit_nes`) implements the seven checks: A (+20 terminal punctuation when the body is under 192 bytes; +/-10 per separator with a capital within 3 characters after it, needing more than 3 characters remaining), B (+3 per valid word-start trigram), C (+20/-10 first-character capitalization), D (-50 triple alpha repeat, raw body, no space stripping), E (+20/-20 at a 20% space ratio), F (-150 for 75+ characters after a `.`/`?`/`!` separator; spaces count, separator-free letters never trigger), G (-20 per complete 32-character window without a space). Thresholds `>= 100` (positive reply), `50-99` (no reply), `< 50` (negative reply); friendship moves `-2/+1/+3/+6` (bad/good x present), clamped `0..=127`.
+
+The quest ranker (`mQst_GetMailRank` via `mNpc_CheckNormalMail_length`) computes rank `0-11` = length tier (`17`/`49` non-space chars) + trigram bonus (`0`/`3`, needs `>= 30%` hit rate or the lenient default) + present bonus (`6`). The existing `mNpc_CheckNormalMail_sub` port is reused for the run-on/character-count piece.
+
+Trigram tables: the 776 intended pairs were extracted from `str_a_table..str_z_table` (per-table counts `57/49/44/.../1` match the published research exactly). Two modes are implemented: `TrigramMode::Intended` (proper terminators, matching the port's `BUGFIXES` build) and `TrigramMode::NtscU`, which reproduces the missing-`0x7F` bug by scanning tables consecutively (verified: `"aab"` scores `0` intended vs `+3` NTSC-U). The post-Z RAM tail from the original ROM is not modeled (documented limitation). The C ABI (`mMck_check_key_hit_nes`, `mMck_check_key_hit`, `mQst_GetMailRank`) defaults to `Intended`, consistent with the port's `BUGFIXES` build.
+
+Source findings that correct earlier research prose: check D does not strip spaces; the run-on rule needs 4 ordinary / 9 symbol repeats (the counter resets to 0, so "3+"/"up to 7" summaries are simplifications — C and the Rust port agree); check F only fires after a separator; friendship clamps at `0..=127`, contradicting the infographics' `0..255`. An empty body would read one byte before the buffer in C (undefined behavior); the Rust port scores it as 0 instead. Unit tests cover each check, both trigram modes, quest extremes, and the `"!!!!!"` case; `cargo check --lib` is clean. Tests were written but not run (standing rule); the i686 Windows build runs on the MSYS2 machine. Workbook rows 31-34 and new Image Research Leads rows record all findings.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
@@ -139,6 +151,8 @@ The US trigram table comment in `m_mail_check_ovl.c` confirms missing `0x7F` ter
 | `pc/rust/src/dvd.rs` | Rust PC DVD filesystem shim; preserves the Dolphin `DVD*` C ABI and disc/extracted-file lookup behavior |
 | `pc/rust/src/vi.rs` | Rust PC Video Interface shim; preserves VI APIs, frame counter globals, event/swap boundary, pacing and retrace counting |
 | `pc/rust/src/villager_mail.rs` | Rust port of the fixed-size villager-mail repeat check; preserves `mNpc_CheckNormalMail_sub` C ABI |
+| `pc/rust/src/letter_score.rs` | Rust letter scoring engine: normal 7-check scorer, quest 0-11 ranker, dual trigram modes; C ABI (`mMck_check_key_hit_nes`, `mMck_check_key_hit`, `mQst_GetMailRank`) |
+| `pc/rust/src/letter_score_tables.rs` | Generated: 776 intended trigram pairs extracted from the decomp's `str_a_table..str_z_table` |
 | `pc/rust/src/aram.rs` | Rust 16 MiB ARAM buffer, bump allocator, DMA and synchronous ARQ compatibility |
 | `pc/rust/src/gbi_runtime.rs` | Rust GBI runtime pointer pack/unpack shim used by N64 display-list macros |
 | `pc/rust/src/profiler.rs` | Rust frame profiler using SDL's cross-platform performance counter and the existing `pc_profiler_*` C ABI |
