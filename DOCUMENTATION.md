@@ -264,7 +264,7 @@ The brief's pipeline was verified against the player sources:
 
 ### Rust rewrite implementation
 
-`rust/src/player_move.rs` ports the locomotion core: `ControllerMove` (the `mcon` fields), `turn_mod`/`calc_ease`/`smooth_turn_toward` (shortest-arc facing), `LocomotionState` with the `movement_core` hierarchy (Dash→Run→Walk), `anim_speed`/`anim_speed_near_wall`, `BRAKE_AMOUNT`, `DASH_SAMPLE_OFFSETS` verbatim, and `PlayerMovement` (`step_core`, `brake`). C ABI: `pc_turn_mod`, `pc_locomotion_core`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/player_move.rs` ports the locomotion core: `ControllerMove` (the `mcon` fields), `turn_mod`/`calc_ease`/`smooth_turn_toward` (shortest-arc facing), `LocomotionState` with the `movement_core` hierarchy (Dash→Run→Walk), `anim_speed`/`anim_speed_near_wall`, `BRAKE_AMOUNT`, `DASH_SAMPLE_OFFSETS` verbatim, and `PlayerMovement` (`step_core`, `brake`). C ABI: `pc_turn_mod`, `pc_locomotion_core`. `cargo check --lib` clean. Unit tests: 130/130 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Collision
 
@@ -282,7 +282,7 @@ The brief's two-system model was verified against the headers and sources:
 
 ### Rust rewrite implementation
 
-`rust/src/collision.rs` ports both systems: `CollisionData` with exact bit packing/unpacking and flat detection, `UnitArea`, `WallKind`, `SlateDir` with diagonal-comparison detection, `WallSeg` (signed distance, normal-based correction), directional hit flags, `BgResult`, the neighborhood-size rule (3/5/7 by range), plane-equation ground height, ground Y correction, `ColliderType`/groups/`Mass` with mass-split separation rules, and sphere-overlap depth. C ABI: `pc_collision_neighborhood`, `pc_collision_pack`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/collision.rs` ports both systems: `CollisionData` with exact bit packing/unpacking and flat detection, `UnitArea`, `WallKind`, `SlateDir` with diagonal-comparison detection, `WallSeg` (signed distance, normal-based correction), directional hit flags, `BgResult`, the neighborhood-size rule (3/5/7 by range), plane-equation ground height, ground Y correction, `ColliderType`/groups/`Mass` with mass-split separation rules, and sphere-overlap depth. C ABI: `pc_collision_neighborhood`, `pc_collision_pack`. `cargo check --lib` clean. Unit tests: 130/130 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Inventory Scan (Impulse Buying)
 
@@ -299,7 +299,7 @@ The brief's inventory-query model was verified against `m_private.c`/`m_private.
 
 ### Rust rewrite implementation
 
-`rust/src/inventory.rs` ports the query layer: `Inventory` (15 pockets + packed conditions), `find_item`/`find_item_with_cond`/`count_item`/`count_item_with_cond`/`find_free_slot`/`put`, `item_cond`/`set_item_cond` with the exact shift math, `ExcludedFurniture` + `selectable_furniture`, `CandidateStrategy` (FavoriteFirst/RandomCarried, marked rewrite-owned/untraced), and `resolve_candidate`. C ABI: `pc_inventory_find`, `pc_inventory_count`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/inventory.rs` ports the query layer: `Inventory` (15 pockets + packed conditions), `find_item`/`find_item_with_cond`/`count_item`/`count_item_with_cond`/`find_free_slot`/`put`, `item_cond`/`set_item_cond` with the exact shift math, `ExcludedFurniture` + `selectable_furniture`, `CandidateStrategy` (FavoriteFirst/RandomCarried, marked rewrite-owned/untraced), and `resolve_candidate`. C ABI: `pc_inventory_find`, `pc_inventory_count`. `cargo check --lib` clean. Unit tests: 130/130 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Item Preference Structures
 
@@ -317,7 +317,7 @@ The brief's architecture was verified against `m_npc.h`/`m_npc.c`/`m_quest.c`:
 
 ### Rust rewrite implementation
 
-`rust/src/item_prefs.rs` ports the verified structures: `NpcDefData` (cloth/umbrella/catchphrase), `NpcHouseData` (type/palette/wall/floor/layer IDs), `select_reward_furniture` (10x10 scan, eligible filter, RNG-index pick), `GoodsSource` + the verbatim 1/10 rule (`goods_source_for_furniture`), `AnmBestFtr`, `IslandFtr` (16 slots, 4 trade entries, bitfield merge, normalized slot lookup), and C ABI exports `pc_npc_house_goods`, `pc_eligible_furniture_count`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/item_prefs.rs` ports the verified structures: `NpcDefData` (cloth/umbrella/catchphrase), `NpcHouseData` (type/palette/wall/floor/layer IDs), `select_reward_furniture` (10x10 scan, eligible filter, RNG-index pick), `GoodsSource` + the verbatim 1/10 rule (`goods_source_for_furniture`), `AnmBestFtr`, `IslandFtr` (16 slots, 4 trade entries, bitfield merge, normalized slot lookup), and C ABI exports `pc_npc_house_goods`, `pc_eligible_furniture_count`. `cargo check --lib` clean. Unit tests: 130/130 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Request-Selection Caller
 
@@ -334,7 +334,7 @@ The brief's open question — the junction between house furniture and inventory
 
 ### Rust rewrite implementation
 
-`rust/src/request_selector.rs` ports the verified machinery: `pick_random_eligible` (count + `rng % count` + walk, returning pocket idx and item), `pick_first_eligible`, `decide_msg_check_possession` (message binding), `decide_idx_prob_table` (cumulative-weight dispatch) with the verbatim `TRADE_PROBS`/`NORMAL_3_PROBS` tables, `TradeOffer` + `build_trade_offer` (wanted item, category goods with `GoodsSource` per slot via the 1/10 rule, random/pitfall offered item). C ABI: `pc_request_pick_carried`, `pc_request_dispatch`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/request_selector.rs` ports the verified machinery: `pick_random_eligible` (count + `rng % count` + walk, returning pocket idx and item), `pick_first_eligible`, `decide_msg_check_possession` (message binding), `decide_idx_prob_table` (cumulative-weight dispatch) with the verbatim `TRADE_PROBS`/`NORMAL_3_PROBS` tables, `TradeOffer` + `build_trade_offer` (wanted item, category goods with `GoodsSource` per slot via the 1/10 rule, random/pitfall offered item). C ABI: `pc_request_pick_carried`, `pc_request_dispatch`. `cargo check --lib` clean. Unit tests: 130/130 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Villager Behavior Engine
 
