@@ -608,6 +608,19 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: AttributeWall_Special Exact Differences
 
+
+#### Follow-up 2: the "debugger trace" of height inputs — done statically
+
+The brief proposed a Dolphin debugger session to trace the height inputs. That session can't run here (no game image or emulator in this environment), but the decomp source gives the exact dataflow — better than a sampled trace:
+
+- `old_ground_y` = `actor.last_world_position.y + ground_dist` (m_collision_bg.c:1829).
+- **Normal player-special**: `height.top` = `wall_bounds.start_top`/`end_top` — DISCRETE per-endpoint selection, NO interpolation. Gate: `(old_ground_y - 5.0) + 3.0 <= top`. The actor radius (`range`) is used ONLY in the horizontal tests, never in the vertical gate.
+- **Attribute player-special**: ZERO height inputs — no floating-point height load precedes the decision; the test is purely horizontal. A Dolphin trace would show the empty set.
+- **Non-player normal path** (the interpolation question): `RoughCheckWallHeight` (`(bot_y + 3.0) <= start_top || <= end_top`) + `CheckHeightExactly`, which DOES interpolate via `mCoBG_GetWallHeight` — except moving walls (`regist_p != NULL`), which use end bounds directly. So: player path = discrete endpoint selection; non-player path = interpolation. The brief's Trace 5 is answered.
+- The `atr_wall` branch itself lives in `mCoBG_GetWallKind` (dispatch-table selection), not inside the collision function.
+
+Rust: `rough_check_wall_height`, `old_ground_y` in `endpoint_circle.rs` + tests. `cargo check --lib` clean. Tests written but NOT run (standing rule).
+
 #### Follow-up: correcting the brief's negative result + the structural WHY
 
 - **The symbol DOES exist in the current source.** The follow-up brief searched `m_collision_bg_wall.c_inc` (wall *construction*) and concluded `AttributeWall_Special` is not an upstream name. The function is `mCoBG_Distance2Reverse_AttributeWall_Special` at **m_collision_bg.c:970** — the collision *resolution* file, which is exactly where the brief said to look next. It was already ported in the previous commit.

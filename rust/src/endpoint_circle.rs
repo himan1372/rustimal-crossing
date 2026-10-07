@@ -208,6 +208,46 @@ pub struct WallVecInfo {
     pub atr_wall: u8,
 }
 
+/// Static trace of the height inputs (the "debugger trace", done from
+/// source — exact, no emulator needed):
+///
+/// `old_ground_y` = `actor.last_world_position.y + ground_dist`
+/// (the actor's Y from the previous frame plus the ground distance).
+///
+/// NORMAL player-special path (`mCoBG_Distance2Reverse_NormalWall_Special`):
+/// - `height.top` = `wall_bounds.start_top` (start endpoint) or
+///   `wall_bounds.end_top` (end endpoint) — DISCRETE endpoint selection,
+///   NO interpolation along the wall.
+/// - Gate: `(old_ground_y - 5.0) + 3.0 <= height.top`.
+/// - `range` (the actor radius) participates ONLY in the horizontal
+///   tests (`dist < range`, endpoint circles), never in the vertical gate.
+///
+/// ATTRIBUTE player-special path: ZERO height inputs. No floating-point
+/// height load precedes the collision decision — the test is purely
+/// horizontal. (Consistent with attribute vectors never populating
+/// `wall_bounds`.)
+///
+/// NON-PLAYER normal path (`mCoBG_Distance2Reverse_NormalWall`): uses
+/// `mCoBG_RoughCheckWallHeight` + `mCoBG_CheckHeightExactly`, and the
+/// latter DOES interpolate height along the wall segment
+/// (`mCoBG_GetWallHeight`; see `check_height_exactly` in terrain_walls.rs)
+/// — except for moving walls (`regist_p != NULL`), which use the end
+/// bounds directly. So: player path = discrete endpoint selection,
+/// non-player path = interpolation.
+///
+/// `mCoBG_RoughCheckWallHeight` verbatim: `(bot_y + 3.0)` must be under
+/// at least one endpoint top.
+pub fn rough_check_wall_height(bot_y: f32, start_top: f32, end_top: f32) -> bool {
+    let y = bot_y + 3.0;
+    y <= start_top || y <= end_top
+}
+
+/// The collision input `old_ground_y`: previous-frame world Y plus the
+/// actor's ground distance (`mCoBG` actor setup verbatim).
+pub fn old_ground_y(last_world_position_y: f32, ground_dist: f32) -> f32 {
+    last_world_position_y + ground_dist
+}
+
 /// Wall-kind dispatch values (`mCoBG_GetWallKind` enum verbatim):
 /// `regist_p != NULL` -> MOVE; else `atr_wall` -> ATTRIBUTE; else NORMAL.
 /// The player table is `{ NormalWall_Special, AttributeWall_Special,
@@ -425,8 +465,21 @@ mod tests {
     }
 
     #[test]
-    fn attribute_wall_special_exact_differences() {
-        let ws = [0.0, 0.0];
+    fn height_input_trace_kernels() {
+        // RoughCheckWallHeight: (bot_y + 3) under at least one endpoint top.
+        assert!(rough_check_wall_height(10.0, 13.0, 5.0)); // 13 <= 13
+        assert!(rough_check_wall_height(10.0, 5.0, 13.0)); // 13 <= 13 (end)
+        assert!(!rough_check_wall_height(10.0, 12.9, 12.9));
+        // old_ground_y source: last-frame Y + ground distance.
+        assert_eq!(old_ground_y(100.0, 5.0), 105.0);
+        // The normal-special gate and the rough check agree in shape:
+        // gate is (old_ground_y - 5) + 3 <= top, i.e. old_ground_y - 2 <= top.
+        assert!(normal_special_height_gate(10.0, 8.0));
+        assert!(rough_check_wall_height(5.0, 8.0, 0.0)); // (5+3)=8 <= 8
+    }
+
+    #[test]
+    fn attribute_wall_special_exact_differences() {        let ws = [0.0, 0.0];
         let we = [10.0, 0.0];
         let n = [0.0, 1.0];
         // Same horizontal setup the normal path accepts.
