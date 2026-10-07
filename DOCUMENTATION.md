@@ -606,6 +606,21 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Rust rewrite implementation
 
+### Runtime Port Progress: Bridge-Water Mask (Town-Gen Side)
+
+### Source findings (all verified against the local decomp)
+
+- **The brief's hypothesis — confirmed with the actual mechanism**: there is no stored binary "bridge-water mask" bitmap. The "mask" is block-type arithmetic plus a counterpart table:
+  - Seven river block types (40-46: SOUTH, EAST, WEST, SOUTH_EAST, EAST_SOUTH, SOUTH_WEST, WEST_SOUTH) are immediately followed by seven bridge variants (47-53) in the same order. Conversion is `type + 7` (`mFM_BLOCK_TYPE_RIVER_SOUTH_BRIDGE - mFM_BLOCK_TYPE_RIVER_SOUTH`).
+  - `mRF_SetBridgeBlock` (m_random_field_ovl.c:1022): finds the river/cliff crossing via waterfall block types, counts river blocks before/after the crossing, picks ONE random river block before the crossing and converts it (and, for two-step towns with a coin flip, one after — this is the "double bridge" mechanism). A bridge is never placed on arbitrary water; the brief's "bridge counterpart" model is exactly right.
+  - `pluss_bridge[108]` (m_map_ovl.c, verbatim): block type -> bridge counterpart for the map overlay (255 = none). Covers the 7 river types, TRACKS_RIVER (13 -> 86), and the river-cliff combo bridges.
+- **Tortimer's bridge** reuses the same counterpart concept: the map overlay swaps `pluss_bridge[type]` when `Save_Get(bridge)` exists in that block.
+- **Scope honesty**: the brief's candidate-mask/rendering-mask distinction and per-tile water/land topology live in the binary acre BG data (collision arrays + display lists), not in derivable code. The collision-level bridge masks were already ported in `terrain_walls.rs` (bridge_search_water, woodb table, bridge policy).
+
+### Rust rewrite implementation
+
+`rust/src/bridge_acre.rs`: block-type constants, `is_river_block`/`is_bridge_block`, `river_to_bridge_block` (enum arithmetic), `PLUSS_BRIDGE` (verbatim 108-entry table, generated from source), `bridge_counterpart`, `select_bridge_blocks` (the SetBridgeBlock selection kernel). C ABI: `pc_river_to_bridge_block`, `pc_bridge_counterpart`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 ### Runtime Port Progress: Slope-Wall Policy
 
 ### Source findings (all verified against the local decomp)
