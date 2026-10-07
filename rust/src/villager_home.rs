@@ -396,12 +396,13 @@ mod tests {
         assert!(!check_grow(14, true, false, true, true));
         assert!(!check_grow(14, true, true, false, true));
         assert!(!check_grow(14, true, true, true, false));
-        // Min-looks balancing.
+        // Min-looks balancing: mNpc_GetMinLooks picks looks categories with
+        // the smallest currently-present count among eligible ones.
         let pop = [1usize, 1, 3, 0, 1, 0];
         let elig = [true, true, true, true, true, true];
-        assert_eq!(min_looks_bitfield(&pop, &elig), 0b011000);
+        assert_eq!(min_looks_bitfield(&pop, &elig), 0b101000); // looks 3,5 at pop 0
         let elig2 = [true, true, true, false, true, true];
-        assert_eq!(min_looks_bitfield(&pop, &elig2), 0b010000);
+        assert_eq!(min_looks_bitfield(&pop, &elig2), 0b100000); // looks 5 at pop 0
         // Candidate eligibility.
         assert!(grow_candidate_eligible(false, false, grow_perm::STARTER));
         assert!(grow_candidate_eligible(false, false, grow_perm::MOVE_IN));
@@ -415,6 +416,6 @@ mod tests {
         assert_eq!(pc_check_grow(15, 1, 1, 1, 1), 0);
         let pop_arr = [1usize, 1, 3, 0, 1, 0];
         let elig_arr = [1u8, 1, 1, 1, 1, 1];
-        assert_eq!(pc_min_looks_bitfield(pop_arr.as_ptr(), elig_arr.as_ptr()), 0b011000);
+        assert_eq!(pc_min_looks_bitfield(pop_arr.as_ptr(), elig_arr.as_ptr()), 0b101000);
     }
 }

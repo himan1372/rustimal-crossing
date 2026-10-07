@@ -234,7 +234,7 @@ pub extern "C" fn pc_talk_count_allowed(talk_num: u8, talk_num_max: u8, timer: u
 
 /// C ABI: patience classification (0/1/2).
 #[no_mangle]
-pub extern "C" fn pc_talk_patience(talk_num: u8, over_impatient_num: u8, talk_num_max: u8) -> u8 {
+pub extern "C" fn pc_talk_patience_raw(talk_num: u8, over_impatient_num: u8, talk_num_max: u8) -> u8 {
     talk_patience(talk_num, over_impatient_num, talk_num_max) as u8
 }
 
@@ -317,6 +317,6 @@ mod tests {
         assert_eq!(talk_patience(15, 12, 15), TalkPatience::OverImpatient);
         assert_eq!(talk_patience_for_feeling(0, 14), TalkPatience::Impatient);
         assert_eq!(pc_talk_count_allowed(3, 15, 0), 1);
-        assert_eq!(pc_talk_patience(15, 12, 15), 2);
+        assert_eq!(pc_talk_patience_raw(15, 12, 15), 2);
     }
 }

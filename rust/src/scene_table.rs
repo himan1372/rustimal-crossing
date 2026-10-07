@@ -101,63 +101,89 @@ pub fn fieldct_unpack(word: &SceneWord) -> FieldCtParams {
 }
 
 /// Condensed per-scene manifest: every decompiled *_info[] array decoded
-/// to counts/params. Fields: (sound0, sound1, doors, arrange_ftr,
-/// arrange_room_ct, ctrl_actors, actors, obj_banks, item_type, bg_num,
-/// bg_disp_size, room_type, draw_type). arrange_ftr = 255 means absent.
+/// to counts/params. `arrange_ftr` = 255 means the word is absent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SceneManifest {
+    pub sound0: u8,
+    pub sound1: u8,
+    pub doors: u8,
+    pub arrange_ftr: u8,
+    pub arrange_room_ct: bool,
+    pub ctrl_actors: u8,
+    pub actors: u8,
+    pub obj_banks: u8,
+    pub item_type: u8,
+    pub bg_num: u8,
+    pub bg_disp_size: u16,
+    pub room_type: u8,
+    pub draw_type: u8,
+}
+
+const fn m(
+    s0: u8, s1: u8, doors: u8, ftr: u8, arc: bool, ctrl: u8, act: u8, bank: u8,
+    it: u8, bg: u8, disp: u16, rt: u8, dt: u8,
+) -> SceneManifest {
+    SceneManifest {
+        sound0: s0, sound1: s1, doors, arrange_ftr: ftr, arrange_room_ct: arc,
+        ctrl_actors: ctrl, actors: act, obj_banks: bank, item_type: it,
+        bg_num: bg, bg_disp_size: disp, room_type: rt, draw_type: dt,
+    }
+}
+
 #[rustfmt::skip]
-pub const SCENE_MANIFESTS: [(u8, u8, u8, u8, bool, u8, u8, u8, u8, u8, u16, u8, u8); SCENE_NUM] = [
-    (0,0, 0,255, false, 12,2,1, 0,4,0x5000, 0,0), //  0 test01
-    (0,0, 0,255, false, 12,0,0, 0,4,0x5000, 0,0), //  1 test02
-    (0,0, 0,255, false, 12,2,4, 0,4,0x5000, 0,0), //  2 test03
-    (0,0, 0,255, false, 14,2,0, 0,4,0x5000, 0,0), //  3 water_test
-    (0,0, 0,255, false,  0,0,0, 0,4,0x5000, 0,0), //  4 test_step01
-    (0,0, 0,255, false, 12,0,0, 0,4,0x5000, 0,0), //  5 test04
-    (0,0, 1, 30, false, 12,2,1, 1,1,0xA000, 2,1), //  6 npc_room01
-    (0,0, 0,255, false, 17,2,2, 0,4,0x1C00, 0,0), //  7 test_fd_npc_land
-    (0,0, 0,255, false,  9,1,1, 0,4,0x2800, 0,0), //  8 field_tool_field
-    (0,0, 1,  6, false, 16,0,1, 1,1,0xA000, 3,1), //  9 shop01
-    (0,0, 0,255, false, 11,0,0, 0,4,0x5000, 0,0), // 10 BG_TEST01
-    (0,0, 0,255, false, 11,0,0, 0,4,0x7800, 0,0), // 11 BG_TEST01_XLU
-    (0,0, 1,  6,  true, 11,0,0, 1,1,0xA000, 3,1), // 12 broker_shop
-    (0,0, 1, 30,  true,  9,3,1, 1,1,0xA000, 3,1), // 13 fg_tool_in
-    (0,0, 1,  6, false, 10,3,1, 3,1,0xA000, 3,1), // 14 post_office
-    (0,0, 1,  8,  true,  6,0,0, 0,1,0x7800, 3,2), // 15 start_demo1
-    (0,0, 1,  8,  true,  6,0,0, 0,1,0xA000, 3,2), // 16 start_demo2
-    (0,0, 1,255, false, 10,2,2, 2,1,0xA000, 3,1), // 17 police_box
-    (0,0, 1,255, false,  8,0,0, 0,1,0xA000, 3,1), // 18 buggy
-    (0,0, 0,255,  true,  3,0,0, 0,1,0xA000, 3,3), // 19 player_select
-    (0,1, 1, 30, false, 12,2,2, 1,1,0xA000, 1,1), // 20 player_room_s
-    (0,1, 1, 32, false, 12,2,2, 1,1,0xA000, 1,1), // 21 player_room_m
-    (0,1, 1, 48, false, 12,2,2, 1,1,0xA000, 1,1), // 22 player_room_l
-    (0,0, 1,  6, false, 16,0,1, 1,1,0xA000, 3,1), // 23 shop02
-    (0,0, 1,  6, false, 15,0,0, 1,1,0xA000, 3,1), // 24 shop03
-    (0,0, 1,  6, false, 15,0,1, 1,1,0xA000, 3,1), // 25 shop04_1f
-    (0,0, 0,255, false,  5,0,0, 0,4,0x5000, 0,0), // 26 test05
-    (0,0, 0,255,  true,  3,0,0, 0,1,0xA000, 3,3), // 27 PLAYER_SELECT2
-    (0,0, 0,255,  true,  3,0,0, 0,1,0xA000, 3,3), // 28 PLAYER_SELECT3
-    (0,0, 1,  6, false, 16,0,1, 1,1,0xA000, 3,1), // 29 shop04_2f
-    (0,0, 0,255, false, 12,0,0, 0,4,0x2800, 0,0), // 30 event_notification
-    (0,0, 1,  3, false, 11,0,0, 1,1,0xA000, 3,1), // 31 kamakura
-    (0,0, 0,255, false,  9,1,1, 0,4,0x2800, 0,0), // 32 field_tool_field (shared w/ 8)
-    (0,0, 0,255, false, 10,1,1, 0,4,0x2000, 0,0), // 33 title_demo
-    (0,0, 0,255,  true,  3,0,0, 0,1,0xA000, 3,3), // 34 PLAYER_SELECT4
-    (0,1, 4,  1, false, 12,4,1, 1,1,0xA000, 1,1), // 35 museum_entrance
-    (0,1, 1,  1, false, 11,1,1, 1,1,0xA000, 1,1), // 36 museum_picture
-    (0,1, 1, 25, false, 12,0,1, 1,1,0xA000, 1,1), // 37 museum_fossil
-    (0,1, 1,255, false, 11,4,2, 1,1,0xB000, 1,1), // 38 museum_insect
-    (0,1, 1,  1, false, 11,2,1, 1,1,0xA000, 1,1), // 39 museum_fish
-    (0,1, 2, 48, false, 12,2,2, 1,1,0xA000, 1,1), // 40 player_room_ll1
-    (0,1, 1, 48, false, 12,2,2, 1,1,0xA000, 1,1), // 41 player_room_ll2
-    (0,1, 1, 48, false, 12,0,1, 1,1,0xA000, 1,1), // 42 p_room_bm_s
-    (0,1, 1, 48, false, 12,0,1, 1,1,0xA000, 1,1), // 43 p_room_bm_m
-    (0,1, 1, 48, false, 12,0,1, 1,1,0xA000, 1,1), // 44 p_room_bm_l
-    (0,1, 1, 48, false, 12,0,1, 1,1,0xA000, 1,1), // 45 p_room_bm_ll1
-    (0,1, 1,  1, false, 12,3,1, 1,1,0xA000, 1,1), // 46 NEEDLEWORK
-    (0,1, 1, 48, false, 12,2,2, 1,1,0xA000, 1,1), // 47 player_room_island
-    (0,0, 1, 30, false, 12,2,1, 1,1,0xA000, 2,1), // 48 npc_room_island
-    (0,0, 1,  8,  true,  6,0,0, 0,1,0x7800, 3,2), // 49 start_demo3
-    (0,0, 1, 30, false, 12,0,0, 1,1,0xA000, 2,1), // 50 lighthouse
-    (0,0, 1,  3, false, 11,0,0, 1,1,0xA000, 3,1), // 51 tent
+pub const SCENE_MANIFESTS: [SceneManifest; SCENE_NUM] = [
+    m(0,0, 0,255, false, 12,2,1, 0,4,0x5000, 0,0), //  0 test01
+    m(0,0, 0,255, false, 12,0,0, 0,4,0x5000, 0,0), //  1 test02
+    m(0,0, 0,255, false, 12,2,4, 0,4,0x5000, 0,0), //  2 test03
+    m(0,0, 0,255, false, 14,2,0, 0,4,0x5000, 0,0), //  3 water_test
+    m(0,0, 0,255, false,  0,0,0, 0,4,0x5000, 0,0), //  4 test_step01
+    m(0,0, 0,255, false, 12,0,0, 0,4,0x5000, 0,0), //  5 test04
+    m(0,0, 1, 30, false, 12,2,1, 1,1,0xA000, 2,1), //  6 npc_room01
+    m(0,0, 0,255, false, 17,2,2, 0,4,0x1C00, 0,0), //  7 test_fd_npc_land
+    m(0,0, 0,255, false,  9,1,1, 0,4,0x2800, 0,0), //  8 field_tool_field
+    m(0,0, 1,  6, false, 16,0,1, 1,1,0xA000, 3,1), //  9 shop01
+    m(0,0, 0,255, false, 11,0,0, 0,4,0x5000, 0,0), // 10 BG_TEST01
+    m(0,0, 0,255, false, 11,0,0, 0,4,0x7800, 0,0), // 11 BG_TEST01_XLU
+    m(0,0, 1,  6,  true, 11,0,0, 1,1,0xA000, 3,1), // 12 broker_shop
+    m(0,0, 1, 30,  true,  9,3,1, 1,1,0xA000, 3,1), // 13 fg_tool_in
+    m(0,0, 1,  6, false, 10,3,1, 3,1,0xA000, 3,1), // 14 post_office
+    m(0,0, 1,  8,  true,  6,0,0, 0,1,0x7800, 3,2), // 15 start_demo1
+    m(0,0, 1,  8,  true,  6,0,0, 0,1,0xA000, 3,2), // 16 start_demo2
+    m(0,0, 1,255, false, 10,2,2, 2,1,0xA000, 3,1), // 17 police_box
+    m(0,0, 1,255, false,  8,0,0, 0,1,0xA000, 3,1), // 18 buggy
+    m(0,0, 0,255,  true,  3,0,0, 0,1,0xA000, 3,3), // 19 player_select
+    m(0,1, 1, 30, false, 12,2,2, 1,1,0xA000, 1,1), // 20 player_room_s
+    m(0,1, 1, 32, false, 12,2,2, 1,1,0xA000, 1,1), // 21 player_room_m
+    m(0,1, 1, 48, false, 12,2,2, 1,1,0xA000, 1,1), // 22 player_room_l
+    m(0,0, 1,  6, false, 16,0,1, 1,1,0xA000, 3,1), // 23 shop02
+    m(0,0, 1,  6, false, 15,0,0, 1,1,0xA000, 3,1), // 24 shop03
+    m(0,0, 1,  6, false, 15,0,1, 1,1,0xA000, 3,1), // 25 shop04_1f
+    m(0,0, 0,255, false,  5,0,0, 0,4,0x5000, 0,0), // 26 test05
+    m(0,0, 0,255,  true,  3,0,0, 0,1,0xA000, 3,3), // 27 PLAYER_SELECT2
+    m(0,0, 0,255,  true,  3,0,0, 0,1,0xA000, 3,3), // 28 PLAYER_SELECT3
+    m(0,0, 1,  6, false, 16,0,1, 1,1,0xA000, 3,1), // 29 shop04_2f
+    m(0,0, 0,255, false, 12,0,0, 0,4,0x2800, 0,0), // 30 event_notification
+    m(0,0, 1,  3, false, 11,0,0, 1,1,0xA000, 3,1), // 31 kamakura
+    m(0,0, 0,255, false,  9,1,1, 0,4,0x2800, 0,0), // 32 field_tool_field (shared w/ 8)
+    m(0,0, 0,255, false, 10,1,1, 0,4,0x2000, 0,0), // 33 title_demo
+    m(0,0, 0,255,  true,  3,0,0, 0,1,0xA000, 3,3), // 34 PLAYER_SELECT4
+    m(0,1, 4,  1, false, 12,4,1, 1,1,0xA000, 1,1), // 35 museum_entrance
+    m(0,1, 1,  1, false, 11,1,1, 1,1,0xA000, 1,1), // 36 museum_picture
+    m(0,1, 1, 25, false, 12,0,1, 1,1,0xA000, 1,1), // 37 museum_fossil
+    m(0,1, 1,255, false, 11,4,2, 1,1,0xB000, 1,1), // 38 museum_insect
+    m(0,1, 1,  1, false, 11,2,1, 1,1,0xA000, 1,1), // 39 museum_fish
+    m(0,1, 2, 48, false, 12,2,2, 1,1,0xA000, 1,1), // 40 player_room_ll1
+    m(0,1, 1, 48, false, 12,2,2, 1,1,0xA000, 1,1), // 41 player_room_ll2
+    m(0,1, 1, 48, false, 12,0,1, 1,1,0xA000, 1,1), // 42 p_room_bm_s
+    m(0,1, 1, 48, false, 12,0,1, 1,1,0xA000, 1,1), // 43 p_room_bm_m
+    m(0,1, 1, 48, false, 12,0,1, 1,1,0xA000, 1,1), // 44 p_room_bm_l
+    m(0,1, 1, 48, false, 12,0,1, 1,1,0xA000, 1,1), // 45 p_room_bm_ll1
+    m(0,1, 1,  1, false, 12,3,1, 1,1,0xA000, 1,1), // 46 NEEDLEWORK
+    m(0,1, 1, 48, false, 12,2,2, 1,1,0xA000, 1,1), // 47 player_room_island
+    m(0,0, 1, 30, false, 12,2,1, 1,1,0xA000, 2,1), // 48 npc_room_island
+    m(0,0, 1,  8,  true,  6,0,0, 0,1,0x7800, 3,2), // 49 start_demo3
+    m(0,0, 1, 30, false, 12,0,0, 1,1,0xA000, 2,1), // 50 lighthouse
+    m(0,0, 1,  3, false, 11,0,0, 1,1,0xA000, 3,1), // 51 tent
 ];
 
 /// Sound room types from mPl_SceneNo2SoundRoomType (scene id -> 0..3).
@@ -213,16 +239,16 @@ pub extern "C" fn pc_scene_manifest(idx: usize, out: *mut u8) -> u8 {
     if out.is_null() || idx >= SCENE_NUM {
         return 0;
     }
-    let m = SCENE_MANIFESTS[idx];
+    let m = &SCENE_MANIFESTS[idx];
     unsafe {
-        *out.add(0) = m.2;
-        *out.add(1) = m.3;
-        *out.add(2) = m.4 as u8;
-        *out.add(3) = m.5;
-        *out.add(4) = m.6;
-        *out.add(5) = m.7;
-        *out.add(6) = m.0;
-        *out.add(7) = m.1;
+        *out.add(0) = m.doors;
+        *out.add(1) = m.arrange_ftr;
+        *out.add(2) = m.arrange_room_ct as u8;
+        *out.add(3) = m.ctrl_actors;
+        *out.add(4) = m.actors;
+        *out.add(5) = m.obj_banks;
+        *out.add(6) = m.sound0;
+        *out.add(7) = m.sound1;
     }
     1
 }
@@ -270,16 +296,16 @@ mod tests {
     #[test]
     fn manifest_spot_checks() {
         // 6 npc_room01
-        let m = SCENE_MANIFESTS[6];
-        assert_eq!((m.2, m.3, m.5, m.6, m.7), (1, 30, 12, 2, 1));
+        let m = &SCENE_MANIFESTS[6];
+        assert_eq!((m.doors, m.arrange_ftr, m.ctrl_actors, m.actors, m.obj_banks), (1, 30, 12, 2, 1));
         // 35 museum_entrance: 4 doors
-        assert_eq!(SCENE_MANIFESTS[35].2, 4);
+        assert_eq!(SCENE_MANIFESTS[35].doors, 4);
         // 38 museum_insect: 0xB000 disp
-        assert_eq!(SCENE_MANIFESTS[38].10, 0xB000);
+        assert_eq!(SCENE_MANIFESTS[38].bg_disp_size, 0xB000);
         // 20 player_room_s: SOUND(0,1), 30 ftr
-        assert_eq!((SCENE_MANIFESTS[20].0, SCENE_MANIFESTS[20].1, SCENE_MANIFESTS[20].3), (0, 1, 30));
+        assert_eq!((SCENE_MANIFESTS[20].sound0, SCENE_MANIFESTS[20].sound1, SCENE_MANIFESTS[20].arrange_ftr), (0, 1, 30));
         // 49 start_demo3: TRAIN draw type
-        assert_eq!(SCENE_MANIFESTS[49].12, draw_type::TRAIN);
+        assert_eq!(SCENE_MANIFESTS[49].draw_type, draw_type::TRAIN);
         // Sound room types
         assert_eq!(pc_scene_sound_room_type(20), 1);
         assert_eq!(pc_scene_sound_room_type(6), 2);
