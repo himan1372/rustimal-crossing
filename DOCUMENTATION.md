@@ -611,6 +611,25 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Villager Selection + House Lots
+
+### Source findings (all verified against the local decomp)
+
+- Init order is decisive (m_start_data_init.c): `mFM_InitFgCombiSaveData` (field gen) runs at line 205, `mNpc_InitNpcAllInfo` at 225, then `mNpc_Grow` and `mNpc_InitNpcData`. The river/cliffs/pond/acre layout exist before any villager exists — villagers never carve terrain.
+- `Anmhome_c` (m_npc.h): type_unused + block_x/block_z/ut_x/ut_z. Reservation markers SIGN00-SIGN20 (21 IDs), `mNT_IS_RESERVE` (m_name_table.h).
+- `mNpc_MakeReservedListBeforeFieldct` scans all 7680 FG cells (5x6 acres x 16x16) for reservation markers. `mNpc_SetNpcHome` shuffles the lot-index table with 30 swaps (villager order NOT shuffled), assigns lots to homeless villagers one-to-one, with the verbatim `ut_z + 1` offset (marker is one unit south of the stored house coordinate).
+- `mNpc_BuildHouseBeforeFieldct`: 3x3 footprint (`ut_d` table verbatim), cell pattern house/signboard/RSV_NO x7, requires one-unit acre-edge clearance, only touches the FG item layer.
+- Initial villagers (`mNpc_DecideLivingNpcMax`): shuffle all NPC definitions, accept STARTER-permission candidates with uncovered looks categories — coverage-constrained, not pure random. Called with count = mNpc_LOOKS_NUM (6).
+- Natural growth: field-rank table {40,50,60,70,80,90,100} with `RANDOM(100) < prob`; gates are population<15, >=1 day elapsed, player from this town, talked to all villagers. `mNpc_GetMinLooks` picks the least-populated looks category with eligible unseen NPCs (ties -> bitfield); candidates need not-present + not-appeared + STARTER/MOVE_IN, then uniform choice.
+
+### Rust rewrite implementation
+
+`rust/src/villager_home.rs`: HomeInfo, reservation constants, collect_reserved_lots (source scan order), make_rand_table + LOT_SHUFFLE_SWAPS, assign_homes (with ut_z+1), HOUSE_FOOTPRINT + cells, house_footprint_in_bounds, decide_living_npc_max, GROW_PROB + check_grow_field_rank + check_grow, min_looks_bitfield, grow_candidate_eligible. C ABI: pc_is_reserve_marker, pc_house_footprint_in_bounds, pc_check_grow_field_rank, pc_check_grow, pc_min_looks_bitfield. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- The have-appeared table lifecycle, summer-camp selection, mFM_GetReseveName river-set logic, and house destruction/restoration not yet ported. FG template SIGN data (data_combi.c) still undecoded — the next layer per the brief. No C callers rewired.
+
 ### Runtime Port Progress: Field Generator Core (m_random_field_ovl)
 
 ### Source findings (all verified against the local decomp)
