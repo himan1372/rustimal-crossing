@@ -611,6 +611,27 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Player Action State Machines (Scoop, Wade, Pitfall)
+
+### Source findings (all verified against the local decomp)
+
+- The master `mPlayer_INDEX_*` enum (include/m_player.h) has 121 entries (0-120). No SWIM and no general CLIMB exist; water traversal is WADE/WADE_SNOWBALL, climbing is CLIMBUP_PITFALL only. The full enum is ported in exact C order so indices line up.
+- Request/priority arbitration (m_player_common.c_inc): systems call Player_actor_request_main_index; the request wins only when `priority - requested_main_index_priority > 0` (plus two cancel/reset gates that need game state). 45 priority levels (PRIORITY_0..44).
+- DIG_SCOOP frame events (verbatim): 14/15/16 -> DIG_HOLE args 0/1/2, 22 -> DIG_SCOOP (arg 0, or 3 for GET_SCOOP); tree-stump variant (DIG_KABU1) single event at frame 42. World hole registration at mod+20 (decal circle radius 19, arg 12).
+- GET_SCOOP: inventory transaction happens in setup (before the animation); item scale timeline <=21 -> 0, 21-27 -> 0.0016666666*(frame-21), >=27 -> 0.01; continuation protocol 0x3F -> PUTAWAY_SCOOP, 0x40 -> PUTIN_SCOOP (both priority 21).
+- FILL_SCOOP (verbatim): hole removal at 18+mod; impacts at 13/19/25 (+mod) args 3/4/5; final DIG_SCOOP effect at 40+mod.
+- `Player_actor_Check_DigScoop`: TRUE for DIG/REFLECT/GET/FILL/PUTIN_SCOOP — AIR and PUTAWAY are NOT members (matches the brief).
+- WADE: end pos 18.00001f along dir, 36-frame accel/brake curve (1.1999999/34.8), camera request (arg 9, 36.0f), then requests WALK to the end pos. WADE_SNOWBALL is the acre-boundary snowball variant.
+- CLIMBUP_PITFALL: setup calls pit_exit_proc (pit removed before the animation); umbrella held -> DERU2 else DERU1 (verbatim selector); movement is animation-driven (cKF_SkeletonInfo_R_AnimationMove_base).
+
+### Rust rewrite implementation
+
+`rust/src/player_action.rs`: full `index` enum (121 entries, C order), `check_request_main_priority`/`request_admissible`, dig/fill/get frame-event functions, `check_dig_scoop`, wade constants + `wade_finished`, `climbup_pitfall_anim`. C ABI: pc_player_request_priority_delta, pc_dig_scoop_frame_event, pc_fill_scoop_frame_event, pc_get_scoop_continuation, pc_check_dig_scoop, pc_wade_finished, pc_climbup_pitfall_anim. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- REFLECT_SCOOP frame-13 object resolution, PUTIN_SCOOP burial/golden-shovel demo, the scoop-target decision (mPlib_Check_scoop_after), and all non-scoop action states (axe/net/rod families etc.) not yet ported. No C callers rewired.
+
 ### Runtime Port Progress: NPC AI (Schedules, Reactions, Talk Throttle)
 
 ### Source findings (all verified against the local decomp)

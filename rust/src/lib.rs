@@ -58,6 +58,7 @@ mod talk_request;
 mod talk_topics;
 mod force_call;
 mod npc_ai;
+mod player_action;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;
