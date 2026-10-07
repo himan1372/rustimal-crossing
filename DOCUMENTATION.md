@@ -611,6 +611,24 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Talk-Request Driver
+
+### Source findings (all verified against the local decomp)
+
+- CORRECTION to the brief: the symbol family EXISTS. `talk_request_proc` is not one function but a per-NPC strategy hook: `typedef void (*aNPC_TALK_REQUEST_PROC)(ACTOR*, GAME*)` (ac_npc.h:254), defaulted from `aNPC_ct_data_c.talk_request_proc` (ac_npc_ct.c_inc:315) and swappable at runtime.
+- The driver is `aNPC_talk_request_event_npc` (ac_npc_talk.c_inc): a SPEAK/SPEECH/TALK demo active and NOT listenable -> `aNPC_setup_talk_start` directly; else if submenu idle (WAIT, timer 0) -> call the NPC's hook, or `mDemo_Request(mDemo_TYPE_TALK, actorx, NULL)` when no hook is installed; otherwise nothing.
+- Concrete hook behaviors: `aCD0_norm_talk_request` -> `mDemo_Request(TYPE_TALK, ..., set_norm_talk_info)` with message `msg_base[looks] + RANDOM(3)` (+17 for NEW_YEAR/AFTER_10_SEC terms, else +term*4); `aCD0_force_talk_request` -> `mDemo_Request(TYPE_SPEAK, ...)`; quest-manager clip (`aNPC_normal_talk_request`) -> clip's bool proc gates talk start; `none_proc1` installed to mean "no request".
+- Session lifecycle: `aNPC_setup_talk_start` (palActor = player, face player iff turn == NORMAL, talk_condition = START, save demo flags); `aNPC_setup_talk_end` (palActor = NULL, ignore timer = 600 when >= 0, talk_condition = NONE, force-call cleared, feel = 0xFF, demo flags restored).
+- The brief's "driver, not dialogue database" framing was correct; the actual message flow is owned by the demo system (`mDemo_Request`), which this layer only triggers.
+
+### Rust rewrite implementation
+
+`rust/src/talk_request.rs`: `TalkRequestAction::{Wait, SetupTalkStart, InvokeProc, RequestTalkDemo}`, `TalkRequestInputs`, `talk_request_dispatch` (verbatim dispatch), `normal_talk_request_gate`, `countdown_norm_msg_no`, `TalkSession::{begin, end}`. C ABI: `pc_talk_request_dispatch`, `pc_normal_talk_request_gate`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- The demo system (`mDemo_Request` internals, message flow, choice handling) is not yet researched/ported; no C callers rewired.
+
 ### Runtime Port Progress: Cliff/Slate Classification
 
 ### Source findings (all verified against the local decomp)
