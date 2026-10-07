@@ -288,7 +288,7 @@ mod tests {
         let (s, e) = unit_no_name_2_start_end(0.0, 0.0, WallName::Up, CheckType::Player);
         assert!((e[0] - s[0] - 40.0).abs() < 1e-3);
         let (s, e) = unit_no_name_2_start_end(0.0, 0.0, WallName::Up, CheckType::Normal);
-        assert!((e[0] - s[0] - 55.0).abs() < 1e-6);
+        assert!((e[0] - s[0] - 50.0).abs() < 1e-6); // U + t1
     }
 
     #[test]
