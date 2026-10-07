@@ -611,6 +611,15 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+#### Follow-up: deeper sweep analysis + column data table
+
+- The follow-up brief re-derived `mCoBG_LineWallCheck_Column` in detail; it matches the ported implementation. Two corrections/notes on the brief:
+  - Brief point 23 ("can carry a previous correction into the next test") is wrong: `reverse` is reset to `reverse0` (zero) at the top of every loop iteration and the function returns on the first accept, so `tmp_end` is always exactly `end_pos`. The accumulation is dead code, as previously documented.
+  - The "next step" (root ordering of `mCoBG_GetCrossCircleAndLine2DvectorPlaneXZ_Xyz`) was already resolved: it delegates to the vector-form intersection (already ported), cross0 = t0 = (-b+root)/2a.
+- **New**: `mCoBG_MakeOneColumnCollisionData` (column.c_inc:136) — the column spec table, verbatim: hole (19/0, atr_wall=TRUE, only when old_on_ground), small/med/large/full tree (19/30/40/60/80), stump (10 or 18 / 30), rock (19/31.5), mailbox (15/50), sign (19/45), reserve signboard (10/45), koinobori/flag (19/160). Column XZ = unit center; `pos.y` = terrain-center Y at the column's own unit; `height = pos.y + object height` (holes: `height = pos.y`). Skips the actor's own unit; 16-column cap. Item-ID classification (`IS_ITEM_*`) lives in m_name_table.h and was not ported (game-data ID lists).
+- Rust: `ColumnKind`, `column_spec`, `column_top_height`, `COLUMN_MAX` in `column_sweep.rs`. `cargo check --lib` clean. Tests written but NOT run (standing rule).
+
+
 ### Source findings (all verified against the local decomp)
 
 - `mCoBG_LineWallCheck_Column` (m_collision_bg_column.c_inc:454, verbatim): swept movement vs vertical cylinder columns. `vec_end_start = start - end`; XZ circle-line intersections via `mCoBG_GetCrossCircleAndLine2DvectorPlaneXZ_Xyz` (which delegates to the already-ported vector-form `mCoBG_GetCrossCircleAndLine2Dvector`); nearer intersection by squared XZ distance wins (strict `<`, ties go to cross1); per-axis segment-bounds test; `mult = (len_xz - sqrt(d_sq)) / len_xz`; rewind scales the FULL XYZ `vec_end_start` (trajectory truncated, direction preserved); accepted iff `end.y + rev.y <= col.height`. No actor radius added. Start-inside-column -> no sweep.

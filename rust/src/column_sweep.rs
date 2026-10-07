@@ -32,6 +32,61 @@ pub struct Column {
     pub radius: f32,
 }
 
+/// Object classes that produce columns (`mCoBG_MakeOneColumnCollisionData`).
+/// Item-ID classification lives in the `IS_ITEM_*` macros
+/// (m_name_table.h); this table carries the portable geometry.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ColumnKind {
+    /// Dug/shining hole: flat (height = terrain Y), `atr_wall = TRUE`,
+    /// only when the actor was on the ground.
+    Hole,
+    SmallTree,
+    MediumTree,
+    LargeTree,
+    /// Full-grown tree (incl. RSV_TREE).
+    FullTree,
+    /// Stump: radius 10 for the *001 variants, 18 otherwise.
+    StumpNarrow,
+    StumpWide,
+    Rock,
+    Mailbox,
+    Sign,
+    /// Reserve signboard: narrower than a normal sign.
+    SignboardReserve,
+    /// Koinobori / flag: very tall.
+    Flag,
+}
+
+/// (radius, height above the terrain-center Y, atr_wall), verbatim from
+/// `mCoBG_MakeOneColumnCollisionData`.
+pub fn column_spec(kind: ColumnKind) -> (f32, f32, bool) {
+    match kind {
+        ColumnKind::Hole => (19.0, 0.0, true),
+        ColumnKind::SmallTree => (19.0, 30.0, false),
+        ColumnKind::MediumTree => (19.0, 40.0, false),
+        ColumnKind::LargeTree => (19.0, 60.0, false),
+        ColumnKind::FullTree => (19.0, 80.0, false),
+        ColumnKind::StumpNarrow => (10.0, 30.0, false),
+        ColumnKind::StumpWide => (18.0, 30.0, false),
+        ColumnKind::Rock => (19.0, 31.5, false),
+        ColumnKind::Mailbox => (15.0, 50.0, false),
+        ColumnKind::Sign => (19.0, 45.0, false),
+        ColumnKind::SignboardReserve => (10.0, 45.0, false),
+        ColumnKind::Flag => (19.0, 160.0, false),
+    }
+}
+
+/// Column top height: `terrain_center_y + spec height`
+/// (`col->height = col->pos.y + <object height>`; holes: `height = pos.y`).
+/// `pos.y` itself is the terrain-center Y at the column's own unit
+/// (`mCoBG_GetBgY_OnlyCenter_FromWpos2`).
+pub fn column_top_height(terrain_center_y: f32, kind: ColumnKind) -> f32 {
+    terrain_center_y + column_spec(kind).1
+}
+
+/// Maximum columns per check (`mCoBG_MakeColumnCollisionData` cap).
+pub const COLUMN_MAX: usize = 16;
+
 /// Single-column kernel of `mCoBG_LineWallCheck_Column` as a pure function.
 /// `start`/`end` are the movement segment endpoints. Returns the rewind
 /// vector on an accepted collision.
@@ -320,6 +375,25 @@ mod tests {
         assert!(line_ground_check_column_one([0.0, 10.0, 0.0], [0.0, 8.0, 0.0], 4.0).is_none());
         // Upward crossing -> None (gate requires start above, end below).
         assert!(line_ground_check_column_one([0.0, 0.0, 0.0], [0.0, 10.0, 0.0], 4.0).is_none());
+    }
+
+    #[test]
+    fn column_data_table() {
+        // Verbatim specs from mCoBG_MakeOneColumnCollisionData.
+        assert_eq!(column_spec(ColumnKind::SmallTree), (19.0, 30.0, false));
+        assert_eq!(column_spec(ColumnKind::FullTree), (19.0, 80.0, false));
+        assert_eq!(column_spec(ColumnKind::StumpNarrow), (10.0, 30.0, false));
+        assert_eq!(column_spec(ColumnKind::StumpWide), (18.0, 30.0, false));
+        assert_eq!(column_spec(ColumnKind::Rock), (19.0, 31.5, false));
+        assert_eq!(column_spec(ColumnKind::Mailbox), (15.0, 50.0, false));
+        assert_eq!(column_spec(ColumnKind::SignboardReserve), (10.0, 45.0, false));
+        assert_eq!(column_spec(ColumnKind::Flag), (19.0, 160.0, false));
+        // Holes are flat and attribute-walled.
+        assert_eq!(column_spec(ColumnKind::Hole), (19.0, 0.0, true));
+        // Top height = terrain-center Y + object height.
+        assert_eq!(column_top_height(100.0, ColumnKind::LargeTree), 160.0);
+        assert_eq!(column_top_height(100.0, ColumnKind::Hole), 100.0);
+        assert_eq!(COLUMN_MAX, 16);
     }
 
     #[test]
