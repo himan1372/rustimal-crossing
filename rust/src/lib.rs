@@ -56,6 +56,7 @@ mod wpos2attribute;
 mod slate_classify;
 mod talk_request;
 mod talk_topics;
+mod force_call;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;

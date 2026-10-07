@@ -611,6 +611,25 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Force-Call State Machine
+
+### Source findings (all verified against the local decomp)
+
+- `aNPC_force_call_req_proc` (ac_npc_talk.c_inc:1): a generic NPC-clip callback — three hard gates (`force_call_flag == NONE`, `talk_condition == NONE`, `mDemo_CAN_ACTOR_TALK` = not in a SPEAK/TALK demo). On success: flag = REQUEST, `force_call_msg_no` = caller-supplied message. The caller owns message selection (e.g. m_quest.c's soccer contest passes `0x0D8B + looks`).
+- Force-talk path (`aNPC_force_talk_request`, ac_npc_talk.c_inc:597): stored `force_call_msg_no != -1` → SPEAK demo installing it; else the friendship path needs ALL of: friendship pointer known, effective friendship > 0x80 (128), action = SEARCH, act_obj = PLAYER, timer <= 0, XZ < 80, |Y| < 60.
+- Friendship chain: `aNPC_chk_avoid_and_search` (ac_npc_move.c_inc:505) requires player/NPC in the SAME block, then friendship < 0 → AVOID, > 128 → SEARCH. `aNPC_love_player` (ac_npc_think.c_inc:559) raises REQUEST only when player sex != NPC looks-sex, flag == NONE, timer <= 0 (msg_no left -1); approach pace RUN > 3 units, WALK > 1.5 units (unit = 40).
+- Automatic greeting (`aNPC_set_talk_info_talk_request_check`): mainland `0x075F + looks*3 + RANDOM(3)`, island `0x34AC + looks*3 + RANDOM(3)` — a separate message family from the quest-manager taxonomy.
+- Lifecycle: install callback sets msg+camera then clears them and moves flag to SET; on SET with SPEAK demo active → `setup_talk_start`, flag = START; talk end → `force_call_timer = 300` (≈5 s cooldown), flag = NONE. REQUEST with failed force-talk falls back to normal talk.
+- So the villager conversation universe has (at least) three lanes: player-initiated quest-manager talk (topic taxonomy), NPC-initiated force calls (this module), event/special-NPC talk.
+
+### Rust rewrite implementation
+
+`rust/src/force_call.rs`: `force_call`/`friendship` enums, `demo_can_actor_talk`, `force_call_req_proc`, `chk_avoid_and_search`, `love_player_request_gate`, `love_player_pace`, `force_talk_request` (+ `ForceTalkPath`), `auto_greeting_msg_no`, `set_talk_info_force_call`, `talk_end_force_call_reset`. C ABI: `pc_force_call_req_proc`, `pc_force_talk_request`, `pc_auto_greeting_msg_no`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Whether SCENE_NPC_HOUSE adds any house-specific trigger beyond this generic friendship path is still unproven (the brief's suggested next step); no C callers rewired.
+
 ### Runtime Port Progress: Talk Topic Taxonomy
 
 ### Source findings (all verified against the local decomp)
