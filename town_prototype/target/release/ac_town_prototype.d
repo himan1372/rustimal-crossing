@@ -1,0 +1,1 @@
+/home/hatch/workspace/game-rewrite/rustimal-crossing/town_prototype/target/release/ac_town_prototype: /home/hatch/workspace/game-rewrite/rustimal-crossing/town_prototype/src/../../rust/src/town_gen.rs /home/hatch/workspace/game-rewrite/rustimal-crossing/town_prototype/src/main.rs /home/hatch/workspace/game-rewrite/rustimal-crossing/town_prototype/viewer_template.html

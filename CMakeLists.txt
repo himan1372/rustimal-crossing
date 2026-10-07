@@ -292,6 +292,7 @@ add_custom_command(
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/aram.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/dvd.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/gbi_runtime.rs"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/game_time.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/mtx.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/profiler.rs"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/town_gen.rs"

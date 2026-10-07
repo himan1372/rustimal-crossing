@@ -16,6 +16,7 @@ use std::sync::Mutex;
 
 mod aram;
 mod dvd;
+mod game_time;
 mod gbi_runtime;
 mod letter_score;
 mod mtx;

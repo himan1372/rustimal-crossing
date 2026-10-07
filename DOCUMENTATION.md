@@ -135,6 +135,22 @@ Trigram tables: the 776 intended pairs were extracted from `str_a_table..str_z_t
 
 Source findings that correct earlier research prose: check D does not strip spaces; the run-on rule needs 4 ordinary / 9 symbol repeats (the counter resets to 0, so "3+"/"up to 7" summaries are simplifications — C and the Rust port agree); check F only fires after a separator; friendship clamps at `0..=127`, contradicting the infographics' `0..255`. An empty body would read one byte before the buffer in C (undefined behavior); the Rust port scores it as 0 instead. Unit tests cover each check, both trigram modes, quest extremes, and the `"!!!!!"` case; `cargo check --lib` is clean. Tests were written but not run (standing rule); the i686 Windows build runs on the MSYS2 machine. Workbook rows 31-34 and new Image Research Leads rows record all findings.
 
+### Runtime Port Progress: Real-Time/Calendar Engine
+
+This increment ports the GameCube time stack to `pc/rust/src/game_time.rs`, verified against the decompilation before porting. The architecture has four layers:
+
+**OS time** (`src/static/dolphin/os/OSTime.c`): 64-bit `OSTime` ticks at 40.5 MHz (bus clock / 4), epoch 2000-01-01 (`GC_UNIX_EPOCH_DIFF = 946684800`). `ticks_to_calendar_time` / `calendar_time_to_ticks` port the Gregorian conversion exactly, including `BIAS = 0xB2575`, `wday = (days + 6) % 7`, and the standard leap-year rule.
+
+**Game RTC** (`src/lb_rtc.c`): `RtcTime` (1-based month, 0=Sunday weekday), `rtc_week` (weekday via days since 1901-01-01), `get_days_by_month`, `weekly_day` (nth-weekday, e.g. 4th Thursday of November; `LAST_WEEKDAY_OF_MONTH` for the last one), and `interval_days`. The interval calculation faithfully reproduces the original's simplified century-blind leap counting — this is a real quirk, not a bug to fix. Time add/subtract helpers handle month/year rollover.
+
+**Game clock** (`src/game/m_time.c`): the key architectural finding is `GameClock { time_delta }` — the in-game Set Clock never touches hardware; `lbRTC_SetTime` stores `time_delta = desired_ticks - hard_ticks` and `lbRTC_GetTime` returns `hard_ticks + time_delta` (confirmed in `lb_rtc.c:148-165,243-260`). Seasons use the real 18-term `mTM_calender` table (not just four seasons), `term_index` reproduces `mTM_get_termIdx` exactly, `FIELD_RENEW_HOUR = 6` is the daily reset, `renewal_needed` compares save vs current ymd, and `clamp_year` enforces 2001-2030 (GC) / 2100 (PC). `game_day_ymd` maps pre-06:00 times to the previous game day.
+
+**Astronomical** (`src/lb_reki.c`): `vernal_equinox_day` / `autumnal_equinox_day` use the original float formulas from the Japanese astronomy reference; `harvest_moon_day` uses the GameCube precomputed table (2002-2030). Note: the PC port corrected 17 Harvest Moon dates (e.g. 2026: Sep 26 GC vs Sep 25 corrected); the Rust port keeps the GC table for faithfulness.
+
+**Event primitives**: `DatePredicate` (Fixed, NthWeekday, Weekly, HarvestMoon, VernalEquinox, AutumnalEquinox) and `EventWindow` (date range + daily time window, e.g. Joan Sundays 6:00-12:00) mirror how `m_event.c` builds schedules.
+
+15 unit tests pass (authorized run): epoch/weekday/roundtrips, leap years, nth-weekday spot checks (Thanksgiving 2026, etc.), season terms, 6 AM boundary, renewal, year clamps, delta-based Set Clock, equinoxes, event predicates. Workbook rows 36+ record the findings.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
@@ -152,6 +168,7 @@ Source findings that correct earlier research prose: check D does not strip spac
 | `pc/rust/src/vi.rs` | Rust PC Video Interface shim; preserves VI APIs, frame counter globals, event/swap boundary, pacing and retrace counting |
 | `pc/rust/src/villager_mail.rs` | Rust port of the fixed-size villager-mail repeat check; preserves `mNpc_CheckNormalMail_sub` C ABI |
 | `pc/rust/src/letter_score.rs` | Rust letter scoring engine: normal 7-check scorer, quest 0-11 ranker, dual trigram modes; C ABI (`mMck_check_key_hit_nes`, `mMck_check_key_hit`, `mQst_GetMailRank`) |
+| `pc/rust/src/game_time.rs` | Rust real-time/calendar engine: OSTime<->calendar, game RTC, Set-Clock delta, 18-term seasons, 6 AM renewal, equinoxes/harvest moon, event predicates |
 | `pc/rust/src/letter_score_tables.rs` | Generated: 776 intended trigram pairs extracted from the decomp's `str_a_table..str_z_table` |
 | `pc/rust/src/aram.rs` | Rust 16 MiB ARAM buffer, bump allocator, DMA and synchronous ARQ compatibility |
 | `pc/rust/src/gbi_runtime.rs` | Rust GBI runtime pointer pack/unpack shim used by N64 display-list macros |
