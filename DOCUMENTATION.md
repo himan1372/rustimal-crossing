@@ -247,6 +247,25 @@ The brief's "no global pathfinder" claim was verified function-by-function again
 
 `rust/src/movement.rs` ports the steering system: `MoveRangeType`, `FriendshipMode`, `WalkProc`, `WanderChoice`, `DECIDE_BORDERS` verbatim with `decide_wander`, `AVOID_PROBE_ANGLES`/`TURN_BACKWARD_ANGLES`/`GO_HOME_OFFSET` constants, `friendship_mode`, `Movement` (dst/avoid split, `set_dst`/`set_avoid`/`restore_dst`, acceleration-based `step`, circular `wander_destination`, `probe_avoid`, circle containment), and `check_clap`. C ABI: `pc_wander_choice`, `pc_friendship_mode`. `cargo test --lib`: 101/101 pass. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Player Movement
+
+### Source findings
+
+The brief's pipeline was verified against the player sources:
+
+- **Verified controller layer** (`m_player_controller.c_inc:156`): getters for `move_pR`, `move_angle`/`last_move_angle`, `adjusted_pR`/`last_adjusted_pR` read from `gamePT->mcon` (title demo uses its own copy). The movement code never sees raw stick values.
+- **Verified turn smoothing** (`m_player_main_walk.c_inc:131`): `movePR >= 1.0 → mod = 0.5`; `<= 0.05 → mod = 0.01`; else `0.01 + 0.5157895 * (movePR - 0.05)`; then `add_calc_short_angle2(&target, angle, CALC_EASE(mod), 2500, 50)` where `CALC_EASE(x) = 1 - sqrt(1 - x)` (`ac_museum_insect_priv.h:19`). Stronger stick = faster turning.
+- **Verified state reuse:** `Player_actor_Movement_Run` is literally `Player_actor_Movement_Walk` (`m_player_main_run.c_inc:57`); `Player_actor_Movement_Dash` is literally `Player_actor_Movement_Run` (`m_player_main_dash.c_inc:99`). DASH → RUN → WALK share one steering core.
+- **Verified dash speed:** `movePR = (7.5 * movePR) / over_norm` when the dash button is held (`mPlib_CheckButtonOnly_forDush`, B/L/R).
+- **Verified animation coupling:** `sp = 0.6 * sqrt((speed * over_norm) / 7.5)`; near one wall, `sp *= sqrt(|sin(wall_angle − facing)|)` clamped to 0.22 minimum.
+- **Verified braking:** `Player_actor_Movement_Base_Braking` with amount `0.32625001` (`m_player_common.c_inc:1494`).
+- **Verified dash terrain sampling:** the 12 offsets verbatim (0/±20 lateral at 0, 28.28, 56.57, 84.85 forward), each checked with `mCoBG_GetBgNorm_FromWpos`.
+- Player vs villager: same background-collision world, but the player steers from the stick (no destination) while villagers steer toward AI destinations.
+
+### Rust rewrite implementation
+
+`rust/src/player_move.rs` ports the locomotion core: `ControllerMove` (the `mcon` fields), `turn_mod`/`calc_ease`/`smooth_turn_toward` (shortest-arc facing), `LocomotionState` with the `movement_core` hierarchy (Dash→Run→Walk), `anim_speed`/`anim_speed_near_wall`, `BRAKE_AMOUNT`, `DASH_SAMPLE_OFFSETS` verbatim, and `PlayerMovement` (`step_core`, `brake`). C ABI: `pc_turn_mod`, `pc_locomotion_core`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings
