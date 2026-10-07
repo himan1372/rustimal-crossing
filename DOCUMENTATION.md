@@ -284,6 +284,23 @@ The brief's two-system model was verified against the headers and sources:
 
 `rust/src/collision.rs` ports both systems: `CollisionData` with exact bit packing/unpacking and flat detection, `UnitArea`, `WallKind`, `SlateDir` with diagonal-comparison detection, `WallSeg` (signed distance, normal-based correction), directional hit flags, `BgResult`, the neighborhood-size rule (3/5/7 by range), plane-equation ground height, ground Y correction, `ColliderType`/groups/`Mass` with mass-split separation rules, and sphere-overlap depth. C ABI: `pc_collision_neighborhood`, `pc_collision_pack`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Inventory Scan (Impulse Buying)
+
+### Source findings
+
+The brief's inventory-query model was verified against `m_private.c`/`m_private.h`/`m_npc.c`:
+
+- **Verified possession primitive** (`m_private.c:314`): `mPr_GetPossessionItemIdx` is a linear scan over `priv->inventory.pockets` (`mPr_POCKETS_SLOT_COUNT` = 15), returning the first matching slot or -1. Deterministic, no RNG, stops at first match.
+- **Verified condition-aware variant** (`m_private.c:335`): `mPr_GetPossessionItemIdxWithCond` also requires the 2-bit condition to match; conditions are packed via `mPr_GET_ITEM_COND` = `(conds >> (slot << 1)) & 3`.
+- **Verified count variants:** `mPr_GetPossessionItemSum` counts matches ("how many" vs "where").
+- **Verified free-slot reuse** (`m_private.c:651`): finding an empty pocket is `mPr_GetPossessionItemIdx(priv, EMPTY_NO)` — the same primitive.
+- **Verified NPC furniture filter** (`m_npc.c:3066`): `mNpc_CheckSelectFurniture` excludes clothing, umbrellas, insects, fish, gyroids, identified fossils, and NES games; `mNpc_DecideNpcFurniture` counts eligible house furniture and picks randomly into `reward_furniture`.
+- "Impulse buying" is community terminology, not a decomp function. The confirmed architecture is two-stage: NPC logic picks a candidate (mechanism untraced), then the possession primitive checks the pockets. The exact candidate-selection algorithm (random pocket vs random item vs favorite-first) is not yet proven.
+
+### Rust rewrite implementation
+
+`rust/src/inventory.rs` ports the query layer: `Inventory` (15 pockets + packed conditions), `find_item`/`find_item_with_cond`/`count_item`/`count_item_with_cond`/`find_free_slot`/`put`, `item_cond`/`set_item_cond` with the exact shift math, `ExcludedFurniture` + `selectable_furniture`, `CandidateStrategy` (FavoriteFirst/RandomCarried, marked rewrite-owned/untraced), and `resolve_candidate`. C ABI: `pc_inventory_find`, `pc_inventory_count`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings

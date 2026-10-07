@@ -23,6 +23,7 @@ mod shop;
 mod behavior;
 mod collision;
 mod interaction;
+mod inventory;
 mod movement;
 mod player_move;
 mod scene;
