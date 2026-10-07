@@ -611,6 +611,25 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Cliff/Slate Classification
+
+### Source findings (all verified against the local decomp)
+
+- CORRECTION to the brief: `mCoBG_CheckCliffAttr` and `mCoBG_Wpos2CheckSlateCol` DO exist verbatim in the current source — in `m_collision_bg_info.c_inc` (USA: lines 1040/1088; AUS tree identical). The brief searched the wrong files.
+- `mCoBG_CheckCliffAttr(attr)` (verbatim): TRUE iff attr in 47-54 (grass4 cliff/tunnel) or 55-58 (grass3 cliff). Purely semantic; used by the talk camera (`Camera2_TalkCheckCliffLRRange`, m_camera2.c:1124).
+- `mCoBG_Wpos2CheckSlateCol(pos, check_attr)` (verbatim): TRUE if `slate_flag`; else if check_attr, TRUE iff attr in {27,28,29,30, 37,38, 39,40,41,42, 55,56,57,58} — wood-bridge pieces (NOT the 31 center), wave_se/sw (NOT wave_s 36), river banks, grass3 cliff. Used by the snowman actor with check_attr=FALSE (ac_snowman.c:679), i.e. as a pure slate_flag test blocking snowman rolling on slate units.
+- `mCoBG_WoodSoundEffect` (adjacent, same file): TRUE for WOOD (23) and 27-31 INCLUDING the 31 center — ported as a bonus.
+- `mCoBG_GetAreaPolygon` slate branch (line.c_inc:119): builds the area triangle then equalizes vertex Y values toward the lower side per area. SOURCE BUG preserved (USA Rev. 0, unfixed): in the AREA_W case with leftUp > leftDown, the source assigns `v0->y = v1->y` twice (comment: "this should be v2->y = v1->y"); the BUGFIX build differs. Net unfixed effect: v0 = v1 = leftDown, v2 stays center.
+- `mCoBG_GetBgNorm_FromWpos` (info.c_inc:81): slate_flag == 1 reports a straight-up normal (0, 100, 0); flat non-slate terrain reports the same; only uneven non-slate terrain gets a real triangle normal.
+
+### Rust rewrite implementation
+
+`rust/src/slate_classify.rs`: `check_cliff_attr`, `wpos2check_slate_col` (+ `SLATE_COL_ATTRS` table), `wood_sound_effect`, `slate_ground_normal`, `slate_area_polygon_y` (verbatim equalization incl. the AREA_W @BUG). C ABI: `pc_check_cliff_attr`, `pc_wpos2check_slate_col`, `pc_wood_sound_effect`, `pc_slate_area_polygon_y`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Full `GetAreaPolygon` non-slate branch and `GetNormTriangle` not yet ported; no C callers rewired.
+
 ### Runtime Port Progress: SearchAttribute + Slate Ground Height
 
 ### Source findings (all verified against the local decomp)
