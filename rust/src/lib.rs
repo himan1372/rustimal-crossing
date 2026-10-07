@@ -20,6 +20,7 @@ mod game_time;
 mod buried_items;
 mod house;
 mod shop;
+mod scene;
 mod gbi_runtime;
 mod letter_score;
 mod mtx;
