@@ -1196,8 +1196,10 @@ mod tests {
         assert_eq!(get_area_y_slating_unit(0, 2, 0, 3, wall_name::SLATE_DOWN, 3), 30.0);
         assert_eq!(get_area_y_slating_unit(0, 2, 0, 3, wall_name::SLATE_DOWN, 1), 20.0);
         assert_eq!(get_area_y_slating_unit(0, 2, 0, 3, wall_name::SLATE_DOWN, 2), 20.0);
-        // SLATE_UP fallthrough: unknown area falls to the SLATE_DOWN mapping.
-        assert_eq!(get_area_y_slating_unit(4, 2, 1, 3, wall_name::SLATE_UP, 9), 20.0); // W/S -> bot_left
+        // SLATE_UP fallthrough: an invalid area falls into the SLATE_DOWN
+        // inner switch, hits `default`, and the function returns 0.0.
+        // (Real areas always come from GetUnitArea as 0-3.)
+        assert_eq!(get_area_y_slating_unit(4, 2, 1, 3, wall_name::SLATE_UP, 9), 0.0);
         // Ground dispatch uses a single comparison, unlike search_slate_detail.
         assert_eq!(slate_detail_for_ground(4, 1), wall_name::SLATE_UP);
         assert_eq!(slate_detail_for_ground(1, 1), wall_name::SLATE_DOWN);
@@ -1264,9 +1266,11 @@ mod tests {
         assert!(cardinal_edge_exists(&flat, &high, wall_name::LEFT));
         assert!(cardinal_edge_exists(&flat, &high, wall_name::DOWN));
         assert!(cardinal_edge_exists(&flat, &high, wall_name::RIGHT));
-        // Partial difference on one endpoint is enough.
+        // Partial difference on one endpoint is enough. UP compares the
+        // neighbor's left_down/right_down; LEFT compares right_up/right_down,
+        // so left_down differs -> UP edge only.
         let mut part = flat;
-        part.right_up = 11.0;
+        part.left_down = 11.0;
         assert!(cardinal_edge_exists(&flat, &part, wall_name::UP));
         assert!(!cardinal_edge_exists(&flat, &part, wall_name::LEFT));
     }
