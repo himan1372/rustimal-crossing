@@ -319,6 +319,23 @@ The brief's architecture was verified against `m_npc.h`/`m_npc.c`/`m_quest.c`:
 
 `rust/src/item_prefs.rs` ports the verified structures: `NpcDefData` (cloth/umbrella/catchphrase), `NpcHouseData` (type/palette/wall/floor/layer IDs), `select_reward_furniture` (10x10 scan, eligible filter, RNG-index pick), `GoodsSource` + the verbatim 1/10 rule (`goods_source_for_furniture`), `AnmBestFtr`, `IslandFtr` (16 slots, 4 trade entries, bitfield merge, normalized slot lookup), and C ABI exports `pc_npc_house_goods`, `pc_eligible_furniture_count`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Request-Selection Caller
+
+### Source findings
+
+The brief's open question — the junction between house furniture and inventory scans — was resolved in `src/actor/ac_quest_talk_normal_init.c` (the quest talk manager for normal villagers):
+
+- **Verified junction function:** `aQMgr_decide_msg_check_possession(check_proc, base_msg, item_idx, msg_count, cancel_item)` — calls a possession-check proc; on a hit, picks a random message variant `base_msg + mQst_GetRandom(msg_count)` from a per-personality table (`l_ki_ftr[looks]`, `l_trade_ftr[looks]`, six personalities) and records the pocket index; returns -1 when the player lacks the item, failing that dialogue option.
+- **Verified "impulse buying" selector:** `aQMgr_get_possession_ftr_cpt_wl_rnd` — counts eligible carried furniture (FTR0/FTR1 foreground types plus carpets and walls, NORMAL condition, excluding the cancel item) with the Sum query variants, then `sel_idx = RANDOM(item_cnt)` and walks the pockets to take the sel_idx-th eligible item. Selection is uniform over *eligible carried items* — not over pockets, not first-match. `aQMgr_get_possession_item_rnd` does the same for insects/fish.
+- **Verified deterministic variants:** `aQMgr_get_possession_ftr_cpt_wl` (first match: FTR0 → FTR1 → carpet → wall) feeds the message-decide paths; the `_rnd` variants feed trade-offer construction (`aQMgr_order_decide_trade_N` → `aQMgr_order_decide_trade_common`).
+- **Verified trade-offer assembly:** the villager wants the player's randomly chosen carried furniture (`trade_items[0]`); category goods come from `mQst_GetGoods_common` (carrying the 1/10 house-furniture branch); the offered item is a random category good, or a pitfall seed in pitfall mode (`aQMgr_SEL_ITEM_MODE_PITFALL`).
+- **Verified probability tables:** trade message set `{25, 25, 25, 25}` (`l_trade_prob`); normal-talk set `{49, 17, 17, 17}` (`l_normal_3_prob`).
+- The brief's downgrade was correct: `mQst_GetGoods_common` is a quest goods/reward generator, not the dialogue request selector — and `m_npc.c` does not call the possession scanner. The true junction lives one layer up in the quest-talk actors.
+
+### Rust rewrite implementation
+
+`rust/src/request_selector.rs` ports the verified machinery: `pick_random_eligible` (count + `rng % count` + walk, returning pocket idx and item), `pick_first_eligible`, `decide_msg_check_possession` (message binding), `decide_idx_prob_table` (cumulative-weight dispatch) with the verbatim `TRADE_PROBS`/`NORMAL_3_PROBS` tables, `TradeOffer` + `build_trade_offer` (wanted item, category goods with `GoodsSource` per slot via the 1/10 rule, random/pitfall offered item). C ABI: `pc_request_pick_carried`, `pc_request_dispatch`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings

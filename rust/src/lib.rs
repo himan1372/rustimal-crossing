@@ -33,6 +33,7 @@ mod letter_score;
 mod mtx;
 mod npc;
 mod profiler;
+mod request_selector;
 mod save;
 mod town_gen;
 mod vi;
