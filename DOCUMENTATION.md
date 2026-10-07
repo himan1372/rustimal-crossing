@@ -266,6 +266,24 @@ The brief's pipeline was verified against the player sources:
 
 `rust/src/player_move.rs` ports the locomotion core: `ControllerMove` (the `mcon` fields), `turn_mod`/`calc_ease`/`smooth_turn_toward` (shortest-arc facing), `LocomotionState` with the `movement_core` hierarchy (Dash→Run→Walk), `anim_speed`/`anim_speed_near_wall`, `BRAKE_AMOUNT`, `DASH_SAMPLE_OFFSETS` verbatim, and `PlayerMovement` (`step_core`, `brake`). C ABI: `pc_turn_mod`, `pc_locomotion_core`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Collision
+
+### Source findings
+
+The brief's two-system model was verified against the headers and sources:
+
+- **Verified 4-byte unit record** (`m_collision_bg.h:161`): bitfields slate:1, center:5, top_left:5, bot_left:5, bot_right:5, top_right:5, attribute:6 — five height samples plus a terrain attribute per unit.
+- **Verified query bounds:** `mCoBG_UNIT_VEC_INFO_MAX` = 128 wall vectors per query, `mCoBG_WALL_COL_NUM` = 2 stored wall contacts, `mCoBG_MOVE_REGIST_MAX` = 64 moving-background registrations.
+- **Verified wall kinds** (`m_collision_bg.c:753`): normal, attribute, move.
+- **Verified slate walls** (`m_collision_bg.c:87`): diagonal normals at 45°/135° from diagonal height comparison (`mCoBG_WALL_SLATE_UP/DOWN`).
+- **Verified hit flags** (`mCoBG_HIT_WALL`, `_FRONT/_RIGHT/_LEFT/_BACK`) and result fields (on_ground, hit_wall_count, is_in_water, is_on_move_bg_obj, `rev_pos`).
+- **Verified object colliders** (`m_collision_obj.h`): joint sphere / pipe / triangle types, 50-collider table (`Cl_COLLIDER_NUM`), groups PLAYER/GROUP_2/GROUP_3, masses immovable/heavy/normal.
+- The engine reconstructs local geometry from the unit records (triangles, wall segments with top/bottom/normal) and tests the previous→current movement segment against it — swept-style, producing a `rev_pos` correction along the wall normal. Object overlaps produce `collision_vec` separation split by mass.
+
+### Rust rewrite implementation
+
+`rust/src/collision.rs` ports both systems: `CollisionData` with exact bit packing/unpacking and flat detection, `UnitArea`, `WallKind`, `SlateDir` with diagonal-comparison detection, `WallSeg` (signed distance, normal-based correction), directional hit flags, `BgResult`, the neighborhood-size rule (3/5/7 by range), plane-equation ground height, ground Y correction, `ColliderType`/groups/`Mass` with mass-split separation rules, and sphere-overlap depth. C ABI: `pc_collision_neighborhood`, `pc_collision_pack`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings

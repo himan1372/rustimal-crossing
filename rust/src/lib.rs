@@ -21,6 +21,7 @@ mod buried_items;
 mod house;
 mod shop;
 mod behavior;
+mod collision;
 mod interaction;
 mod movement;
 mod player_move;
