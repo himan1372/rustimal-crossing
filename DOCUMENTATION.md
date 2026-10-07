@@ -611,6 +611,20 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Directed-Unit Suppression + KeepH Height Family
+
+### Source findings (all verified against the local decomp)
+
+- **Directed-unit suppression lifecycle** (`mCoBG_BgCheckControll_RemoveDirectedUnitColumn`, m_collision_bg.c:1899): the caller passes (ux,uz); `mCoBG_MakeActorInf` stores them in `l_ActorInf._68/_6C`; BOTH the wall-column builder (`MakeColumnCollisionData`, line 1242) and the ground query (`GetBGHeight_NormalColumn`, line 1695) honor the exclusion; at the end the fields reset to (-1,-1). The ordinary `mCoBG_BgCheckControll` passes (-1,-1): no suppression. Terminology correction (per the brief): it is NOT "the center unit is always ignored" — it is an arbitrary directed unit per background check, which only becomes center-unit suppression when the caller passes the actor's center unit.
+- **Column base uses KeepH, not the collision center**: `mCoBG_GetBgY_OnlyCenter_FromWpos2` (bg_info.c_inc:73) = `UtKeepH*10 + BaseHeight - ground_dist`. So `column.pos.y` (and hence `column.height`) is anchored to the KeepH center height. `mCoBG_GetLayer` uses the same KeepH height (thresholds 100/220, 3-step towns).
+- **AddColumn helper** (`mCoBG_Wpos2BgUtCenterHeight_AddColumn`, bg_info.c_inc:59): column top when the unit builds one, else `collision->data.center*10 + BaseHeight`.
+- **Height-gap detector**: `mCoBG_GetBgHeightGapBetweenNowDefault` = AddColumn − FromWpos2; `mCoBG_ExistHeightGap_KeepAndNow` = `(int)gap != 0` (truncation — ±0.5 gaps read as no gap).
+- **Generic three-way query** (`mCoBG_GetBgY_AngleS_FromWpos`, bg_info.c_inc:21): max(normal, column, move-BG) minus ground_dist, but normal wins ties (`>=`) — DIFFERENT from the actor path's strict `>`; no directed-unit suppression here. Callers of the directed API remain untraced (open item).
+
+### Rust rewrite implementation
+
+`rust/src/column_sweep.rs` additions: `DirectedSuppression` (store/honor/reset lifecycle), `bg_y_only_center_from_wpos2`, `wpos2bg_ut_center_height_add_column`, `bg_height_gap_between_now_default`, `exist_height_gap_keep_and_now`, `layer` constants + `height2get_layer`, `bg_y_angles_from_wpos_select`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 ### Runtime Port Progress: Column-Derived Ground Height
 
 ### Source findings (all verified against the local decomp)

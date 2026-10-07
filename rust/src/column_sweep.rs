@@ -150,6 +150,122 @@ pub fn adjust_actor_y_ground(ground_y: f32, actor_y: f32, ground_dist: f32) -> O
     }
 }
 
+//
+// ---- Directed-unit suppression + KeepH height family ----
+//
+
+/// Directed-unit suppression lifecycle
+/// (`mCoBG_BgCheckControll_RemoveDirectedUnitColumn`, m_collision_bg.c:1899):
+/// the caller supplies (ux,uz); it is stored in `l_ActorInf._68/_6C` for the
+/// duration of ONE background check (wall-column construction AND the
+/// ground query both honor it), then reset to (-1,-1). The ordinary
+/// `mCoBG_BgCheckControll` passes (-1,-1): no suppression.
+/// Terminology: it is NOT "the center unit is always ignored" — it is an
+/// arbitrary directed unit, which only becomes center-unit suppression when
+/// the caller passes the actor's center unit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DirectedSuppression {
+    pub ux: i32,
+    pub uz: i32,
+}
+
+impl DirectedSuppression {
+    /// No suppression (what the ordinary API passes).
+    pub fn none() -> Self {
+        DirectedSuppression { ux: -1, uz: -1 }
+    }
+
+    pub fn of(ux: i32, uz: i32) -> Self {
+        DirectedSuppression { ux, uz }
+    }
+
+    /// End-of-check reset (`l_ActorInf._68 = -1; l_ActorInf._6C = -1`).
+    pub fn reset(&mut self) {
+        *self = DirectedSuppression::none();
+    }
+
+    /// Both suppression layers use this predicate: the wall-column builder
+    /// (`MakeOneColumnCollisionData` returns FALSE) and the ground query
+    /// (`GetBGHeight_NormalColumn` forces the column to 0.0).
+    pub fn is_excluded(&self, ux: i32, uz: i32) -> bool {
+        ux == self.ux && uz == self.uz
+    }
+}
+
+/// `mCoBG_GetBgY_OnlyCenter_FromWpos2` (bg_info.c_inc:73) verbatim:
+/// `KeepH * 10 + BaseHeight - ground_dist`. This — NOT
+/// `collision->data.center` — anchors column bases, and also feeds
+/// `mCoBG_GetLayer`.
+pub fn bg_y_only_center_from_wpos2(keep_h: f32, base_height: f32, ground_dist: f32) -> f32 {
+    keep_h * 10.0 + base_height - ground_dist
+}
+
+/// `mCoBG_Wpos2BgUtCenterHeight_AddColumn` (bg_info.c_inc:59):
+/// foreground-column top when the unit builds one, else the ordinary
+/// center height (`collision->data.center * 10 + BaseHeight`).
+pub fn wpos2bg_ut_center_height_add_column(
+    column_height: Option<f32>,
+    center: f32,
+    base_height: f32,
+) -> f32 {
+    match column_height {
+        Some(h) => h,
+        None => center * 10.0 + base_height,
+    }
+}
+
+/// `mCoBG_GetBgHeightGapBetweenNowDefault` (bg_info.c_inc:735):
+/// how much the column-augmented center height exceeds the KeepH baseline.
+pub fn bg_height_gap_between_now_default(add_column_y: f32, keeph_y: f32) -> f32 {
+    add_column_y - keeph_y
+}
+
+/// `mCoBG_ExistHeightGap_KeepAndNow`: the gap truncated to int is nonzero.
+pub fn exist_height_gap_keep_and_now(gap: f32) -> bool {
+    gap as i32 != 0
+}
+
+/// Elevation layers (`mCoBG_LAYER*`, m_collision_bg.h:30).
+pub mod layer {
+    pub const LAYER0: u8 = 0;
+    pub const LAYER1: u8 = 1;
+    pub const LAYER2: u8 = 2;
+}
+
+/// `mCoBG_Height2GetLayer` (bg_info.c_inc:1136) verbatim.
+pub fn height2get_layer(height: f32, is_step3: bool) -> u8 {
+    if height < 100.0 {
+        layer::LAYER0
+    } else if is_step3 {
+        if height < 220.0 {
+            layer::LAYER1
+        } else {
+            layer::LAYER2
+        }
+    } else {
+        layer::LAYER1
+    }
+}
+
+/// `mCoBG_GetBgY_AngleS_FromWpos` selection (bg_info.c_inc:21): three-way
+/// max over normal / column / moving-BG heights, minus ground_dist.
+/// NOTE the different tie semantics vs the actor path: here normal wins
+/// ties (`>=`); the actor `NormalColumn` path uses strict `>`.
+/// Returns (height, normal_won_angle) — when normal does not win outright,
+/// the ground angle stays the default zero (flat).
+pub fn bg_y_angles_from_wpos_select(
+    normal_y: f32,
+    column_y: f32,
+    move_y: f32,
+    ground_dist: f32,
+) -> (f32, bool) {
+    if normal_y >= column_y && normal_y >= move_y {
+        (normal_y - ground_dist, true)
+    } else {
+        (normal_y.max(column_y).max(move_y) - ground_dist, false)
+    }
+}
+
 /// Single-column kernel of `mCoBG_LineWallCheck_Column` as a pure function.
 /// `start`/`end` are the movement segment endpoints. Returns the rewind
 /// vector on an accepted collision.
@@ -514,6 +630,47 @@ mod tests {
         let mut won = 0u8;
         let y = pc_column_ground_select(100.0, 130.0, 0, &mut won);
         assert_eq!((y, won), (130.0, 1));
+    }
+
+    #[test]
+    fn directed_suppression_and_keeph_family() {
+        // Lifecycle: directed -> honored in both layers -> reset.
+        let mut sup = DirectedSuppression::of(5, 7);
+        assert!(sup.is_excluded(5, 7));
+        assert!(!sup.is_excluded(5, 8));
+        assert!(!sup.is_excluded(-1, -1));
+        sup.reset();
+        assert_eq!(sup, DirectedSuppression::none());
+        assert!(!sup.is_excluded(5, 7));
+        // The ordinary API suppresses nothing: (-1,-1) never matches a unit.
+        assert!(!DirectedSuppression::none().is_excluded(0, 0));
+        // KeepH center height (column anchor + layer input).
+        assert_eq!(bg_y_only_center_from_wpos2(3.0, 100.0, 0.0), 130.0);
+        assert_eq!(bg_y_only_center_from_wpos2(3.0, 100.0, 5.0), 125.0);
+        // AddColumn: column top wins when present, else center height.
+        assert_eq!(
+            wpos2bg_ut_center_height_add_column(Some(180.0), 3.0, 100.0),
+            180.0
+        );
+        assert_eq!(
+            wpos2bg_ut_center_height_add_column(None, 3.0, 100.0),
+            130.0
+        );
+        // Height gap + existence.
+        assert_eq!(bg_height_gap_between_now_default(180.0, 130.0), 50.0);
+        assert!(exist_height_gap_keep_and_now(50.0));
+        assert!(!exist_height_gap_keep_and_now(-0.5)); // (int)-0.5 truncates to 0
+        assert!(!exist_height_gap_keep_and_now(0.0));
+        assert!(!exist_height_gap_keep_and_now(0.5)); // (int)0.5 = 0
+        // Layer thresholds.
+        assert_eq!(height2get_layer(99.9, true), layer::LAYER0);
+        assert_eq!(height2get_layer(100.0, false), layer::LAYER1);
+        assert_eq!(height2get_layer(219.9, true), layer::LAYER1);
+        assert_eq!(height2get_layer(220.0, true), layer::LAYER2);
+        // Three-way select: normal wins ties (>=); else the max.
+        assert_eq!(bg_y_angles_from_wpos_select(100.0, 100.0, 90.0, 0.0), (100.0, true));
+        assert_eq!(bg_y_angles_from_wpos_select(90.0, 100.0, 95.0, 5.0), (95.0, false));
+        assert_eq!(bg_y_angles_from_wpos_select(90.0, 80.0, 100.0, 0.0), (100.0, false));
     }
 
     #[test]
