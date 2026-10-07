@@ -131,6 +131,7 @@ game inputs. `wall_priority.rs` already contains the template
 | `scene.rs` | `pc_scene_table_index`, `pc_game_dlftbls_count` | scene tables |
 | `town_gen.rs` | `pc_town_generate`, `pc_town_select_initial_villagers` | town generation (`m_random_field.c`) |
 | `endpoint_circle.rs` | `pc_cross_circle_line` | `mCoBG_GetCrossCircleAndLine2Dvector` callers |
+| `terrain_walls.rs` | `pc_terrain_wall_policy`, `pc_search_wall_flag`, `pc_bridge_search_water_mask`, `pc_bridge_quarter_attribute`, `pc_search_slate_detail` | `mCoBG_RegistNormalWallVector_AttributeOff`, `mCoBG_SearchWallFlag`, bridge water search in `m_collision_bg_wall.c_inc` / `m_collision_bg.c` |
 | `decal_circles.rs` | (registration is gameplay-driven; add ABI when a C caller is chosen) | dig/scoop actions |
 
 ### Wave 3 — engine plumbing (build-system level, do last)

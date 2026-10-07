@@ -548,6 +548,28 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 - `rewiring.md` rewritten: kernel+shim architecture, `USE_RUST` fallback pattern, differential-testing guidance (`to_bits()`, not epsilon), `f32` discipline, no_std note, and the 1A/1B/1C/1D tables with postponed items.
 - `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
 
+### Runtime Port Progress: Terrain-Wall Generation + Bridge/Water Special Case
+
+### Source findings (all verified against the local decomp)
+
+- **Terrain-wall pipeline** (`m_collision_bg.c`, `m_collision_bg_wall.c_inc`): every background check builds a 3×3/5×5/7×7 neighborhood, then `mCoBG_MakeUnitVector` generates slate walls, cardinal terrain walls (with bridge/water modifications), and attribute/forbid walls into `unit_vec[128]`; moving-BG walls, columns, and circle-defence walls follow.
+- **Terrain record** (`m_collision_bg.h:162`): 32-bit bitfield — 1-bit slate_flag, five 5-bit height samples (center, top_left, bot_left, bot_right, top_right), 6-bit unit_attribute. World offset = `value * 10.0 + base_height`.
+- **Walls are edges between units**: `mCoBG_UtInf2NormalWallVector` takes two `UnitInfo`s; `mCoBG_SearchWallFlag` picks the normal from which side is higher (UP: higher neighbor → (0,+1)/0°, else (0,−1)/180°; LEFT: (1,0)/90° vs (−1,0)/−90°; DOWN: (0,−1)/180° vs (0,1)/0°; RIGHT: (−1,0)/−90° vs (1,0)/90°). No wall when all compared heights are equal. `mCoBG_JudgeTopAndSet` assigns top/btm per endpoint.
+- **Slate detail** (`mCoBG_SearchSlateDetail`): `bot_right != top_left` → SLATE_UP; `top_right != bot_left` → SLATE_DOWN; else SLATE_UP. Slate normals: SLATE_UP → ±(√½,√½)/45°/−135°; SLATE_DOWN → (√½,−√½)/135° vs (−√½,√½)/−45°.
+- **Bridge attributes** (`m_collision_bg.h:79-87`): 27=wood NW, 28=wood SW, 29=wood SE, 30=wood NE, 31=wood center, 32=stone N, 33=stone E, 34=stone W, 35=stone S.
+- **old_in_water bridge special case** (`mCoBG_RegistNormalWallVector_AttributeOff`, verbatim): WOOD↔bridge(27–35) → bridge side's heights flattened to its minimum corner height with slate disabled, then the ordinary generator runs; bridge↔bridge and bridge↔non-wood → NO normal wall generated; ordinary↔ordinary → normal.
+- **Slate suppression**: `mCoBG_RegistSlatingWallVector_AttributeOff_Slate_OldInWater` returns early for attributes 27–35 when old_in_water.
+- **Dock/island rule** (`mCoBG_MakeUnitVector`): DOCK or ISLAND block kind forcibly clears old_in_water before generation.
+- **Water-search masks** (`mCoBG_bridge_search_water`, verbatim): `{3, 6, 12, 9, 240, 1, 8, 2, 4}` for attrs 27–35, bits indexing DIRECT (0=N,1=W,2=S,3=E,4=NW,5=NE,6=SE,7=SW) — matches each bridge piece's geometry.
+- **Quarter table** (`mCoBG_woodb_water_info`, verbatim): 27→{RIVER_NW,RIVER_NW,WOOD,WOOD}, 28→{WOOD,RIVER_SW,RIVER_SW,WOOD}, 29→{WOOD,WOOD,RIVER_SE,RIVER_SE}, 30→{RIVER_NE,WOOD,WOOD,RIVER_NE}, 31→all WOOD, 32→all WOOD.
+- **Ground-check bridge code** (`m_collision_bg.c:1730`): when old_in_water and attr 27–35, searches the masked neighbor cells for water attributes and adopts the neighboring water's attribute/height.
+- **Decomp-flagged @BUG reproduced**: the WALL_UP branch of `mCoBG_UtInf2NormalWallVector` never assigns `wall_name` (the other three branches do) — the port leaves the slot untouched for UP walls, exactly like the original.
+- **Inference (not source-confirmed)**: the *purpose* of the flatten/suppress logic (walking from water onto a bridge without hitting a phantom cliff wall) is the brief's interpretation; the source has no developer comment.
+
+### Rust rewrite implementation
+
+`rust/src/terrain_walls.rs`: `TerrainUnit` (decoded world offsets + slate + attribute), `decode_height`, `WallKind` (NormalTerrain/Attribute/MovingBackground), `WallBounds`, `TerrainWall` (geometry separate from normal, like the original), `search_slate_detail`, `judge_top_and_set`, `search_wall_flag` (all four directions verbatim), `terrain_wall_policy` → `WallPolicy::{Normal, FlattenFirst, FlattenSecond, Suppress}`, `flatten_bridge_unit`, `slate_wall_suppressed`, `apply_block_water_rule`, `bridge_search_water_mask`, `bridge_quarter_attribute`, `slate_wall_geometry`, `cardinal_wall_from_units` (reuses `segment_map::unit_no_name_2_start_end`; reproduces the UP wall_name @BUG). C ABI: `pc_terrain_wall_policy`, `pc_bridge_search_water_mask`, `pc_bridge_quarter_attribute`, `pc_search_slate_detail`, `pc_search_wall_flag`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: the full `mCoBG_MakeUnitVector` loop (neighborhood acquisition, `make_info` bit patterns, moving-BG walls), `mCoBG_SearchWaterAttributeFrom4Area`, and no C callers rewired; full Windows game link unverified.
+
 ### Rust rewrite implementation
 
 `rust/src/decal_circles.rs`: `DEFENCE_WALL_INFO[8]` verbatim, `circle_defence_wall_idx`, `make_circle_defence_walls` (ordered-pair scan, 128 cap, gate), `RegistCircleInfo`, `DecalCircleSystem` (`regist`/`calc_timer`/`init`/`active_circles`, `calc_adjust` interpolation). Reuses `columns::Column` for the live records and `segment_map::UNIT_SIZE` for unit coords. No C ABI added (registration is gameplay-driven, no stable external caller yet). `cargo check --lib` clean. Unit tests: 198/198 pass in the authorized `cargo test --lib` run on 2026-10-07 (run #6). Gaps: `mCoBG_CrossOffDecalCircle` is decomp-marked @unused/@fabricated and intentionally not ported. No C callers are rewired; full Windows game link unverified.

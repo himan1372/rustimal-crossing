@@ -29,6 +29,7 @@ mod segment_map;
 mod collision;
 mod dialogue_topics;
 mod endpoint_circle;
+mod terrain_walls;
 mod interaction;
 mod inventory;
 mod item_prefs;
