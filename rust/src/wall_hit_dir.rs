@@ -118,15 +118,16 @@ mod tests {
         assert!(check_45_angle(0, -8192));
         assert!(!check_45_angle(0, 8193));
         assert!(!check_45_angle(0, -8193));
-        // Wraparound window: |d| >= 57343.
-        assert!(check_45_angle(0, 57343));
-        assert!(!check_45_angle(0, 57342));
+        // Wraparound window: |d| >= 57343 (d = 65535 here).
+        assert!(check_45_angle(-32768, 32767));
+        assert!(!check_45_angle(0, 32767));
         // Genuine wraparound: raw d = -60000, circular = 5536 ticks.
         assert!(check_45_angle(30000, -30000));
         // Raw d = -40000, circular = 25536 ticks -> outside.
         assert!(!check_45_angle(20000, -20000));
-        // Verbatim off-by-one: circular distance 8193 still accepted.
-        assert!(check_45_angle(0, -57343));
+        // Verbatim off-by-one: raw d = -57343 (abs exactly 57343)
+        // still accepted; circularly that is 8193 ticks.
+        assert!(check_45_angle(24576, -32767));
     }
 
     #[test]
@@ -147,12 +148,17 @@ mod tests {
         // impossible here (windows are 90° apart), so check a 45°-exact tie
         // on one probe: actor = 32767 - 8192 is inside FRONT only.
         assert_eq!(search_col_own_part(0, 24575), Some(HitDir::Front));
-        // No sector: actor at 10000 ticks from every probe center.
-        assert_eq!(search_col_own_part(0, 10000), None);
+        // The four 45° probes tile the circle completely (the wraparound
+        // clause closes the 1-tick seam), so every actor angle lands in
+        // some sector: 10000 is 6384 ticks from the LEFT probe center.
+        assert_eq!(search_col_own_part(0, 10000), Some(HitDir::Left));
+        // Seam tick: circularly 8193 from the FRONT probe center, caught
+        // by the verbatim wraparound off-by-one.
+        assert_eq!(search_col_own_part(0, -24577), Some(HitDir::Front));
         // C ABI codes.
         assert_eq!(pc_hit_wall_dir(0, 32767), 1);
         assert_eq!(pc_hit_wall_dir(0, 0), 4);
-        assert_eq!(pc_hit_wall_dir(0, 10000), 0);
+        assert_eq!(pc_hit_wall_dir(0, 10000), 3);
     }
 
     #[test]
