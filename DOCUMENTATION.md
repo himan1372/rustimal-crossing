@@ -133,6 +133,23 @@ The save/storage infographic was checked against `include/m_card.h`, `src/game/m
 
 `rust/src/save.rs` ports the storage architecture: physical constants (sector size, GCI header, `SAVE_DATA_OFFSET` = 0x1440), file names and sizes, the 8-entry `SAVE_FILE_TABLE` mirroring `l_mcd_file_table`, all record counts above, a 33-region `SAVE_T_REGIONS` map with decomp offsets (spans derived to the next field, including padding), the big-endian checksum trio (`checksum_sum` / `checksum_fixup` / `checksum_valid`), block/GCI math helpers, and the `ResetPreserved` town-rebuild model. C ABI exports: `pc_save_checksum`, `pc_save_checksum_fixup`, `pc_save_checksum_valid`. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired yet; full Windows game link unverified.
 
+### Runtime Port Progress: Conversation & NPC Behavior
+
+### Source findings
+
+The conversation/NPC infographic was checked against `include/m_npc_personal_id.h`, `include/m_npc.h`, `src/game/m_npc_schedule.c`, `include/m_npc_schedule_h.h`, `src/game/m_msg_main.c_inc`, and `include/m_msg_data.h`.
+
+- **Verified six personalities:** `mNpc_LOOKS_*` in `mNpc_LOOKS_*` order: `GIRL` (normal), `KO_GIRL` (peppy), `BOY` (lazy), `SPORT_MAN` (jock), `GRIM_MAN` (cranky), `NANIWA_LADY` (snooty). The Japanese bo/fu/ge/ha/ko/ta labels do not appear in these decomp identifiers.
+- **Verified per-personality schedules:** `mNPS_schedule[mNpc_LOOKS_NUM]` holds one schedule table per personality, ported verbatim: normal sleeps 21:00–05:00, peppy 23:30–07:00, lazy 22:00–08:00, jock 01:00–05:30, cranky 05:00–10:00, snooty 02:30–09:00. Schedule states are `FIELD` (same acre as home), `IN_HOUSE`, `SLEEP`, `STAND`, `WANDER`, `WALK_WANDER`, `SPECIAL`.
+- **Verified mood fields:** `mNpc_MOOD_0`–`mNpc_MOOD_8` (9 moods) plus `Animal_c.mood`/`mood_time` ("feel"/"feel_tim"). The index-to-meaning mapping is not established from the decomp.
+- **Verified message engine:** `mMsg_ChangeMsgData` loads one of `MSG_MAX` (0x3F91) messages into the window object, resets the cursor, and sets a 20.0s timer (`mMsg_SetTimer`); `mMsg_LoadMsgData` backs it. Selection (NPC AI) and rendering (`m_msg`) are separate layers.
+- **Verified catchphrase:** mutable per-villager state, `ANIMAL_CATCHPHRASE_LEN` = 10.
+- **Verified friendship clamp:** `mNpc_AddFriendship` clamps to 0..=127 (established during the letter-scoring work).
+
+### Rust rewrite implementation
+
+`rust/src/npc.rs` ports the NPC/conversation architecture: the six personalities, the six schedule tables verbatim with `schedule_state_at`/`is_asleep` lookups, opaque 9-value moods, 10-char catchphrases, the message-window state machine (`MsgWindow::load` mirrors the cursor-reset + 20.0s timer), message script ops (text, pause, wait-input, substitution variables), dialogue-category selection from personality + context, a conversation tree (talk/favor/give/trade/bye) with answer resolution feeding mood/friendship deltas, and `NpcActor` runtime state with the source 0..=127 friendship clamp. C ABI exports: `pc_npc_schedule_state`, `pc_npc_is_asleep`. Dialogue categories, script ops, and answer effects are rewrite-owned models of the documented architecture; no authored message text or IDs are reproduced. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired yet; full Windows game link unverified.
+
 ### Runtime Port Progress: Video Interface
 
 The image shows a game/rendering path ending in a platform presentation step. Repository code supports a narrower fact: the PC `VIWaitForRetrace` implementation polls SDL events, drains pending GX work, swaps the window, applies frame pacing, records profiler data, and advances the PC frame counter. Those operations now live in `pc/rust/src/vi.rs`; calls still enter through the Dolphin VI API in `include/dolphin/vi.h`. This does not move scene logic, display-list generation, GX rendering, or gameplay into Rust.

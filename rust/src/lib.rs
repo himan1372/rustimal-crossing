@@ -20,6 +20,7 @@ mod game_time;
 mod gbi_runtime;
 mod letter_score;
 mod mtx;
+mod npc;
 mod profiler;
 mod save;
 mod town_gen;
