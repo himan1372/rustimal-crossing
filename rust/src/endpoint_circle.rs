@@ -174,6 +174,40 @@ pub fn endpoint_circle_collision(
     Some((edge, reverse))
 }
 
+/// Wall-vector primitive (`mCoBG_unit_vec_info_c`, m_collision_bg.c:27,
+/// verbatim layout): the shared 2-D collision primitive. Ordinary
+/// terrain walls populate `wall_bounds` per endpoint
+/// (`mCoBG_JudgeTopAndSet`); attribute walls — forbid vectors
+/// (`mCoBG_MakeForbidVectorData`: attributes 27-62 via
+/// `mCoBG_forbid_vector_idx`/`mCoBG_make_vector_table`) and
+/// circle-defense walls (`mCoBG_MakeCircleDefenceWall`) — set
+/// `atr_wall = 1` and NEVER populate `wall_bounds`. That is WHY the
+/// attribute collision path has no height gate: there are no bounds
+/// to test against.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct WallBounds {
+    pub start_top: f32,
+    pub start_btm: f32,
+    pub end_top: f32,
+    pub end_btm: f32,
+}
+
+/// `mCoBG_unit_vec_info_c` verbatim. `regist_p` is an opaque pointer
+/// slot (non-null => MOVE kind).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct WallVecInfo {
+    pub start: [f32; 2],
+    pub end: [f32; 2],
+    pub wall_bounds: WallBounds,
+    pub normal: [f32; 2],
+    pub normal_angle: i16,
+    pub wall_name: u8,
+    pub regist_p: *const core::ffi::c_void,
+    pub atr_wall: u8,
+}
+
 /// Wall-kind dispatch values (`mCoBG_GetWallKind` enum verbatim):
 /// `regist_p != NULL` -> MOVE; else `atr_wall` -> ATTRIBUTE; else NORMAL.
 /// The player table is `{ NormalWall_Special, AttributeWall_Special,

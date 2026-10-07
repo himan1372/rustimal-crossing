@@ -608,6 +608,16 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: AttributeWall_Special Exact Differences
 
+#### Follow-up: correcting the brief's negative result + the structural WHY
+
+- **The symbol DOES exist in the current source.** The follow-up brief searched `m_collision_bg_wall.c_inc` (wall *construction*) and concluded `AttributeWall_Special` is not an upstream name. The function is `mCoBG_Distance2Reverse_AttributeWall_Special` at **m_collision_bg.c:970** — the collision *resolution* file, which is exactly where the brief said to look next. It was already ported in the previous commit.
+- **Structural WHY (verified)**: `mCoBG_unit_vec_info_c` (m_collision_bg.c:27) is the shared primitive — `start`/`end`, `wall_bounds` (per-endpoint top/btm), `normal`, `normal_angle`, `wall_name`, `regist_p`, `atr_wall`. Ordinary walls populate `wall_bounds` via `mCoBG_JudgeTopAndSet`. Attribute walls do NOT:
+  - `mCoBG_MakeForbidVectorData` (wall.c_inc:460): attributes 27-62 -> `mCoBG_forbid_vector_idx`/`mCoBG_make_vector_table` -> predefined normal/wall_name, `atr_wall = TRUE`, `regist_p = NULL` — no `wall_bounds` assignment.
+  - `mCoBG_MakeCircleDefenceWall` (wall.c_inc:600): walls between adjacent collision columns, `atr_wall = TRUE` — no `wall_bounds` assignment.
+  - This is WHY the attribute path has no height gate: there are no bounds to test. The brief's "same horizontal primitive, atr_wall selects a different acceptance policy downstream" is exactly right.
+- **Rust**: `#[repr(C)] WallVecInfo` + `WallBounds` added to `endpoint_circle.rs` (verbatim layout) with the above documented. `cargo check --lib` clean. No new tests (nothing behavioral added).
+
+
 ### Source findings (all verified against the local decomp)
 
 - **The symbol exists** (`mCoBG_Distance2Reverse_AttributeWall_Special`, m_collision_bg.c:970). The brief's hypothesis is confirmed and sharpened with the exact diffs vs `mCoBG_Distance2Reverse_NormalWall_Special`:
