@@ -196,6 +196,23 @@ The house/shop brief was traced through `include/m_player.h`, `include/m_home_h.
 
 ### Source findings
 
+### Runtime Port Progress: Villager Behavior Engine
+
+### Source findings
+
+The brief's AI-architecture claims were traced through `include/ac_npc.h`, `src/actor/npc/ac_npc2_action.c_inc`, `src/actor/npc/ac_npc2_think.c_inc`, `src/game/m_npc.c`, and `include/m_quest.h`. The "selection, not generation" model is confirmed at the code level:
+
+- **Verified action arbiter:** `aNPC_set_request_act` records a requested action only when its priority is >= the pending priority (`ac_npc2_action.c_inc:352`). The action proc then dispatches through a per-action function table (`aNPC_act_proc`).
+- **Verified action vocabulary:** `aNPC_ACT_*` — wait, walk, run, turn, chase insect, chase fish, greeting, talk, into/leave house, umbrella open/close, play music (ensou), react to tool, clap, get, change cloth, pitfall, revive, special. Requests carry a kind (DEFAULT/AVOID/SEARCH/TO_POINT), a target (player/any NPC/target NPC/ball/insect/fish), six argument words, and a separate head-tracking request.
+- **Verified move-out selection:** `mNpc_SetRemoveAnimalNo` prefers a villager ALL players have met, then one SOME player has met, then falls back to uniform random. The popular "ignore them and they leave" claim is contradicted by the source — met villagers are *preferred* for removal.
+- **Verified move-in validation:** a transferring villager is rejected when already in town, when it was the most recently removed, or when it is the current summer camper; its record (identity, personality, catchphrase, memories) travels with it, which is why moved villagers remember their former town.
+- **Verified letter bonuses:** `mQst_LETTER_SCORE_BONUS` = 3 (good score), `mQst_LETTER_PRESENT_BONUS` = 6 (present attached).
+- Mood remains an opaque index in the decomp (`npc.rs` `Mood`); the Normal/Happy/Angry/Sad presentation names come from contemporary player documentation, not source identifiers.
+
+### Rust rewrite implementation
+
+`rust/src/behavior.rs` ports the engine: `BehaviorAction` (23 actions in decomp order), `ActionKind`, `ActionTarget`, `ActionRequest` with the priority-wins rule, head tracking, `VisibleMood` with interaction gating (angry/sad can refuse talk), `WorldEvent` → `reaction_for` (fish/bug caught → clap, pitfall → trapped state, tool use → react), the `FavorState` machine (None/Offered/Accepted/InProgress/Completed/Rewarded with NPC-chained deliveries), `BehaviorStage` pipeline ordering (schedule → world events → mood → activity → movement → interaction), `VillagerBehavior` runtime state, `select_move_out` with the met-preference order, `transfer_allowed` validation, `TransferRecord`, and letter→friendship via the `m_quest.h` bonuses clamped to the 0..=127 GameCube friendship range (not New Horizons' 0-255). C ABI: `pc_letter_friendship_delta`. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 The menu/init brief was traced through `src/game/m_game_dlftbls.c`, `src/graph.c`, `src/game.c`, `include/game.h`, `include/m_game_dlftbls.h`, `src/first_game.c`, `src/game/m_trademark.c`, and `src/game/m_select.c`. The brief's core claim is confirmed: there is no single main-menu function — the game is a scene dispatcher.
 
 - **Verified scene table:** `DLFTBL_GAME game_dlftbls[]` ("Display List Function TaBLe"): first_game (0), select (1), play (2), second_game (3), NULL (4, "removed & unused"), trademark (5), player_select (6), save_menu (7), famicom_emu (8), prenmi (9), pc_model_viewer (10, `#ifdef TARGET_PC`). Each entry holds an init function pointer, a cleanup pointer, and `alloc_size` (`sizeof(GAME_<class>)`).

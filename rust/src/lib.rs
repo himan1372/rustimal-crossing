@@ -20,7 +20,7 @@ mod game_time;
 mod buried_items;
 mod house;
 mod shop;
-mod scene;
+mod behavior;
 mod gbi_runtime;
 mod letter_score;
 mod mtx;
@@ -528,4 +528,11 @@ pub extern "C" fn pc_disc_extract_rel() -> *mut u8 {
 #[no_mangle]
 pub extern "C" fn pc_disc_shutdown() {
     *DISC.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// Quest/letter constants from `m_quest.h` shared with behavior.rs.
+pub const LETTER_SCORE_BONUS: i8 = 3;   // mQst_LETTER_SCORE_BONUS
+pub const LETTER_PRESENT_BONUS: i8 = 6; // mQst_LETTER_PRESENT_BONUS
+pub fn quest_time_limit_days() -> u8 {
+    28 // mQst_MAX_TIME_LIMIT_DAYS
 }
