@@ -611,6 +611,29 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Scene Table + Scene_ct Interpreter
+
+### Source findings (all verified against the local decomp)
+
+- The scene system: 52 scene IDs (m_scene_table.h) -> scene_word_data[52] pointer table in Gameplay_Scene_Read (m_play.c) -> per-scene Scene_Word_u[] manifest -> Scene_ct() walks 8-byte words until type==END, dispatching through an 11-entry Scene_Proc table. Gameplay_Scene_Read() is a selector/activation layer, not a parser: it installs scene_data_status[idx], scene_id, current_scene_data, then calls Gameplay_Scene_Init().
+- Scene word types: PLAYER_PTR=0, CTRL_ACTOR_PTR=1, ACTOR_PTR=2, OBJECT_EXCHANGE_BANK_PTR=3, DOOR_DATA_PTR=4, FIELD_CT=5, MY_ROOM_CT=6, ARRANGE_ROOM_CT=7, ARRANGE_FURNITURE_CT=8, SOUND=9, END=10.
+- All 52 manifests extracted programmatically from src/data/scene/ (51 files). SCENE_RANDOM_NPC_TEST (8) and SCENE_FIELD_TOOL (32) share field_tool_field_info -- the ID->manifest mapping is not 1:1.
+- FIELD_CT packs (bg_disp_size<<16 | room_type<<8 | draw_type) into the generic param3 slot (big-endian union layout); the PC port unpacks it explicitly (TARGET_PC in Scene_Proc_Field_ct). Verified against m_scene.h macro + m_scene.c.
+- mSc_DATA_MY_ROOM_CT() is never used in any decompiled manifest; ARRANGE_ROOM_CT appears in 9 scenes (broker, fg_tool_in, 4x player_select, 3x start_demo) and triggers mScn_ObtainCarpetBank.
+- Scene_Proc_Sound is a stub in the decomp -- sound params (0,0) vs (0,1) unresolved. The separate mPl_SceneNo2SoundRoomType switch gives: 1 = MY_ROOM_S; 2 = NPC_HOUSE, SHOP0, BROKER_SHOP, POST_OFFICE, BUGGY, MY_ROOM_M, KAMAKURA, MY_ROOM_LL2, TENT; 3 = MY_ROOM_L, CONVENI, SUPER, DEPART, DEPART_2, MY_ROOM_LL1, COTTAGE_MY, POLICE_BOX; 0 = everything else.
+- Gameplay_Scene_Init sequence: zero player/actor/bank counts -> mSc_data_bank_ct (0xA000-byte 32-aligned exchange arena) -> global light, door info, common reset -> Scene_ct -> mSc_decide_exchange_bank.
+- Manifest pointers are installed by reference (no copying); scene data lives in static storage.
+- Notable manifest facts: museum_entrance has 4 doors; museum_insect uses bg_disp_size 0xB000; player rooms S/M/L/LL use ARRANGE_FTR 30/32/48; train scenes use FIELD_DRAW_TYPE_TRAIN; room type (MY_ROOM/NPC_ROOM/MISC_ROOM/OUTDOORS) and draw type (INDOORS/TRAIN/PLAYER_SELECT/OUTDOORS) are independent axes.
+- Verification method: the full 52-entry manifest table and the sound-room-type table were both checked programmatically against source (script extraction), not hand-transcribed. Caught and fixed: lighthouse obj_banks, POLICE_BOX/CONVENI/SUPER/DEPART/DEPART_2/LIGHTHOUSE/TENT sound types.
+
+### Rust rewrite implementation
+
+`rust/src/scene_table.rs`: SCENE_NUM=52, SceneWordType enum, SceneWord, item/room/draw type constants, FieldCtParams + fieldct_unpack (TARGET_PC logic), SCENE_MANIFESTS (all 52 decoded), SOUND_ROOM_TYPE, SCENE_STATUS_SIZE/TOTAL, EXCHANGE_ARENA_SIZE. C ABI: pc_fieldct_unpack, pc_scene_manifest, pc_scene_sound_room_type. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Scene_Proc_Sound body (stubbed in decomp); scene_data_status 0x14x52 semantics; the referenced data arrays (SHOP01_ctrl_actor_data, object banks, door data, player data) are the next level down.
+
 ### Runtime Port Progress: FG Template Data + SIGN Distribution Groundwork
 
 ### Source findings (all verified against the local decomp)
