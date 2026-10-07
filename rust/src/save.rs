@@ -347,7 +347,11 @@ mod tests {
     #[test]
     fn checksum_roundtrip() {
         let mut region = vec![0x11u8; 64];
-        // region[0..2] is the checksum field
+        // region[0..2] is the checksum field; zero it first, then fix up
+        // against current=0, mirroring how the game writes the checksum
+        // into a fresh region.
+        region[0] = 0;
+        region[1] = 0;
         let fixup = checksum_fixup(&region, 0);
         region[0] = (fixup >> 8) as u8;
         region[1] = fixup as u8;

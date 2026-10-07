@@ -951,10 +951,17 @@ pub fn is_valid_town(bits: u16) -> bool {
     bits & PERFECT_ALL == PERFECT_ALL
 }
 
-fn generate_candidate(seed: u32, rng: &mut Rng, pool: &[u16], villager_count: usize) -> Candidate {
-    let mut bits: u16 = 0;
+fn generate_candidate(
+    seed: u32,
+    rng: &mut Rng,
+    pool: &[u16],
+    villager_count: usize,
     // mRF_GetRandomStepMode: three-step towns are chosen 15% of the time.
-    let three_tiers = rng.chance(15);
+    // The source rolls this ONCE before the retry loop, so a seed keeps its
+    // tier count across rejected candidates.
+    three_tiers: bool,
+) -> Candidate {
+    let mut bits: u16 = 0;
     let mut plan = TownPlan {
         seed,
         acre_count: ACRE_COUNT as u32,
@@ -1164,8 +1171,9 @@ pub fn generate(seed: u32, pool: &[u16], villager_count: usize) -> Option<TownPl
         }
     }
     let mut rng = Rng::new(seed);
+    let three_tiers = rng.chance(15);
     for _ in 0..MAX_GENERATION_ATTEMPTS {
-        let candidate = generate_candidate(seed, &mut rng, pool, villager_count);
+        let candidate = generate_candidate(seed, &mut rng, pool, villager_count, three_tiers);
         if candidate.structural_ok && is_valid_town(candidate.bits) {
             return Some(candidate.plan);
         }

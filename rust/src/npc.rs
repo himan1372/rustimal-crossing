@@ -552,7 +552,8 @@ mod tests {
         npc.add_friendship(100);
         npc.add_friendship(100);
         assert_eq!(npc.friendship, 127);
-        npc.add_friendship(-200);
+        npc.add_friendship(-100);
+        npc.add_friendship(-100);
         assert_eq!(npc.friendship, 0);
     }
 
