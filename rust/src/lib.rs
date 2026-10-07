@@ -22,6 +22,7 @@ mod house;
 mod shop;
 mod behavior;
 mod interaction;
+mod scene;
 mod gbi_runtime;
 mod letter_score;
 mod mtx;

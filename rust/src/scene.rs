@@ -129,6 +129,11 @@ pub enum SceneRequest {
 /// A scene: `init` runs once on entry, `exec` runs every frame,
 /// `cleanup` runs on exit. Mirrors the init/exec/cleanup split of the
 /// `Game_dlftbl` + `GAME` structs.
+///
+/// The source contract: `init` is expected to install the scene's `exec`
+/// (and optionally `cleanup`) on the GAME object — e.g. `play_init`
+/// sets `game->exec = play_main`. `first_game` is the exception: it does
+/// init-time work and requests the next scene without installing an exec.
 pub trait Scene {
     fn init(&mut self);
     fn exec(&mut self) -> SceneRequest;
@@ -258,6 +263,119 @@ pub extern "C" fn pc_game_dlftbls_count() -> u32 {
     GAME_DLFTBLS_COUNT as u32
 }
 
+/// Table index of the removed/NULL entry (`DLFTBL_NULL()`, "removed &
+/// unused _GAME entry"). The dispatcher never maps an init pointer here.
+pub const SCENE_TABLE_NULL_INDEX: usize = 4;
+
+/// Verified per-scene exec/cleanup names. `first_game` is special: its
+/// init does ROM/save setup and immediately requests `second_game`
+/// without ever installing an exec (`first_game.c`).
+pub struct SceneExec {
+    pub id: SceneId,
+    pub exec_fn: Option<&'static str>,
+    pub cleanup_fn: Option<&'static str>,
+}
+
+pub static SCENE_EXEC_TABLE: [SceneExec; 10] = [
+    SceneExec { id: SceneId::FirstGame, exec_fn: None, cleanup_fn: Some("first_game_cleanup") },
+    SceneExec { id: SceneId::Select, exec_fn: Some("select_main"), cleanup_fn: None },
+    SceneExec { id: SceneId::Play, exec_fn: Some("play_main"), cleanup_fn: Some("play_cleanup") },
+    SceneExec { id: SceneId::SecondGame, exec_fn: Some("second_game_main"), cleanup_fn: None },
+    SceneExec { id: SceneId::Trademark, exec_fn: Some("trademark_main"), cleanup_fn: None },
+    SceneExec { id: SceneId::PlayerSelect, exec_fn: Some("player_select_main"), cleanup_fn: None },
+    SceneExec { id: SceneId::SaveMenu, exec_fn: Some("save_menu_main"), cleanup_fn: None },
+    SceneExec { id: SceneId::FamicomEmu, exec_fn: Some("famicom_emu_main"), cleanup_fn: None },
+    SceneExec { id: SceneId::Prenmi, exec_fn: Some("prenmi_main"), cleanup_fn: None },
+    SceneExec { id: SceneId::ModelViewer, exec_fn: None, cleanup_fn: None },
+];
+
+/// The generic per-frame wrapper every scene runs inside, mirroring
+/// `game_main()` in `game.c`: draw setup, clock update, the scene exec,
+/// background music, first-move bookkeeping, then the frame counter.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GameMainPhase {
+    DrawFirst = 0,
+    Time = 1,
+    SceneExec = 2,
+    Bgm = 3,
+    MoveFirst = 4,
+    FrameCounter = 5,
+}
+
+pub const GAME_MAIN_PHASES: [GameMainPhase; 6] = [
+    GameMainPhase::DrawFirst,
+    GameMainPhase::Time,
+    GameMainPhase::SceneExec,
+    GameMainPhase::Bgm,
+    GameMainPhase::MoveFirst,
+    GameMainPhase::FrameCounter,
+];
+
+/// The two halves of `play_main()`: simulation, then rendering.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlayExecPhase {
+    Move = 0,
+    Draw = 1,
+}
+
+/// Visual transitions are a separate mechanism from scene transitions
+/// (`Game_play_fbdemo_wipe_*` in `m_play.c`). A wipe/fade can hide a
+/// scene change, but the scene lifetime is controlled by the GAME state
+/// machine, not the wipe.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VisualTransition {
+    None = 0,
+    Wipe = 1,
+    Fade = 2,
+}
+
+/// Level-2 "scene" data: records processed by `Scene_ct()` inside
+/// `play_init()` via `Gameplay_Scene_Read()`. This is a data-driven
+/// world/room initializer (player, actors, doors, field, rooms,
+/// furniture, sound) — NOT the top-level `game_dlftbls` scene system.
+/// Mirrors `mSc_SCENE_DATA_TYPE_*`.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SceneDataKind {
+    Player = 0,
+    CtrlActor = 1,
+    Actor = 2,
+    ObjectExchangeBank = 3,
+    DoorData = 4,
+    FieldCt = 5,
+    MyRoomCt = 6,
+    ArrangeRoomCt = 7,
+    ArrangeFurnitureCt = 8,
+    Sound = 9,
+}
+
+impl SceneManager {
+    /// Request the gameplay scene (`game_goto_next_game_play`).
+    pub fn goto_play(&mut self) {
+        self.doing = false;
+        self.next_init = Some(SceneId::Play);
+    }
+
+    /// Request the NES/Famicom scene
+    /// (`game_goto_next_game_famicom_emu`).
+    pub fn goto_famicom_emu(&mut self) {
+        self.doing = false;
+        self.next_init = Some(SceneId::FamicomEmu);
+    }
+
+    /// System reset path: `graph_main`'s reset check requests the
+    /// Pre-NMI scene through the same transition mechanism whenever the
+    /// reset status is `IRQ_RESET_PRENMI` and the scene has not disabled
+    /// it (`disable_prenmi`).
+    pub fn goto_prenmi(&mut self) {
+        self.doing = false;
+        self.next_init = Some(SceneId::Prenmi);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,5 +467,44 @@ mod tests {
         assert_eq!(pc_stages, 6);
         assert_eq!(BOOT_CHAIN.first().unwrap().0, BootStage::PcMain);
         assert_eq!(BOOT_CHAIN.last().unwrap().0, BootStage::GraphProc);
+    }
+
+    #[test]
+    fn per_scene_exec_names_match_source() {
+        let play = SCENE_EXEC_TABLE.iter().find(|e| e.id == SceneId::Play).unwrap();
+        assert_eq!(play.exec_fn, Some("play_main"));
+        assert_eq!(play.cleanup_fn, Some("play_cleanup"));
+        // first_game never installs an exec: init transitions directly.
+        let first = SCENE_EXEC_TABLE.iter().find(|e| e.id == SceneId::FirstGame).unwrap();
+        assert_eq!(first.exec_fn, None);
+        // The NULL slot has no entry.
+        assert_eq!(SCENE_TABLE_NULL_INDEX, 4);
+        assert_eq!(SceneId::from_table_index(SCENE_TABLE_NULL_INDEX), None);
+    }
+
+    #[test]
+    fn game_main_wraps_scene_exec() {
+        assert_eq!(GAME_MAIN_PHASES.len(), 6);
+        assert_eq!(GAME_MAIN_PHASES[2], GameMainPhase::SceneExec);
+        assert_eq!(GAME_MAIN_PHASES[5], GameMainPhase::FrameCounter);
+    }
+
+    #[test]
+    fn scene_data_kinds_cover_world_init() {
+        assert_eq!(SceneDataKind::Player as u8, 0);
+        assert_eq!(SceneDataKind::Sound as u8, 9);
+    }
+
+    #[test]
+    fn transition_helpers_request_scenes() {
+        let mut mgr = SceneManager::new();
+        mgr.goto_play();
+        assert_eq!(mgr.advance(), Some(SceneId::Play));
+        let mut mgr2 = SceneManager::new();
+        mgr2.goto_famicom_emu();
+        assert_eq!(mgr2.advance(), Some(SceneId::FamicomEmu));
+        let mut mgr3 = SceneManager::new();
+        mgr3.goto_prenmi();
+        assert_eq!(mgr3.advance(), Some(SceneId::Prenmi));
     }
 }

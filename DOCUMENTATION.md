@@ -209,6 +209,24 @@ The menu/init brief was traced through `src/game/m_game_dlftbls.c`, `src/graph.c
 
 `rust/src/scene.rs` ports the dispatcher: `SceneId` with verified table indices (index 4 maps to nothing), `SCENE_TABLE` with init-function names, the `Scene` trait (init/exec/cleanup), `SceneRequest` (Continue/Goto/Shutdown), and `SceneManager` modeling the `doing` flag, the next-init pointer, and table-based transition resolution. Also models the boot chain (`BOOT_CHAIN`), marking the six PC-port wrapper stages vs the original game's `ac_entry` → `boot_main` → `entry` → `mainproc` → `graph_proc`. C ABI: `pc_scene_table_index`, `pc_game_dlftbls_count`. Scene state sizes are per-build C values and are not reproduced. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Per-Scene Init/Exec Bodies
+
+### Source findings
+
+The brief's deep-dive was verified function-by-function against the decomp:
+
+- **Verified exec installation:** `play_init` sets `game->exec = play_main; game->cleanup = play_cleanup;` (`m_play.c:466-467`). Every other scene's init installs its own exec: `second_game_main`, `trademark_main`, `select_main`, `player_select_main` (`player_select.c:228`), `save_menu_main`, `famicom_emu_main`, `prenmi_main`. **Exception:** `first_game_init` never installs an exec — it does ROM/save setup and immediately calls `GAME_GOTO_NEXT(game, second_game, SECOND)` during init, so its frame loop never runs.
+- **Verified `game_main` wrapper** (`game.c:138`): frame-rate bookkeeping → `game_draw_first` → `mTM_time` → `this->exec(this)` (between GAME_EXEC markers) → `mBGM_main` → `game_move_first` → `frame_counter++`.
+- **Verified `play_main` structure** (`m_play.c:858`): controller/debug setup → `Game_play_move(game)` → `Game_play_draw(play)` → overlay/debug drawing, with doing-point instrumentation markers.
+- **Verified Pre-NMI path:** `graph_main`'s reset check does `GAME_GOTO_NEXT(game, prenmi, PRENMI)` when the reset status is `IRQ_RESET_PRENMI` and the scene hasn't disabled it (`graph.c:363`).
+- **Verified wipe/fade separation:** `Game_play_fbdemo_wipe_*` functions are a visual system destroyed separately from the scene — wipes hide transitions but don't control scene lifetime.
+- **Verified level-2 scene data:** `mSc_SCENE_DATA_TYPE_*` — player, ctrl actor, actor, object-exchange bank, door data, field, my room, arrange room, arrange furniture, sound — processed by `Scene_ct()` inside `play_init()`. This is a world/room initializer, not the top-level scene system.
+- DLFTBL entry 4 confirmed as `DLFTBL_NULL()` ("removed & unused"); the dispatcher skips it.
+
+### Rust rewrite implementation
+
+Extended `rust/src/scene.rs`: `SCENE_EXEC_TABLE` with the verified per-scene exec/cleanup names (first_game has no exec), `SCENE_TABLE_NULL_INDEX = 4`, `GAME_MAIN_PHASES` (the six `game_main` wrapper phases), `PlayExecPhase` (Move/Draw), `VisualTransition` (wipe/fade as separate from scene transitions), `SceneDataKind` (the 10 level-2 scene-data types), and `SceneManager::goto_play/goto_famicom_emu/goto_prenmi` transition helpers mirroring the C helpers. The `Scene` trait docs now record the init-installs-exec contract and the first_game exception. **Build fix:** an earlier edit had accidentally replaced `mod scene;` with `mod behavior;` in `lib.rs`, silently dropping the scene module from the build (its tests never ran, its C ABI exports never existed); restored. `cargo test --lib`: 94/94 pass. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings
