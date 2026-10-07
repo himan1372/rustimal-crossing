@@ -611,6 +611,27 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Field Generator Core (m_random_field_ovl)
+
+### Source findings (all verified against the local decomp)
+
+- `mRF_GetRandomStepMode` = `mRF_GetRandom(100) < 15`: 15% three-level, 85% two-level. `mRF_MakePerfectBit` sets all 9 feature bits (SLOPE_LEFT/RIGHT, BRIDGE_UPPER/LOWER, SHRINE, POLICE, MUSEUM, POOL, NEEDLEWORK) = 0x1FF; generation repeats until `perfect_bit == (perfect_bit & bit)` — rejection sampling, not best-effort.
+- Cliff tracer tables verbatim: 7 shape classes with `l_cliff_next_direct` = {EAST,NORTH,NORTH,EAST,SOUTH,SOUTH,EAST}; successor tables (horizontal -> {horizontal, bottom-right, top-left}; vertical-right -> {vertical-right, top-right}; vertical-left -> {vertical-left, bottom-left}); start tables A/B/C with row->table mapping {0,1}->A, 2->B, 3->C.
+- River tracer tables verbatim: start X in {1,2,4,5}; successor shapes per river type; `l_river_next_direct` = {SOUTH,EAST,WEST,EAST,SOUTH,WEST,SOUTH}.
+- `l_base_blocks` 7x10 outer frame ported verbatim (railroad row, player house at (3,2), sea/ocean/island rows).
+- `mRF_GetSystemBlockInfo` cliff-shape bit mapping ported verbatim; `mRF_GetBlockBase` ported verbatim: per-column scan z=9..0 from STEP1, height++ after HORIZONTAL/TOP_RIGHT/TOP_LEFT shapes or border cliff transitions.
+- Conversions verbatim: slope = SLOPE_HORIZONTAL + (cliff - CLIFF_HORIZONTAL); pool = POOL_SOUTH + (river - RIVER_SOUTH); bridge = RIVER_SOUTH_BRIDGE + (river - RIVER_SOUTH).
+- `mRF_CheckFieldStep3` = top-left acre height == 3. Ten fixed step-3 templates exist (selection is uniform, not traced).
+- Source bug documented: `mRF_BgName2RandomConbiNo` has `@BUG - this always selects the first entry instead of a random one` (`mRF_GetRandom(0)` in bug-compatible builds; `mRF_GetRandom(count)` under BUGFIXES).
+
+### Rust rewrite implementation
+
+`rust/src/field_gen.rs`: block-type constants (exact C values), step_mode, feat bits + perfect_bit + generation_accepted, CLIFF_NEXT_DIRECT, CLIFF_NEXT_SHAPES, cliff_start_table, RIVER_START_X, RIVER_NEXT_SHAPES/DIRECT, BASE_BLOCKS, block_cliff_shape_bits, acre_height_table, slope/pool/bridge conversions, is_field_step3, buggy_template_selection. C ABI: pc_field_step_mode, pc_field_generation_accepted, pc_cliff_next_direct, pc_river_next_direct, pc_acre_height_table, pc_slope_for_cliff, pc_pool_for_river, pc_bridge_for_river. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- The full cliff/river trace loops, river-cliff albumin combination tables, beach/dock/bridge/slope/building/pond placement passes, template selection + anti-reuse, and the 10 step-3 template bodies are not yet ported. No C callers rewired. The existing town_gen.rs keeps its own higher-level model; these are the source-verbatim tables it was missing.
+
 ### Runtime Port Progress: Player Tool Families (Axe, Net, Rod)
 
 ### Source findings (all verified against the local decomp)

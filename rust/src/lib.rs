@@ -60,6 +60,7 @@ mod force_call;
 mod npc_ai;
 mod player_action;
 mod player_tools;
+mod field_gen;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;
