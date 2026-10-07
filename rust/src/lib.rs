@@ -52,6 +52,7 @@ mod save;
 mod town_gen;
 mod vi;
 mod villager_mail;
+mod wpos2attribute;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;

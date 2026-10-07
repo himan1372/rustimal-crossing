@@ -611,6 +611,25 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Wpos2Attribute Effective-Terrain Interpreter
+
+### Source findings (all verified against the local decomp)
+
+- `mCoBG_Wpos2Attribute` (m_collision_bg.c:1517): effective gameplay-terrain interpreter over the raw 6-bit `unit_attribute`. Outputs the effective attribute (stored into the actor's collision result by GroundCheck) plus the INDEPENDENT `cant_dig` side-channel.
+- Branch order (verbatim): HOLE -> FLOOR/GRASS2 (cant_dig stays FALSE); 63 -> `mCoBG_SearchAttribute` (area-selected cardinal neighbor, recursive, cant_dig inherited via shared pointer); 25-26 -> dynamic wave, cant_dig FALSE; 27-62 -> cant_dig TRUE then 43-62 -> FLOOR/GRASS2, 27-31 -> `woodb_water_info[attr-27][area]`, 32-35 -> STONE, 36-38 -> dynamic wave, 39-42 -> `grass3_water_info[attr-39][area]` with the `(mapped <= GRASS3 && non-FG) ? FLOOR : mapped` gate; default `(attr <= GRASS3 && non-FG) ? FLOOR : attr`.
+- Wave classifier (`CheckWaveAtrDetail`, m_collision_bg.c:1415): projects the unit-local point onto the template segment, `pos_rate = 1.1 * dist_point/dist`; <= 0 -> SEA, >= 1.1 -> SAND, <= wave-phase rate -> WAVE, else SAND; degenerate segment -> SEA. `F32_IS_ZERO` = `fabsf(v) < 0.008` (types.h:146), same as the column sweep. Wave phase is a global (`mCoBG_wave_cos`, set by `WaveCos2BgCheck`).
+- Wave templates verbatim: 36: (0,+20)->(0,-20); 37: (0,0)->(-20,-20); 38: (0,0)->(+20,+20); 25: (+20,+20)->(0,0); 26: (-20,+20)->(0,0).
+- `woodb_water_info` has 6 rows but only rows 0-4 (attrs 27-31) are ever indexed; row 5 is dead in the source, preserved verbatim.
+- Confirmed the brief's key architectural point: cant_dig is a raw-attribute-class property (27-62), never derived from the returned effective attribute; a tile can report GRASS2 while being undiggable.
+
+### Rust rewrite implementation
+
+`rust/src/wpos2attribute.rs`: `attr`/`area` constants, verbatim `WOODB_WATER_INFO`/`GRASS3_WATER_INFO` tables, `f32_is_zero`, `cross_line_and_perpendicular`, `check_wave_atr_detail`, `get_wave_dynamic_attr`, `wpos2attribute_step` (verbatim branch order). The attr-63 redirect is expressed as `redirect: Some(area)` in `Wpos2AttributeOut` — the caller (which owns the map) resolves the neighbor and re-runs, threading `cant_dig` like the source's shared pointer. C ABI: `pc_wpos2attribute_step` (low byte = effective attr or 0xFF redirect marker, bit 8 = cant_dig, bits 8-15 = redirect area, bit 16 = redirect flag). `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Full `GroundCheck` integration (water_y selection, `AdjustActorY`) not yet ported; `mCoBG_CheckWaterAttribute`/`_OutOfSea` trivial classifiers noted but not yet ported; no C callers rewired.
+
 ### Runtime Port Progress: Water-Translation Deep Dive
 
 ### Source findings (verified against the local decomp, USA Rev. 0)
