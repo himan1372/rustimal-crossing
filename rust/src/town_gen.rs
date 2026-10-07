@@ -2,6 +2,33 @@
 //!
 //! The exported record is a rewrite-owned format. It intentionally does not
 //! alias the decompilation's bitfields or save structures.
+//!
+//! Source-verified architecture (upstream `m_random_field.c` /
+//! `m_random_field_ovl.c`, confirmed against the 2026 town-generation
+//! research):
+//!
+//! * The town is 5 x 6 acres of 16 x 16 units. It is NOT a noise heightmap:
+//!   it is constrained assembly of authored terrain blocks whose properties
+//!   live in lookup tables (`BLOCK_KIND_TABLE`, mirroring `mRF_block_info`),
+//!   not in per-acre attached metadata.
+//! * Generation runs in phases: base landform (cliffs + river) -> beach ->
+//!   bridges/slopes -> tailor/dock -> wishing well/police/museum ->
+//!   shop/post office -> lake -> height table -> acre selection.
+//! * Gates are resolved later from `(block type, direction)` via
+//!   `GATE_TABLE` (`mRF_gate_info2`), never attached to blocks up front.
+//! * Rejection sampling: a complete candidate town is built, then the
+//!   `PERFECT_*` placement bits are checked (`is_valid_town`). An invalid
+//!   candidate is discarded and generation restarts from the RNG stream.
+//!   Repeated rejection is what causes the occasional long black screen
+//!   during town creation on real hardware.
+//! * Three-step (three-tier) towns are chosen 15% of the time
+//!   (`mRF_GetRandomStepMode`: `GetRandom(100) < 15`).
+//!
+//! Rewrite-owned simplifications (documented, not source claims):
+//! the cliff/river tracer uses boundary signatures instead of the source's
+//! block-chain lookup tables and authored step-3 templates; grass patterns
+//! are semantic selectors; no acre artwork or authored byte tables are
+//! reproduced.
 
 use std::slice;
 
@@ -23,6 +50,458 @@ const WEST: u8 = 8;
 const INFRA_BRIDGE: u8 = 1;
 const INFRA_POND: u8 = 2;
 const INFRA_SLOPE: u8 = 4;
+
+// ---------------------------------------------------------------------------
+// Source-verified generator tables.
+// ---------------------------------------------------------------------------
+// The tables below mirror the lookup-table architecture of the decompiled
+// generator (`src/game/m_random_field.c`, `src/game/m_random_field_ovl.c`,
+// `include/m_random_field.h`, `include/m_random_field_h.h`,
+// `include/m_field_make.h` in the upstream decompilation):
+//
+// * `BLOCK_KIND_TABLE` mirrors `mRF_block_info[]`: every block type maps to a
+//   bitmask of `BK_*` kinds. Block properties live in this table, not in
+//   per-acre attached metadata.
+// * `GATE_TABLE` mirrors `mRF_gate_info2[][]`: gates are NOT attached to
+//   acres up front. They are resolved later from (block type, direction) via
+//   `gate_type_for`, exactly as the 2026 research describes.
+// * `RIVER_NEXT_DIRECTION` mirrors `l_river_next_direct[]` (7 river types).
+// * `PERFECT_*` mirrors the `mRF_BIT_*` validation bits. The source accepts
+//   a town only when `perfect_bit == (perfect_bit & bit)` after a complete
+//   generation attempt; otherwise the whole town is discarded and generation
+//   restarts (`mRF_MakeRandomField_ovl`).
+//
+// Block-kind bit positions (from `m_random_field_h.h`):
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_NONE: u32 = 0;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_PLAYER: u32 = 1 << 0;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_SHOP: u32 = 1 << 1;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_SHRINE: u32 = 1 << 2;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_POLICE: u32 = 1 << 3;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_POSTOFFICE: u32 = 1 << 4;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_STATION: u32 = 1 << 5;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_CLIFF: u32 = 1 << 6;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RIVER: u32 = 1 << 7;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_WATERFALL: u32 = 1 << 8;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_BRIDGE: u32 = 1 << 9;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RAILROAD: u32 = 1 << 10;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_MARINE: u32 = 1 << 11;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_BORDER: u32 = 1 << 12;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_TUNNEL: u32 = 1 << 13;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_SLOPE: u32 = 1 << 14;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_POOL: u32 = 1 << 15;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_DUMP: u32 = 1 << 16;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_MUSEUM: u32 = 1 << 17;
+/// Decomp name `mRF_BLOCKKIND_18`; its exact purpose is not documented.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_18: u32 = 1 << 18;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_TAILORS: u32 = 1 << 19;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_OCEAN: u32 = 1 << 20;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_ISLAND: u32 = 1 << 21;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_OFFING: u32 = 1 << 22;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RIVER0: u32 = 1 << 23;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RIVER1: u32 = 1 << 24;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RIVER2: u32 = 1 << 25;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RIVER3: u32 = 1 << 26;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RIVER4: u32 = 1 << 27;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RIVER5: u32 = 1 << 28;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_RIVER6: u32 = 1 << 29;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_DOCK: u32 = 1 << 30;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BK_ISLAND_LEFT: u32 = 1 << 31;
+
+/// Block-type indices named by the generator, in `mFM_BLOCK_TYPE_*` order.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_TRACKS_STATION: u8 = 11;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_TRACKS_DUMP: u8 = 12;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_PLAYER_HOUSE: u8 = 14;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_FLAT: u8 = 39;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_BEACH: u8 = 63;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_TRACKS_SHOP: u8 = 65;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_SHRINE: u8 = 66;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_TRACKS_POST_OFFICE: u8 = 67;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_POLICE_BOX: u8 = 68;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_MUSEUM: u8 = 84;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_NEEDLEWORK: u8 = 85;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_PORT: u8 = 100;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const BLOCK_TYPE_NUM: usize = 108;
+
+/// Perfection/validation bits, mirroring the source `mRF_BIT_*` order.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_SLOPE_LEFT: u16 = 1 << 0;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_SLOPE_RIGHT: u16 = 1 << 1;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_BRIDGE_UPPER: u16 = 1 << 2;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_BRIDGE_LOWER: u16 = 1 << 3;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_SHRINE: u16 = 1 << 4;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_POLICE: u16 = 1 << 5;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_MUSEUM: u16 = 1 << 6;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_POOL: u16 = 1 << 7;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_NEEDLEWORK: u16 = 1 << 8;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const PERFECT_ALL: u16 = 0x1FF;
+/// Safety cap on full-town regeneration attempts per `generate` call.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const MAX_GENERATION_ATTEMPTS: u32 = 4096;
+
+/// The seven source river types (`mRF_RIVER0`..`mRF_RIVER6`).
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const RIVER_TYPE_NUM: usize = 7;
+/// River exit direction per river type, mirroring `l_river_next_direct[]`.
+/// Entries use the `NORTH`/`EAST`/`SOUTH`/`WEST` edge constants above.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const RIVER_NEXT_DIRECTION: [u8; RIVER_TYPE_NUM] =
+    [SOUTH, EAST, WEST, EAST, SOUTH, WEST, SOUTH];
+
+/// Next river direction for a river type; mirrors `mRF_RiverIdx2NextDirect`
+/// (out-of-range input yields `SOUTH`, as in the source).
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub fn river_next_direction(river_idx: u8) -> u8 {
+    if (river_idx as usize) < RIVER_TYPE_NUM {
+        RIVER_NEXT_DIRECTION[river_idx as usize]
+    } else {
+        SOUTH
+    }
+}
+
+/// Gate kinds (`mRF_GATE_*`): gates are resolved from a lookup table later in
+/// generation, never attached to the acre/block up front.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const GATE_NONE: u8 = 0;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const GATE1_TYPE0: u8 = 1;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const GATE1_TYPE1: u8 = 2;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const GATE2_TYPE0: u8 = 3;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const GATE2_TYPE1: u8 = 4;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const GATE3_TYPE0: u8 = 5;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const GATE_KIND_NUM: usize = 6;
+/// Gate count per gate kind, mirroring `mRF_GateType2GateCount`.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const GATE_COUNT_TABLE: [u8; GATE_KIND_NUM] = [0, 1, 1, 2, 2, 3];
+/// Direction indices into `GATE_TABLE` rows, matching the source table order.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const DIR_NORTH: u8 = 0;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const DIR_WEST: u8 = 1;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const DIR_SOUTH: u8 = 2;
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub const DIR_EAST: u8 = 3;
+
+/// Per-block-type kind bitmask, mirroring `mRF_block_info[]`.
+/// Index with a `BLOCK_TYPE_*` constant.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub static BLOCK_KIND_TABLE: [u32; BLOCK_TYPE_NUM] = [
+    BK_BORDER,
+    BK_BORDER | BK_RIVER0,
+    BK_BORDER,
+    BK_BORDER,
+    BK_BORDER,
+    BK_BORDER,
+    BK_BORDER,
+    BK_BORDER,
+    BK_BORDER,
+    BK_RAILROAD | BK_TUNNEL,
+    BK_RAILROAD | BK_TUNNEL,
+    BK_STATION | BK_RAILROAD,
+    BK_RAILROAD | BK_DUMP,
+    BK_RIVER | BK_RAILROAD | BK_18 | BK_RIVER0,
+    BK_PLAYER,
+    BK_CLIFF,
+    BK_CLIFF,
+    BK_CLIFF,
+    BK_CLIFF,
+    BK_CLIFF,
+    BK_CLIFF,
+    BK_CLIFF,
+    BK_CLIFF | BK_RIVER | BK_WATERFALL | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_WATERFALL | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_18 | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_18 | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_WATERFALL | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_18 | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_18 | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_18 | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_WATERFALL | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_WATERFALL | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_18 | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_18 | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_RIVER2,
+    BK_CLIFF | BK_RIVER | BK_RIVER2,
+    BK_CLIFF | BK_RIVER | BK_RIVER2,
+    BK_CLIFF | BK_RIVER | BK_WATERFALL | BK_RIVER2,
+    BK_CLIFF | BK_RIVER | BK_WATERFALL | BK_RIVER2,
+    BK_NONE,
+    BK_RIVER | BK_18 | BK_RIVER0,
+    BK_RIVER | BK_18 | BK_RIVER1,
+    BK_RIVER | BK_18 | BK_RIVER2,
+    BK_RIVER | BK_18 | BK_RIVER3,
+    BK_RIVER | BK_18 | BK_RIVER4,
+    BK_RIVER | BK_18 | BK_RIVER5,
+    BK_RIVER | BK_18 | BK_RIVER6,
+    BK_RIVER | BK_BRIDGE | BK_RIVER0,
+    BK_RIVER | BK_BRIDGE | BK_RIVER1,
+    BK_RIVER | BK_BRIDGE | BK_RIVER2,
+    BK_RIVER | BK_BRIDGE | BK_RIVER3,
+    BK_RIVER | BK_BRIDGE | BK_RIVER4,
+    BK_RIVER | BK_BRIDGE | BK_RIVER5,
+    BK_RIVER | BK_BRIDGE | BK_RIVER6,
+    BK_CLIFF | BK_SLOPE,
+    BK_CLIFF | BK_SLOPE,
+    BK_CLIFF | BK_SLOPE,
+    BK_CLIFF | BK_SLOPE,
+    BK_CLIFF | BK_SLOPE,
+    BK_CLIFF | BK_SLOPE,
+    BK_CLIFF | BK_SLOPE,
+    BK_CLIFF | BK_BORDER,
+    BK_CLIFF | BK_BORDER,
+    BK_MARINE,
+    BK_RIVER | BK_MARINE | BK_18 | BK_RIVER0,
+    BK_SHOP | BK_RAILROAD,
+    BK_SHRINE,
+    BK_POSTOFFICE | BK_RAILROAD,
+    BK_POLICE,
+    BK_RIVER | BK_POOL | BK_RIVER0,
+    BK_RIVER | BK_POOL | BK_RIVER1,
+    BK_RIVER | BK_POOL | BK_RIVER2,
+    BK_RIVER | BK_POOL | BK_RIVER3,
+    BK_RIVER | BK_POOL | BK_RIVER4,
+    BK_RIVER | BK_POOL | BK_RIVER5,
+    BK_RIVER | BK_POOL | BK_RIVER6,
+    BK_BORDER,
+    BK_RIVER | BK_BORDER | BK_RIVER0,
+    BK_CLIFF | BK_BORDER,
+    BK_RAILROAD | BK_BORDER,
+    BK_MARINE | BK_BORDER,
+    BK_MARINE | BK_BORDER,
+    BK_RIVER | BK_BRIDGE | BK_MARINE | BK_RIVER0,
+    BK_NONE,
+    BK_MUSEUM,
+    BK_MARINE | BK_TAILORS,
+    BK_RIVER | BK_BRIDGE | BK_RAILROAD | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER0,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER0,
+    BK_MARINE | BK_OCEAN | BK_OFFING,
+    BK_MARINE | BK_OCEAN | BK_OFFING,
+    BK_MARINE | BK_OCEAN | BK_OFFING,
+    BK_MARINE | BK_OCEAN | BK_OFFING,
+    BK_MARINE | BK_OCEAN | BK_ISLAND | BK_ISLAND_LEFT,
+    BK_MARINE | BK_OCEAN | BK_ISLAND,
+    BK_MARINE | BK_DOCK,
+    BK_MARINE | BK_OCEAN | BK_OFFING,
+    BK_MARINE | BK_OCEAN | BK_OFFING,
+    BK_MARINE | BK_OCEAN | BK_OFFING,
+    BK_MARINE | BK_OCEAN | BK_OFFING,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER1,
+    BK_CLIFF | BK_RIVER | BK_BRIDGE | BK_RIVER1
+];
+
+/// Kind bitmask for a block type; mirrors `mRF_Type2BlockInfo`.
+/// Out-of-range types yield `BK_NONE`.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub fn block_kind(block_type: u8) -> u32 {
+    if (block_type as usize) < BLOCK_TYPE_NUM {
+        BLOCK_KIND_TABLE[block_type as usize]
+    } else {
+        BK_NONE
+    }
+}
+
+/// Gate lookup per (block type, direction), mirroring `mRF_gate_info2[][]`.
+/// Each row is `[NORTH, WEST, SOUTH, EAST]`.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub static GATE_TABLE: [[u8; 4]; BLOCK_TYPE_NUM] = [
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE1_TYPE1, GATE1_TYPE0, GATE1_TYPE1],
+    [GATE_NONE, GATE1_TYPE1, GATE1_TYPE0, GATE1_TYPE1],
+    [GATE_NONE, GATE1_TYPE1, GATE2_TYPE1, GATE1_TYPE1],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE0, GATE1_TYPE0, GATE2_TYPE0],
+    [GATE2_TYPE0, GATE2_TYPE0, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE0, GATE1_TYPE0, GATE2_TYPE0, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE0, GATE2_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE0, GATE2_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE0, GATE1_TYPE0, GATE2_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE0, GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE0],
+    [GATE2_TYPE1, GATE2_TYPE0, GATE2_TYPE1, GATE2_TYPE0],
+    [GATE3_TYPE0, GATE2_TYPE0, GATE2_TYPE1, GATE1_TYPE0],
+    [GATE3_TYPE0, GATE1_TYPE0, GATE3_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE3_TYPE0, GATE2_TYPE0],
+    [GATE2_TYPE1, GATE2_TYPE0, GATE3_TYPE0, GATE1_TYPE0],
+    [GATE3_TYPE0, GATE1_TYPE0, GATE3_TYPE0, GATE1_TYPE0],
+    [GATE3_TYPE0, GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE0],
+    [GATE1_TYPE0, GATE3_TYPE0, GATE1_TYPE0, GATE3_TYPE0],
+    [GATE2_TYPE0, GATE3_TYPE0, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE2_TYPE0, GATE2_TYPE1, GATE2_TYPE0, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE0, GATE3_TYPE0],
+    [GATE1_TYPE0, GATE3_TYPE0, GATE2_TYPE0, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE3_TYPE0, GATE1_TYPE0, GATE3_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE0, GATE3_TYPE0],
+    [GATE1_TYPE0, GATE3_TYPE0, GATE2_TYPE0, GATE2_TYPE1],
+    [GATE2_TYPE0, GATE2_TYPE1, GATE2_TYPE0, GATE2_TYPE1],
+    [GATE2_TYPE0, GATE2_TYPE1, GATE1_TYPE0, GATE3_TYPE0],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE1, GATE1_TYPE0],
+    [GATE2_TYPE1, GATE2_TYPE1, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE1],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE1, GATE1_TYPE0],
+    [GATE2_TYPE1, GATE2_TYPE1, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE2_TYPE0, GATE1_TYPE0, GATE2_TYPE0],
+    [GATE2_TYPE0, GATE2_TYPE0, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE0, GATE1_TYPE0, GATE2_TYPE0, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE0, GATE2_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE0, GATE2_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE0, GATE1_TYPE0, GATE2_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE0, GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE0],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE_NONE, GATE1_TYPE0],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE_NONE, GATE1_TYPE0],
+    [GATE_NONE, GATE1_TYPE1, GATE1_TYPE0, GATE1_TYPE1],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE_NONE, GATE1_TYPE1, GATE1_TYPE0, GATE1_TYPE1],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE1],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE1, GATE1_TYPE0],
+    [GATE2_TYPE1, GATE2_TYPE1, GATE1_TYPE0, GATE1_TYPE0],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE1],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE_NONE, GATE1_TYPE0],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE_NONE, GATE1_TYPE0],
+    [GATE_NONE, GATE1_TYPE1, GATE2_TYPE1, GATE1_TYPE1],
+    [GATE1_TYPE0, GATE3_TYPE0, GATE1_TYPE0, GATE3_TYPE0],
+    [GATE3_TYPE0, GATE1_TYPE0, GATE3_TYPE0, GATE1_TYPE0],
+    [GATE2_TYPE1, GATE1_TYPE0, GATE3_TYPE0, GATE2_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE0, GATE3_TYPE0],
+    [GATE1_TYPE0, GATE3_TYPE0, GATE2_TYPE0, GATE2_TYPE1],
+    [GATE3_TYPE0, GATE1_TYPE0, GATE3_TYPE0, GATE1_TYPE0],
+    [GATE3_TYPE0, GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE0],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE1_TYPE0, GATE1_TYPE0, GATE1_TYPE0, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE_NONE, GATE_NONE, GATE_NONE, GATE_NONE],
+    [GATE1_TYPE0, GATE3_TYPE0, GATE1_TYPE0, GATE3_TYPE0],
+    [GATE1_TYPE0, GATE2_TYPE1, GATE2_TYPE0, GATE3_TYPE0],
+    [GATE1_TYPE0, GATE3_TYPE0, GATE2_TYPE0, GATE2_TYPE1],
+];
+
+/// Gate type for a block type and direction; mirrors
+/// `mRF_BlockTypeDirect2GateType`. Out-of-range input yields `GATE_NONE`.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub fn gate_type_for(block_type: u8, direction: u8) -> u8 {
+    if (block_type as usize) < BLOCK_TYPE_NUM && (direction as usize) < 4 {
+        GATE_TABLE[block_type as usize][direction as usize]
+    } else {
+        GATE_NONE
+    }
+}
+
+/// Gate count for a gate kind; mirrors the `gate_count_table` lookup.
+/// Out-of-range input yields 0.
+#[allow(dead_code)] // Public lookup API for the generator; used by downstream adapters.
+pub fn gate_count_for(gate_type: u8) -> u8 {
+    if (gate_type as usize) < GATE_KIND_NUM {
+        GATE_COUNT_TABLE[gate_type as usize]
+    } else {
+        0
+    }
+}
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -270,11 +749,16 @@ fn place_river(acres: &mut [TownAcre; ACRE_COUNT], rng: &mut Rng) -> bool {
     false
 }
 
+/// Place the wishing well, police station, and museum on flat acres below the
+/// highest tier. Mirrors `mRF_SetUniqueFlatBlock`: the well goes on one side
+/// of the river, the police box prefers the opposite side, and the museum may
+/// sit on either side. Returns the `PERFECT_*` bits earned so the rejection
+/// sampler can discard candidates with missing placements.
 fn place_lower_facilities(
     acres: &mut [TownAcre; ACRE_COUNT],
     highest_tier: u8,
     rng: &mut Rng,
-) -> bool {
+) -> u16 {
     let candidates = |acres: &[TownAcre; ACRE_COUNT], side: Option<bool>| -> Vec<usize> {
         (0..ACRE_COUNT)
             .filter(|&idx| {
@@ -299,33 +783,37 @@ fn place_lower_facilities(
     };
 
     let well_left = rng.chance(50);
+    let mut bits = 0u16;
     let mut well_choices = candidates(acres, Some(well_left));
     if well_choices.is_empty() {
         well_choices = candidates(acres, None);
     }
     if well_choices.is_empty() {
-        return false;
+        return bits;
     }
     let well = well_choices.swap_remove(rng.below(well_choices.len()));
     acres[well].feature = Feature::WishingWell as u8;
+    bits |= PERFECT_SHRINE;
 
     let mut police_choices = candidates(acres, Some(!well_left));
     if police_choices.is_empty() {
         police_choices = candidates(acres, None);
     }
     if police_choices.is_empty() {
-        return false;
+        return bits;
     }
     let police = police_choices[rng.below(police_choices.len())];
     acres[police].feature = Feature::PoliceStation as u8;
+    bits |= PERFECT_POLICE;
 
     let museum_choices = candidates(acres, None);
     if museum_choices.is_empty() {
-        return false;
+        return bits;
     }
     let museum = museum_choices[rng.below(museum_choices.len())];
     acres[museum].feature = Feature::Museum as u8;
-    true
+    bits |= PERFECT_MUSEUM;
+    bits
 }
 
 fn reserve_house_footprint(acre: &mut TownAcre, center: usize) -> bool {
@@ -448,13 +936,24 @@ fn decorate(plan: &mut TownPlan, rng: &mut Rng) {
     }
 }
 
-/// Generate one rewrite-owned town plan from a caller-provided seed and roster.
-/// The roster is expected to contain only villagers eligible for this town.
-pub fn generate(seed: u32, pool: &[u16], villager_count: usize) -> Option<TownPlan> {
-    if villager_count > MAX_TOWN_VILLAGERS || villager_count > pool.len() {
-        return None;
-    }
-    let mut rng = Rng::new(seed);
+/// One complete generation attempt: a town plus the `PERFECT_*` placement
+/// bits it earned. Mirrors the source loop body in `mRF_MakeRandomField_ovl`,
+/// which builds the whole town before checking validity.
+struct Candidate {
+    plan: TownPlan,
+    bits: u16,
+    structural_ok: bool,
+}
+
+/// The source validity predicate: `while (perfect_bit != (perfect_bit & bit))`.
+/// A candidate town is accepted only when every placement bit is set.
+pub fn is_valid_town(bits: u16) -> bool {
+    bits & PERFECT_ALL == PERFECT_ALL
+}
+
+fn generate_candidate(seed: u32, rng: &mut Rng, pool: &[u16], villager_count: usize) -> Candidate {
+    let mut bits: u16 = 0;
+    // mRF_GetRandomStepMode: three-step towns are chosen 15% of the time.
     let three_tiers = rng.chance(15);
     let mut plan = TownPlan {
         seed,
@@ -467,27 +966,30 @@ pub fn generate(seed: u32, pool: &[u16], villager_count: usize) -> Option<TownPl
         house_units: [u16::MAX; MAX_TOWN_VILLAGERS],
         acres: [TownAcre::default(); ACRE_COUNT],
     };
+    let invalid = |plan: TownPlan, bits: u16| Candidate {
+        plan,
+        bits,
+        structural_ok: false,
+    };
 
-    // The decompilation's base block table fixes these facilities to these
-    // acre regions. Store and post office occupy the north rail row.
+    // -- Phase 1: base landform. The source fixes the station, player house,
+    // and dump placeholders from its base block table, then traces cliff and
+    // river block chains (`mRF_MakeBaseLandform`); three-step towns copy one
+    // of ten authored templates. The rewrite keeps its boundary-signature
+    // cliff/river model here instead of the authored template bytes.
     set_feature(&mut plan.acres, 2, 0, Feature::Station);
     set_feature(&mut plan.acres, 2, 1, Feature::PlayerHouse);
     set_feature(&mut plan.acres, 4, 5, Feature::Dock);
-
+    // The tailor sits on the beach row; placing it before the river trace
+    // keeps the river from crossing its acre, as in the previous layout.
     let tailor_x = rng.below(3);
     set_feature(&mut plan.acres, tailor_x, 5, Feature::Tailor);
-    let left_x = rng.below(2);
-    let right_x = 3 + rng.below(2);
-    if rng.below(2) == 0 {
-        set_feature(&mut plan.acres, left_x, 0, Feature::Shop);
-        set_feature(&mut plan.acres, right_x, 0, Feature::PostOffice);
-    } else {
-        set_feature(&mut plan.acres, left_x, 0, Feature::PostOffice);
-        set_feature(&mut plan.acres, right_x, 0, Feature::Shop);
+    if !place_river(&mut plan.acres, rng) {
+        return invalid(plan, bits);
     }
-    if !place_river(&mut plan.acres, &mut rng) {
-        return None;
-    }
+
+    // -- Phase 2: beach base and grass layer (`mRF_SetMarinBlock`). Grass is
+    // a separate persistent layer from terrain topology, randomized here.
     for z in 0..ACRE_DEPTH {
         for x in 0..ACRE_WIDTH {
             let acre = &mut plan.acres[acre_index(x, z)];
@@ -502,8 +1004,7 @@ pub fn generate(seed: u32, pool: &[u16], villager_count: usize) -> Option<TownPl
         }
     }
 
-    // The source generator chooses a three-step town in 15% of trials. The
-    // rewrite uses two simple, continuous boundaries as its first terrain pass.
+    // -- Phase 3: elevation tiers and waterfalls. --
     let first_cliff = 1 + rng.below(2);
     let second_cliff = (first_cliff + 1).min(ACRE_DEPTH - 2);
     set_cliff_boundary(&mut plan.acres, first_cliff);
@@ -540,8 +1041,9 @@ pub fn generate(seed: u32, pool: &[u16], villager_count: usize) -> Option<TownPl
         }
     }
 
-    // Put one access slope on each side of the river when a cliff site exists.
-    for want_left in [true, false] {
+    // -- Phase 4: bridges and slopes (`mRF_SetBridgeAndSlopeBlock`). One
+    // slope per river side; two bridge crossings, upper (north) and lower.
+    for (want_left, bit) in [(true, PERFECT_SLOPE_LEFT), (false, PERFECT_SLOPE_RIGHT)] {
         let mut candidates: Vec<usize> = (0..ACRE_COUNT)
             .filter(|&idx| {
                 let x = idx % ACRE_WIDTH;
@@ -567,25 +1069,36 @@ pub fn generate(seed: u32, pool: &[u16], villager_count: usize) -> Option<TownPl
         if !candidates.is_empty() {
             let selected = candidates.swap_remove(rng.below(candidates.len()));
             plan.acres[selected].infrastructure |= INFRA_SLOPE;
+            bits |= bit;
         }
     }
-    if plan
-        .acres
-        .iter()
-        .filter(|acre| acre.infrastructure & INFRA_SLOPE != 0)
-        .count()
-        != 2
-    {
-        return None;
-    }
-    if !place_lower_facilities(&mut plan.acres, plan.elevation_tier_count, &mut rng) {
-        return None;
+
+    // -- Phase 5: tailor and dock (`mRF_SetNeedleworkAndWharfBlock`). The
+    // tailor was fixed on the beach row in phase 1; the dock too. Mark the
+    // needlework placement complete here, where the source sets it.
+    bits |= PERFECT_NEEDLEWORK;
+
+    // -- Phase 6: wishing well, police station, museum
+    // (`mRF_SetUniqueFlatBlock`). --
+    bits |= place_lower_facilities(&mut plan.acres, plan.elevation_tier_count, rng);
+
+    // -- Phase 7: shop and post office (`mRF_SetUniqueRailBlock`). The source
+    // swaps shop/post office order randomly and pins them to the rail row at
+    // x in {1,2} / {4,5} of its block grid; this placement carries no
+    // perfection bit in the source either.
+    let left_x = rng.below(2);
+    let right_x = 3 + rng.below(2);
+    if rng.below(2) == 0 {
+        set_feature(&mut plan.acres, left_x, 0, Feature::Shop);
+        set_feature(&mut plan.acres, right_x, 0, Feature::PostOffice);
+    } else {
+        set_feature(&mut plan.acres, left_x, 0, Feature::PostOffice);
+        set_feature(&mut plan.acres, right_x, 0, Feature::Shop);
     }
 
-    // The legacy table has authored bridge variants for ordinary river and
-    // beach acres, but not the cliff/waterfall corners represented here. Keep
-    // semantic bridge sites on lower, flat river acres so the PC adapter can
-    // safely map both crossings to existing combinations.
+    // -- Phase 8: lake/pond (`mRF_SetPoolBlock`) and the sea bridge fixup
+    // (`mRF_SetSeaBlockWithBridgeRiver`). Bridge sites stay on lower, flat
+    // river acres; the northernmost crossing is the "upper" bridge.
     let river_acres: Vec<usize> = plan
         .acres
         .iter()
@@ -603,24 +1116,61 @@ pub fn generate(seed: u32, pool: &[u16], villager_count: usize) -> Option<TownPl
                 && acre.waterfall_edges == 0
         })
         .collect();
-    if bridge_sites.len() < 2 {
-        return None;
-    }
-    for i in (1..bridge_sites.len()).rev() {
-        let j = rng.below(i + 1);
-        bridge_sites.swap(i, j);
-    }
-    for &idx in &bridge_sites[..2] {
-        plan.acres[idx].infrastructure |= INFRA_BRIDGE;
+    if bridge_sites.len() >= 2 {
+        for i in (1..bridge_sites.len()).rev() {
+            let j = rng.below(i + 1);
+            bridge_sites.swap(i, j);
+        }
+        bridge_sites[..2].sort_by_key(|&idx| idx / ACRE_WIDTH);
+        plan.acres[bridge_sites[0]].infrastructure |= INFRA_BRIDGE;
+        bits |= PERFECT_BRIDGE_UPPER;
+        plan.acres[bridge_sites[1]].infrastructure |= INFRA_BRIDGE;
+        bits |= PERFECT_BRIDGE_LOWER;
     }
     let pond_idx = river_acres[rng.below(river_acres.len())];
     plan.acres[pond_idx].infrastructure |= INFRA_POND;
+    bits |= PERFECT_POOL;
 
-    if !place_residents(&mut plan, pool, villager_count, &mut rng) {
+    // -- Phase 9: residents and decoration (rewrite-owned finalization). --
+    if !place_residents(&mut plan, pool, villager_count, rng) {
+        return invalid(plan, bits);
+    }
+    decorate(&mut plan, rng);
+    Candidate {
+        plan,
+        bits,
+        structural_ok: true,
+    }
+}
+
+/// Generate one rewrite-owned town plan from a caller-provided seed and roster.
+/// The roster is expected to contain only villagers eligible for this town.
+///
+/// This is rejection sampling, mirroring `mRF_MakeRandomField_ovl`: each call
+/// builds complete candidate towns and discards the invalid ones, drawing
+/// from a single RNG stream so the result stays deterministic per seed.
+pub fn generate(seed: u32, pool: &[u16], villager_count: usize) -> Option<TownPlan> {
+    if villager_count > MAX_TOWN_VILLAGERS || villager_count > pool.len() {
         return None;
     }
-    decorate(&mut plan, &mut rng);
-    Some(plan)
+    // A roster that cannot cover the count even in principle can never
+    // succeed; fail fast instead of burning every attempt.
+    {
+        let mut unique = pool.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        if villager_count > unique.len() {
+            return None;
+        }
+    }
+    let mut rng = Rng::new(seed);
+    for _ in 0..MAX_GENERATION_ATTEMPTS {
+        let candidate = generate_candidate(seed, &mut rng, pool, villager_count);
+        if candidate.structural_ok && is_valid_town(candidate.bits) {
+            return Some(candidate.plan);
+        }
+    }
+    None
 }
 
 /// Select one source-eligible initial villager from each of the six look
