@@ -430,6 +430,19 @@ The brief's solver model was verified against `src/game/m_collision_bg.c`:
 
 ### Runtime Port Progress: Player Wall-Priority Sort
 
+**64-wall analysis (2026-10-07, resolved):** the original's `u64` used mask
+is UB for wall index ≥ 64 while the array holds 128. Player path analysis:
+`mCoBG_BgCheckControll` calls the player check with range 18.0f
+(`m_player_common.c_inc:2579`) → 3×3 neighborhood. Wall budget:
+9 slate attempts + 12 normal attempts (edge de-duplication bitmask in
+`l_make33_coldata`) + 18 forbid walls = 39 terrain max, plus up to 48
+circle-defence walls (8 surrounding columns × ordered adjacent pairs × 2),
+so the theoretical max is ~87 — ≥ 64 is reachable in pathological
+arrangements, though normal gameplay sees < 20. On x86-64 the shift wraps
+mod 64, aliasing wall 64 to bit 0 (silent priority-table corruption, not a
+crash). The Rust port deliberately uses `u128`: bit-identical below 64
+walls, correct above. The original UB is documented, not reproduced.
+
 ### Attribute/Forbidden-Wall Tables
 
 ### Source findings

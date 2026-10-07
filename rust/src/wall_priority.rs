@@ -109,10 +109,26 @@ pub fn merge_sort_float(data: &mut [f32]) {
 /// Reconstruct wall indices from sorted distances
 /// (`mCoBG_GetWallPriority` tail): for each sorted distance, take
 /// the first not-yet-used wall index with an equal distance.
-/// The used mask is a `u64`, matching the source (64-wall limit).
+///
+/// DEVIATION FROM SOURCE (deliberate, analyzed 2026-10-07): the
+/// original uses a `u64` used mask, which is undefined behavior for
+/// wall index ≥ 64 (`1 << unit` with `unit >= 64`) while the wall
+/// array holds 128 entries. Analysis of the player path
+/// (`mCoBG_BgCheckControll` range 18 → 3×3 neighborhood):
+/// max terrain walls = 9 slate + 12 normal (edge de-duplication
+/// bitmask) + 18 forbid = 39, plus up to 48 circle-defence walls
+/// (8 surrounding columns × ordered adjacent pairs × 2) — a
+/// theoretical max of ~87, so ≥ 64 is reachable in pathological
+/// arrangements (columns in all 8 surrounding units + cliffs on
+/// every checked edge + forbid attributes everywhere). On x86-64
+/// the shift wraps mod 64, aliasing wall 64 to bit 0 and silently
+/// duplicating/skipping a wall in the priority table. Normal
+/// gameplay sees < 20 walls and never triggers it, but the Rust
+/// port uses `u128` so behavior is bit-identical below 64 walls
+/// and correct above — the original's UB is not reproduced.
 pub fn reconstruct_priority(dist_table: &[f32], sorted: &[f32]) -> Vec<u8> {
-    let count = dist_table.len().min(sorted.len()).min(64);
-    let mut flag: u64 = 0;
+    let count = dist_table.len().min(sorted.len()).min(128);
+    let mut flag: u128 = 0;
     let mut prio = Vec::with_capacity(count);
     for i in 0..count {
         let mut pick: u8 = 0;
