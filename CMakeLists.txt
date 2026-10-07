@@ -195,6 +195,13 @@ list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/ac_npc_shop_common\\.c$")
 list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/ac_animal_logo_misc\\.c$")
 list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/m_item_debug\\.c$")
 
+# Letter scoring now lives in Rust (rust/src/letter_score.rs + letter_score_tables.rs).
+# Exclude the C original to avoid duplicate symbol definitions; its two callers
+# (m_mail_check.c's mMC_get_mail_hit_rate and m_npc.c's mMck_check_key_hit_nes call)
+# bind to the Rust exports instead. The Rust port uses TrigramMode::Intended,
+# matching this build's BUGFIXES table terminators.
+list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/m_mail_check_ovl\\.c$")
+
 # Exclude NPC anime data fragments (no headers, #included from other NPC files)
 list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/actor/npc/.*_anime\\.c$")
 
