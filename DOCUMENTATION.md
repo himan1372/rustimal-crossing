@@ -611,6 +611,21 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Attribute Action-Policy Table
+
+### Source findings (all verified against the local decomp)
+
+- `l_attribute_action_info[64]` (bg_info.c_inc:188, generated verbatim): raw 6-bit `unit_attribute` -> action-policy byte — bits 0-2 plant policy, bit 3 placement (`ATR_PLACE`), bit 4 NPC (`ATR_NPC`), bits 5-7 unused.
+- Consumers: `mCoBG_CheckPlace_OrgAttr` (bit 3, NO 0x3F mask — indexes directly); `mCoBG_Attr2CheckPlaceNpc` (bit 4, WITH `attr & 0x3F` mask); `mCoBG_Attribute2CheckPlant` (FG-field gate; attr 63 redirects to the +Z neighbor's raw attribute and recurses; KILL_PLANT -> -1, else the stage); `mCoBG_Attr2CheckPoorGround` (@unused/@fabricated: poor iff plant in {KILL, PLANT0}).
+- Only PLANT0/PLANT2/PLANT4/KILL_PLANT are ever emitted (PLANT1/PLANT3 exist in the enum only).
+- Correction to the brief: the river-bank asymmetry is attribute **62** (grass 3 NE river bank: NPC + NO_PLACE + KILL = 0x17), not 61 — caught by generating the table from source.
+- `mCoBG_Change2PoorAttr` (rewrite.c_inc:159): GRASS0/1->GRASS2, SOIL0/1->SOIL2 — moves terrain into the PLANT0 policy class.
+- Architecture: the action table is keyed by the RAW collision attribute, independent of `mCoBG_Wpos2Attribute()` (contextual translator); it never drives collision geometry or column construction.
+
+### Rust rewrite implementation
+
+`rust/src/attribute_action.rs`: `ATTRIBUTE_ACTION_INFO` (verbatim, generated from source), `plant`/`bit` constants, `attribute_action_info` (with 0x3F mask), `check_place_org_attr`, `attr2check_place_npc`, `attr2check_poor_ground`, `attribute2check_plant` (field gate + attr-63 redirect left to the caller, which needs field/collision access), `change2poor_attr`. C ABI: `pc_check_place_attr`, `pc_check_npc_attr`, `pc_check_plant_attr` (0xFF = -1). `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 ### Runtime Port Progress: Directed-Unit Suppression + KeepH Height Family
 
 ### Source findings (all verified against the local decomp)

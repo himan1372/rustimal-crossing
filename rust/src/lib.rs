@@ -28,6 +28,7 @@ mod decal_circles;
 mod segment_map;
 mod collision;
 mod dialogue_topics;
+mod attribute_action;
 mod bridge_acre;
 mod column_sweep;
 mod endpoint_circle;
