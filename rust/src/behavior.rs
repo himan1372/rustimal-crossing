@@ -500,11 +500,11 @@ mod tests {
 
     #[test]
     fn letter_friendship_clamps() {
-        let mut v = VillagerBehavior::new(Personality::Lazy);
+        let mut v = VillagerBehavior::new(Personality::Boy);
         v.friendship = 125;
         v.apply_letter(true, true); // +3 +6 would exceed 127
         assert_eq!(v.friendship, 127);
-        let mut w = VillagerBehavior::new(Personality::Normal);
+        let mut w = VillagerBehavior::new(Personality::Girl);
         w.apply_letter(true, false);
         assert_eq!(w.friendship, 3);
         w.apply_letter(false, true);

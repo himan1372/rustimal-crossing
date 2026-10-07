@@ -302,6 +302,9 @@ mod tests {
         assert_eq!(shop.real_level(), ShopTier::Zakka);
         shop.plus_sales(1);
         assert_eq!(shop.real_level(), ShopTier::Combini);
+        // The displayed tier must renew before the cap rises (source:
+        // mSP_PlusSales clamps to the current tier's threshold).
+        assert!(shop.renew_level());
         shop.plus_sales(65_000); // 25k + 65k = 90k
         assert_eq!(shop.real_level(), ShopTier::Super);
     }
@@ -348,7 +351,11 @@ mod tests {
     #[test]
     fn renew_level_syncs_displayed_tier() {
         let mut shop = ShopState::default();
-        shop.plus_sales(90_000);
+        // Sales clamp to the displayed tier's threshold until it renews.
+        shop.plus_sales(25_000);
+        assert!(shop.renew_level());
+        assert_eq!(shop.shop_level, ShopTier::Combini);
+        shop.plus_sales(65_000); // 25k + 65k = 90k
         assert!(shop.renew_level());
         assert_eq!(shop.shop_level, ShopTier::Super);
         assert!(!shop.renew_level()); // no change second time

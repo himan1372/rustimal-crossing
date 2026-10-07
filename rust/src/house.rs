@@ -283,6 +283,7 @@ mod tests {
     fn statue_rank_caps_at_jade() {
         let mut house = House::default();
         house.size_info.size = HouseSize::Upper;
+        house.pay(DEBT_BUY_HOUSE); // statue requires a paid-off loan
         assert!(house.order_statue(7, (2026, 10, 7)));
         assert_eq!(house.size_info.statue_rank, STATUE_RANK_JADE);
         assert!(house.complete_statue());
