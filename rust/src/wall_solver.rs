@@ -46,6 +46,8 @@
 //! suppression) are modeled with standard equivalents; the
 //! dispatch order and formulas above are the verified port.
 
+use crate::wall_priority::priority_order;
+
 /// Wall kind discriminator.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -187,24 +189,6 @@ pub fn distance_push(range: f32, dist: f32, normal: [f32; 2]) -> [f32; 2] {
     [normal[0] * rev_dist, normal[1] * rev_dist]
 }
 
-/// Player wall priority: indices sorted by squared midpoint distance
-/// from the actor start (`mCoBG_GetWallPriority`).
-pub fn wall_priority(walls: &[WallSeg2], actor_start: [f32; 2]) -> Vec<usize> {
-    let mut idx: Vec<usize> = (0..walls.len()).collect();
-    idx.sort_by(|&a, &b| {
-        let da = {
-            let m = walls[a].midpoint();
-            (m[0] - actor_start[0]).powi(2) + (m[1] - actor_start[1]).powi(2)
-        };
-        let db = {
-            let m = walls[b].midpoint();
-            (m[0] - actor_start[0]).powi(2) + (m[1] - actor_start[1]).powi(2)
-        };
-        da.partial_cmp(&db).unwrap()
-    });
-    idx
-}
-
 /// The crossing-vs-distance dispatch (`mCoBG_GetWallReverse` core):
 ///
 /// * Player: distance pass (all) → priority-ordered distance pass →
@@ -290,7 +274,11 @@ pub fn solve_walls(
     if is_player {
         let all: Vec<usize> = (0..walls.len()).collect();
         distance_pass(walls, &mut end, &all, range, None, wall_ok);
-        let prio = wall_priority(walls, actor_start);
+        // Faithful priority: midpoint dist² from actor_start, merge
+        // sort, u64-mask reconstruction (wall_priority.rs).
+        let segs: Vec<([f32; 2], [f32; 2])> =
+            walls.iter().map(|w| (w.start, w.end)).collect();
+        let prio = priority_order(&segs, actor_start);
         distance_pass(walls, &mut end, &prio, range, None, wall_ok);
         crossing_pass(walls, actor_start, &mut end, range, wall_ok);
     } else {
@@ -367,10 +355,8 @@ mod tests {
 
     #[test]
     fn priority_orders_by_midpoint() {
-        let w0 = wall(100.0, 0.0, 110.0, 0.0, 0.0, 1.0);
-        let w1 = wall(10.0, 0.0, 20.0, 0.0, 0.0, 1.0);
-        let prio = wall_priority(&[w0, w1], [0.0, 0.0]);
-        assert_eq!(prio, vec![1, 0]);
+        let segs = [([100.0f32, 0.0], [110.0, 0.0]), ([10.0, 0.0], [20.0, 0.0])];
+        assert_eq!(priority_order(&segs, [0.0, 0.0]), vec![1, 0]);
     }
 
     #[test]

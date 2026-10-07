@@ -428,6 +428,23 @@ The brief's solver model was verified against `src/game/m_collision_bg.c`:
 
 `rust/src/wall_solver.rs` ports the verified dispatch: `WallSeg2` (full record), `WallKind2`, `judge_wall_from_vector` (89.5° gate with the convention caveat), `rough_check_wall_height`, `wall_height_at` (interpolation), `cross_reverse_normal` / `cross_reverse_attribute`, `distance_dispatch` (push/contact/ignore with the 2.7 tolerance), `distance_push`, `wall_priority` (midpoint sort), and `solve_walls` implementing the exact player vs normal-actor orderings with iterative `actor_end` correction and `rev_pos` reconstruction. C ABI: `pc_judge_wall_from_vector`, `pc_distance_dispatch`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Endpoint-circle geometry and the 0.1f neighbor-suppression test remain future work. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Player Wall-Priority Sort
+
+### Source findings
+
+The brief's three-pass model was verified against `src/game/m_collision_bg.c`, with exact implementation details:
+
+- **Verified tail adjustment** (`m_collision_bg.c:476`): `mCoBG_MakeTab2MoveTail` — `x_bias = |dx|/(|dx|+|dz|)`, `z_bias = 1−x_bias`, 0.2-unit proportional backward shift of the start. Applied before the player branch (line 1135).
+- **Verified merge sort** (`m_collision_bg.c:1033`): recursive, `middle = (first+last)>>1`, halves staged in `pre_work[65]`/`bk_work[65]` (65, not 128 — halves of 128 fit), merge comparison `<=` (left-first).
+- **Verified reconstruction:** for each sorted distance, scan wall indices 0..count and take the first unused index with `dist_table[unit] == sorted[i]`, tracked by a `u64` used mask — ties resolve in original wall order. 64-bit mask vs 128 wall capacity: unresolved whether ≥64 walls can reach it in practice.
+- **Verified dispatch tables** (`m_collision_bg.c:1010`): NORMAL → `{Normal, Attribute, Normal}`; PLAYER → `{NormalSpecial, AttributeSpecial, NormalSpecial}`. NORMAL requires `mCoBG_RangeCheckLinePoint`; the player-special path instead requires both start and end in front, then endpoint-circle handling.
+- **Verified suppression** (`mCoBG_CheckDistSPCheck`): shared endpoint within 0.1 AND u16 angle difference < 90°−0x100 (0x3F00) → suppress the corner correction.
+- **Verified player-special gate** (`m_collision_bg.c:894`): `front(end) && front(start)`, then `mCoBG_JudgePointInCircle` endpoint tests.
+
+### Rust rewrite implementation
+
+`rust/src/wall_priority.rs` ports the faithful pipeline: `make_tab_2_move_tail` (verbatim), `merge_sort_float` (recursive, `<=` merge), `reconstruct_priority` (u64-mask, first-unused tie-break), `midpoint_dist2` + `priority_order` (full construction), `dist_routine` (both dispatch tables), `check_dist_sp_suppress`, `player_special_front_gate`, `point_in_circle`. `wall_solver.rs`'s player path now uses this faithful priority instead of a plain sort. C ABI: `pc_make_tab_2_move_tail`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Dialogue Topic Tables
 
 ### Source findings
