@@ -23,6 +23,7 @@ mod shop;
 mod behavior;
 mod attr_walls;
 mod bg_check;
+mod columns;
 mod collision;
 mod dialogue_topics;
 mod interaction;

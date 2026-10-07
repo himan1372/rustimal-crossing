@@ -448,6 +448,26 @@ The brief's forbidden-wall model was verified against `src/game/m_collision_bg.c
 
 `rust/src/attr_walls.rs` ports the tables verbatim: `MAKE_VECTOR_TABLE`, `FORBID_VECTOR_IDX`, the decomp header comments as `ATTRIBUTE_NAMES`, the 27–62 range gate, `forbid_vectors` (0–2 vector IDs), `is_two_wall_attribute`, the `(old_on_ground & attr_wall) & 1` gate as `forbid_generation_enabled`, the ball-rolling +180° reuse as `ball_rolling_angles`, the `AttributeWallSpec` record (`atr_wall = TRUE`, no moving-BG pointer), and `wall_registrar_variant`. These feed into the existing solver: attribute walls enter `wall_solver.rs` as `WallSeg2` with `atr_wall = true`, where the dispatch tables already route them to the attribute solver. C ABI: `pc_forbid_vectors`, `pc_forbid_gate`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: exact `mCoBG_UnitNoName2StartEnd` segment-orientation mapping, the AttributeOn normal/slate registrar internals, the bridge/water special case in `RegistNormalWallVector_AttributeOff`, and the parallel `l_attribute_action_info` / water-translation tables — all marked future work. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Column Construction
+
+### Column Construction
+
+### Source findings
+
+The brief's column-system model was verified against `src/game/m_collision_bg.c` and `src/game/m_collision_bg_column.c_inc`:
+
+- **Verified struct** (`m_collision_bg.c:10`): `mCoBG_column_c` = X/Y/Z position, top height, radius, `s16 atr_wall`, unit coords `ux`/`uz` — a vertical cylinder expressed as an X/Z circle with bottom/top Y.
+- **Verified 16-slot limit and counting quirk** (`m_collision_bg_column.c_inc:290`): `mCoBG_MakeColumnCollisionData` walks the neighborhood row-major, builds while `*col_count_p < 16`, and calls `mCoBG_MakeOneColumnCollisionData` *without* checking its return — the count is examined slots; failed slots stay zeroed (`bzero`'d in the normal path). Not the nearest 16.
+- **Verified own-unit exclusion:** `ut_info->ut_x == ux && ut_info->ut_z == uz` → FALSE, no column.
+- **Verified item recipes** (radius/height pairs): hole (19, ground Y, `atr_wall=TRUE`, requires `old_on_ground`); small/med/large/full tree (19, +30/+40/+60/+80); stumps (+30, radius 10 for the four `*_STUMP001` IDs, else 18); rock (19, +31.5); mailbox (15, +50); sign (19, +45); `RSV_SIGNBOARD` (10, +45); koinobori/flag (19, +160). Non-hole branches explicitly set `atr_wall = FALSE`; X/Z at unit center, Y from `mCoBG_GetBgY_OnlyCenter_FromWpos2`.
+- **Verified normal collision** (`mCoBG_ColumnCheck_NormalWall`): skip if the actor was already inside at the old position or `height < now_y + 3.0`; `dist < range + radius` → radial X/Z push with `rev_vec.y = 0` and wall-contact registration; `0 < dist − check_dist < 2.7` → contact only.
+- **Verified attribute columns:** ignored unless `old_on_ground`; then the same radial test without the height gate.
+- **Verified pipeline order** (`m_collision_bg.c:1253/1261`): object columns → decal columns → terrain wall vectors (`mCoBG_GetWallReverse`).
+
+### Rust rewrite implementation
+
+`rust/src/columns.rs` ports the system: `Column` record, `ColumnItemKind` with the exact hard-coded recipes, `make_one_column`, `make_column_collision_data` (16-slot examined-count quirk and own-unit exclusion faithfully modeled, failed slots as `None`), `column_check_normal` / `column_check_attr` (height gate, radial push, 2.7 contact band, old-on-ground gate), and the C ABI `pc_column_recipe`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: the decal-circle register/clear machinery, the separate line-vs-column sweep routine, and column-derived ground height — all marked future work. No C callers are rewired; full Windows game link unverified.
+
 ### Source findings
 
 The brief's three-pass model was verified against `src/game/m_collision_bg.c`, with exact implementation details:
