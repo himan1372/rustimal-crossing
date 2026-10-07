@@ -355,6 +355,27 @@ The brief's three-domain model was verified against `m_npc.h`/`m_npc.c`/`m_quest
 
 `rust/src/house_scene.rs` ports the verified structures: `NpcListEntry` (full `mNpc_NpcList_c` layout; conversation/quest fields opaque), `NpcActorLinks` + `resolve_npc_links` (normal and island branches), `HouseSceneKind`, `resolve_house_owner` (owner → NPC index + (4,7) placement, with the reserved/empty/joint-event guards), `renewal_npc_room` (wall/floor from owner house data), `scan_house_furniture` (verbatim two-pass strided scan), `request_proc_id` (`0x0D8B + looks`), and `force_call_req_proc` modeled as a caller-supplied callback since the implementation is untraced. C ABI: `pc_request_proc_id`, `pc_house_wall_floor`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Per-Scene State Layouts (Scene Description Language)
+
+### Source findings
+
+The brief's scene-description model was verified against `m_scene.h`/`m_scene_table.h`/`m_scene.c`/`m_play.c`:
+
+- **Verified record-type enum** (`m_scene.h:96`): 0 PLAYER_PTR, 1 CTRL_ACTOR_PTR, 2 ACTOR_PTR, 3 OBJECT_EXCHANGE_BANK_PTR, 4 DOOR_DATA_PTR, 5 FIELD_CT, 6 MY_ROOM_CT, 7 ARRANGE_ROOM_CT, 8 ARRANGE_FURNITURE_CT, 9 SOUND, 10 END.
+- **Verified `Scene_Word_u` union** (`m_scene.h`): tagged record structs sharing the type byte; misc records carry param0–param3.
+- **Verified dispatcher** (`m_scene.c:322`): `Scene_ct` walks the array with a static `Scene_Proc[]` table, breaks at END, skips `type >= mSc_SCENE_DATA_TYPE_NUM`.
+- **Verified `Door_data_c`** (`m_scene.h:47`): next_scene_id, exit_orientation, exit_type, extra_data, exit_position, door_actor_name, wipe_type.
+- **Verified FIELD_CT handler** (`m_scene.c:470`): `mFM_SetFieldInitData(bg_num, bg_disp_size)`, game_started=FALSE, in_initial_block=TRUE, sunlight_flag=TRUE; MY_ROOM_CT/ARRANGE_ROOM_CT/ARRANGE_FURNITURE_CT activate room-resource systems.
+- **Verified room types** (`m_scene.h:39`): OUTDOORS, MY_ROOM, NPC_ROOM, MISC_ROOM.
+- **Verified transition** (`m_scene.c:512`): `goto_other_scene` saves the door record, `next_scene_id = door_data->next_scene_id + 1`, `play->next_scene_no`, `restore_fgdata_all(play)`; WIPE_TYPE_NORMAL doors become WIPE_TYPE_FADE_BLACK.
+- **Verified scene count:** ~54 gameplay scenes in `m_scene_table.h` (brief said 50; actual table has 54 + SCENE_NUM).
+- **Porting caveat found in the decomp itself:** the PC port repacks FIELD_CT from `misc.param3` on little-endian (`TARGET_PC` branch) — the struct layout is big-endian-ordered, which matters for this x86 rewrite.
+- Not recovered: `Gameplay_Scene_Read` internals and the contents of individual `*_info[]` scene arrays (declared but not exposed in the reviewed headers).
+
+### Rust rewrite implementation
+
+`rust/src/scene_layout.rs` ports the verified system: `SceneWordType` (verbatim tags), `SceneWord` (decoded records), `RoomType`, `DoorData`, `interpret_scene` (walk-until-END dispatcher), `FieldInit` (FIELD_CT output with the verbatim flag values), `goto_other_scene`/`SceneTransition` (the +1 scene rule and wipe substitution), and the little-endian FIELD_CT caveat documented. C ABI: `pc_scene_word_type`, `pc_door_next_scene`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings

@@ -28,6 +28,7 @@ mod item_prefs;
 mod movement;
 mod player_move;
 mod scene;
+mod scene_layout;
 mod gbi_runtime;
 mod house_scene;
 mod letter_score;
