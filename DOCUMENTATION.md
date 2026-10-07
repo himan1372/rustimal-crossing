@@ -611,6 +611,25 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Talk Topic Taxonomy
+
+### Source findings (all verified against the local decomp)
+
+- `aQMgr_talk_normal_select_talk` (ac_quest_talk_normal_init.c:2145): top-level dispatch — first-job hint has absolute priority (`0x0841 + hint_type + looks*10`, hint_type = hint_count & 0x7F); else HAPPY mood → KI tree, other moods → normal/game tree. Ends with `aQMgr_change_NG_msg` + `mMsg_SET_CONTINUE_MSG_NUM` + `mMsg_SET_FORCENEXT`.
+- Probability tables verbatim: KI {40,30,10,10,10}, normal-1 {70,30}, normal-2 {15,35,35,15}, trade {25,25,25,25}, normal-3 {49,17,17,17}, game {40,60}. The chooser (`aQMgr_decide_idx_prob_table`) builds a 100-entry table from the weights, shuffles 30x, picks one — weights are exact.
+- All 19 message base tables verified verbatim against the source (KI x5, letter, memory, trade x4, normal-3 x4, game hint, remove_yes, ev_special, ev_cal). Every leaf is `table[looks] + variant`; looks 0-5 = personality.
+- Leaf formulas verified: weather/time `base + time_kind*6 + weather*2 + RANDOM(2)` (SAKURA folded to CLEAR); normal-3 weather `base + weather*5 + RANDOM(5|4) + ofs` with the player-man-kind adjustment (msg_cnt=4, ofs=1); season `base + add_table[month-1]` (add_table = {10,11,0..9} verbatim); letter `base + mail_selection_type` (strategy id, not a random range); memory `base + idx*2 + (letter? 0:1)` with the +8 no-memory/high-friendship fallback.
+- Verified fallbacks: KI leaf -1 → KI normal; normal-2 leaf -1 → normal-3. KI free-item+money gate: empty pocket AND wallet >= 3000.
+- Source @BUGs noted: `ret_msg` uninitialized in `aQMgr_decide_normal_2_msg_no`, `aQMgr_decide_msg_trade`, `aQMgr_decide_msg_normal_3_msg_no`, `aQMgr_decide_normal_msg_no` — the port initializes to -1 (matches observed fallback behavior, avoids UB).
+
+### Rust rewrite implementation
+
+`rust/src/talk_topics.rs`: verbatim prob/base tables, category enums, `decide_idx_prob_table` (RNG via caller closure), `select_talk_kind`, `fj_hint_msg_no`, `weather_time_msg_no`, `normal3_weather_msg_no`, `normal3_season_msg_no`, `letter_msg_no`, `memory_msg_no`, `memory_fallback_msg_no`, `ki_fallback`, `ki_free_item_money_ok`. C ABI: `pc_select_talk_kind`, `pc_fj_hint_msg_no`, `pc_weather_time_msg_no`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Deeper fallback edges (memory→trade, trade→normal-3, event→special→game-hint), the full game/event subtree (removal/special-event/calendar-rumor validity), island taxonomy (`ac_quest_talk_island.c`), greeting layer (`ac_quest_talk_greeting.c`), and the message-database semantics behind each ID range are not yet ported; no C callers rewired.
+
 ### Runtime Port Progress: Talk-Request Driver
 
 ### Source findings (all verified against the local decomp)
