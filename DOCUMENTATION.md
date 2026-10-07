@@ -484,6 +484,22 @@ The brief's two-orientation model was verified against `src/game/m_collision_bg_
 
 `rust/src/segment_map.rs` ports the mapping: `WallName`, `CheckType`, `TAB_DATA`, `unit_no_name_2_start_end` (verbatim), `point_info_front_line`, `search_wall_flag` (all four cardinal branches), `slate_normal`, `interp_axis`. `attr_walls.rs` gained `forbid_wall_segments`, closing the previously flagged gap — attribute walls now get real segments through the actual mapping. C ABI: `pc_unit_no_name_2_start_end`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: Nintendo's original terminology for the wall_name/normal distinction (not in the decomp); `mCoBG_Check45Angle` front/left/right/back classification not yet ported. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Decal-Circle Machinery
+
+### Source findings
+
+The brief conflated two mechanisms; the decomp source separates them, and this port implements both:
+
+**1. Circle-defence walls** (`mCoBG_MakeCircleDefenceWall`, `m_collision_bg_wall.c_inc:599`) — does NOT populate `mCoBG_decal_circle`. For each ordered pair of distinct columns whose unit offset (dx,dz) matches one of eight `defence_wall_info` entries, it appends TWO wall vectors from col0's position to col1's position — one per normal/angle/wall_name pair in the entry (opposite-facing normals), both `atr_wall = TRUE`, `regist_p = NULL`. Gated on `attr_wall && old_on_ground`; capped at 128 wall vectors. The table (verbatim): (±1,0) → (0,+1)/0° and (0,−1)/180° both WALL_UP; (0,±1) → (+1,0)/90° and (−1,0)/−90° both WALL_RIGHT; (±1,±1) → 135°/−45° diagonals both WALL_SLATE_DOWN; (±1,∓1) → −135°/45° diagonals both WALL_SLATE_UP. These bridge the gaps between adjacent object columns.
+
+**2. Decal circles** (`m_collision_bg_column.c_inc:1`): `mCoBG_regist_circle_info[3]` registration records drive live `mCoBG_column_c` records fed as the second `mCoBG_ColumnWallCheck` pass (`m_collision_bg.c:1261`). Radius interpolates linearly (`mCoBG_CalcAdjust`) from start to end over the timer, then the slot deactivates; columns get `height = pos.y`, `atr_wall = TRUE`. The "why decal" answer: the registrars are the player dig/scoop actions — `mCoBG_RegistDecalCircle(pos, 0.0f, 19.0f, 12)` — the dug hole's decal gets a matching temporary collision circle growing 0→19 over 12 frames. Initialized at scene start, ticked per frame (`m_play.c:435/539`).
+
+**Original-game bugs documented, not reproduced** (decomp-annotated): `RegistDecalCircle` clears `sizeof(whole array)` instead of one record (clobbering into the decal-circle data) and doesn't stop after the first free slot; `InitDecalCircle` clears 3× too much memory. The Rust port implements the intended behavior.
+
+### Rust rewrite implementation
+
+`rust/src/decal_circles.rs`: `DEFENCE_WALL_INFO[8]` verbatim, `circle_defence_wall_idx`, `make_circle_defence_walls` (ordered-pair scan, 128 cap, gate), `RegistCircleInfo`, `DecalCircleSystem` (`regist`/`calc_timer`/`init`/`active_circles`, `calc_adjust` interpolation). Reuses `columns::Column` for the live records and `segment_map::UNIT_SIZE` for unit coords. No C ABI added (registration is gameplay-driven, no stable external caller yet). `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: `mCoBG_CrossOffDecalCircle` is decomp-marked @unused/@fabricated and intentionally not ported. No C callers are rewired; full Windows game link unverified.
+
 ### Source findings
 
 The brief's three-pass model was verified against `src/game/m_collision_bg.c`, with exact implementation details:

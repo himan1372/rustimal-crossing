@@ -24,6 +24,7 @@ mod behavior;
 mod attr_walls;
 mod bg_check;
 mod columns;
+mod decal_circles;
 mod segment_map;
 mod collision;
 mod dialogue_topics;
