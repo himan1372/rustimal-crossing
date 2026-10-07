@@ -611,6 +611,34 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: NPC AI (Schedules, Reactions, Talk Throttle)
+
+### Source findings (all verified against the local decomp)
+
+- Six hard-coded daily schedules in m_npc_schedule.c, indexed by looks (girl/ko_girl/boy/sport_man/grim_man/naniwa_lady). All six tables ported verbatim (girl 05:00 sleep ... 18:30 field 21:00 house; sport-man crosses midnight; grim-man/naniwa start field at 04:00/01:30).
+- `mNPS_schedule_manager_sub`: walks the table until `end_time > now_sec`, sets saved_type; forced_timer>0 -> current_type=forced_type with the timer decremented by forced_ticks, else current=Saved. Global override: First Job or Halloween active forces ALL town animals to FIELD (manager_sub0).
+- Schedule change gate: NPC's step must match, desired type != current_type, and talk_condition == NONE — the scheduler never yanks an NPC out of conversation.
+- FIELD steps: LEAVE_HOUSE/WANDER/IN_BLOCK/PITFALL; appear_flag=1 skips to IN_BLOCK. Sleep think runs with only ENTRANCE|OBSTACLE|FATIGUE interrupts and mNpc_FEEL_SLEEPY; an interrupted sleeper forces itself to FIELD (or IN_HOUSE in its home block) for 7200 frames (~2 min).
+- Interrupt order (verified in aNPC_think_chk_interrupt_proc): talk start, pitfall, hands, uzai->REACT_TOOL, entrance, then the moving chain (clap, fatigue, collision turn, obstacle, ball, insect/fish), friendship LAST. Umbrella control runs unconditionally before the chain (not a checked priority member).
+- Wander decisions (aNPC_think_wander_decide_next): verbatim border tables per looks ({3,6} girl, {6,8} ko-girl, {5,7} boy, {2,4} sport-man, {3,6} grim-man, {4,8} naniwa/special); fatigue OR SLEEPY feel -> WAIT; WALK_WANDER think uses rng>5; RUN downgraded to WALK when forced into FIELD (current==FIELD != saved).
+- Uzai (annoyance): max_uzai_cross={600,240}, max_uzai_tool={3,1}, indexed by cross==1; triggers REACT_TOOL -> can escalate to force_call_req_proc complaint.
+- Talk throttle (m_npc.c): temperament table {unlock_timer, over_impatient_num, talk_num_max} is keyed by LOOKS, not mood (callers pass animal->id.looks; the header's `feel` param name and the FEEL comments are misleading). NORMAL looks: unlock 4000, impatient 12, max 15. TalkEndMove sets a 1000-frame timer and counts talk_num; >=impatient -> unlock timers; >=max -> refuses (ANNOYED).
+- NPC-NPC greeting: relation +8 both ways and both set HAPPY (ac_npc_act_greeting.c_inc) — the mood feedback loop is source-proven. (Bonus: same-sex NPCs copy catchphrases on greeting.)
+
+### Brief corrections made during verification
+
+1. The temperament table's "Mood" column is wrong — it is per-looks (personality). The over-impatient/max-talks columns were also swapped: the struct order is {unlock_timer, over_impatient_num, talk_num_max}.
+2. Umbrella control is not priority #2 in the interrupt chain; it runs unconditionally before the checked chain.
+3. The WALK_WANDER think mode has its own rng>5 branch, not the border tables.
+
+### Rust rewrite implementation
+
+`rust/src/npc_ai.rs`: SCHEDULE_TABLES (verbatim), sched enum, schedule_manager_sub, global_schedule_override, check_chg_schedule, field_step enum, sleep_force_schedule_type, Interrupt order, WANDER_BORDERS + wander_decide_next, uzai_trigger, TALK_TEMPER + TalkThrottle (talk_end/patience), GREETING_RELATION_BUMP. C ABI: pc_schedule_step, pc_schedule_global_override, pc_wander_decide_next, pc_uzai_trigger, pc_talk_patience. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Individual check bodies not yet ported (check_ball/check_insect/clap/entrance geometry, uzai step accumulation, mood-indexed animation tables, schedule-field/go-home/sleep think bodies). No C callers rewired.
+
 ### Runtime Port Progress: Force-Call State Machine
 
 ### Source findings (all verified against the local decomp)
