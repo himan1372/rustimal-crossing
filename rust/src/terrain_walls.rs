@@ -33,12 +33,24 @@
 //! three branches do). This port keeps that behavior — the wall_name slot
 //! is left untouched for UP walls.
 
-/// Terrain attribute numbers (from `m_collision_bg.h`).
+/// Terrain attribute numbers (from `m_collision_bg.h`, enum
+/// `background_attribute`; GRASS0 = 0).
 pub mod attribute {
-    pub const WATER: u8 = 8;
-    pub const RIVER_NE: u8 = 17;
-    pub const WOOD: u8 = 19;
-    pub const SEA: u8 = 20;
+    pub const GRASS0: u8 = 0;
+    pub const STONE: u8 = 7;
+    pub const WATER: u8 = 12;
+    pub const WATERFALL: u8 = 13;
+    pub const RIVER_N: u8 = 14;
+    pub const RIVER_NW: u8 = 15;
+    pub const RIVER_W: u8 = 16;
+    pub const RIVER_SW: u8 = 17;
+    pub const RIVER_S: u8 = 18;
+    pub const RIVER_SE: u8 = 19;
+    pub const RIVER_E: u8 = 20;
+    pub const RIVER_NE: u8 = 21;
+    pub const SAND: u8 = 22;
+    pub const WOOD: u8 = 23;
+    pub const SEA: u8 = 24;
     /// Bridge attributes: 27=wood NW, 28=wood SW, 29=wood SE, 30=wood NE,
     /// 31=wood center, 32=stone N, 33=stone E, 34=stone W, 35=stone S.
     pub const BRIDGE_FIRST: u8 = 27;
@@ -322,16 +334,16 @@ pub fn bridge_search_water_mask(attribute: u8) -> Option<u8> {
 /// non-trivial rows (32–35 map to the all-WOOD row); `quarter` is the
 /// terrain-unit quarter the actor is in (0–3).
 const WOODB_WATER_INFO: [[u8; 4]; 6] = [
-    [12, 12, 19, 19], // 27 wood bridge NW: RIVER_NW, RIVER_NW, WOOD, WOOD
-    [19, 16, 16, 19], // 28 wood bridge SW: WOOD, RIVER_SW, RIVER_SW, WOOD
-    [19, 19, 17, 17], // 29 wood bridge SE: WOOD, WOOD, RIVER_SE, RIVER_SE
-    [13, 19, 19, 13], // 30 wood bridge NE: RIVER_NE, WOOD, WOOD, RIVER_NE
-    [19, 19, 19, 19], // 31 wood bridge center: all WOOD
-    [19, 19, 19, 19], // 32 stone bridge N: all WOOD
+    [15, 15, 23, 23], // 27 wood bridge NW: RIVER_NW, RIVER_NW, WOOD, WOOD
+    [23, 17, 17, 23], // 28 wood bridge SW: WOOD, RIVER_SW, RIVER_SW, WOOD
+    [23, 23, 19, 19], // 29 wood bridge SE: WOOD, WOOD, RIVER_SE, RIVER_SE
+    [21, 23, 23, 21], // 30 wood bridge NE: RIVER_NE, WOOD, WOOD, RIVER_NE
+    [23, 23, 23, 23], // 31 wood bridge center: all WOOD
+    [23, 23, 23, 23], // 32 stone bridge N: all WOOD
 ];
 
-/// Attribute numbers used above: 12=RIVER_NW, 13=RIVER_NE, 16=RIVER_SW,
-/// 17=RIVER_SE, 19=WOOD.
+/// Attribute numbers used above: 15=RIVER_NW, 21=RIVER_NE, 17=RIVER_SW,
+/// 19=RIVER_SE, 23=WOOD.
 pub fn bridge_quarter_attribute(bridge_attr: u8, quarter: usize) -> Option<u8> {
     if (attribute::BRIDGE_FIRST..=32).contains(&bridge_attr) {
         Some(WOODB_WATER_INFO[(bridge_attr - attribute::BRIDGE_FIRST) as usize][quarter.min(3)])
@@ -436,7 +448,134 @@ pub fn cardinal_wall_from_units(
     })
 }
 
+/// The nine bridge attributes as a named enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum BridgeAttribute {
+    WoodNW = 27,
+    WoodSW = 28,
+    WoodSE = 29,
+    WoodNE = 30,
+    WoodCenter = 31,
+    StoneN = 32,
+    StoneE = 33,
+    StoneW = 34,
+    StoneS = 35,
+}
+
+/// Water/river classification range used by the bridge water search.
+pub fn is_water_attribute(attr: u8) -> bool {
+    attr >= attribute::WATER && attr <= attribute::RIVER_NE
+}
+
+/// `mCoBG_unit_attribute_water_info` verbatim (64 entries): water/river
+/// attributes map to themselves; wood-bridge corners 27–30 and river
+/// banks 39–42 map to their river corners; everything else → GRASS0.
+pub const UNIT_ATTRIBUTE_WATER_INFO: [u8; 64] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0-11
+    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, // 12-21: WATER..RIVER_NE
+    0, 0, 0, 0, 0, // 22-26
+    15, 17, 19, 21, // 27-30: wood bridge corners -> river corners
+    0, 0, 0, 0, 0, 0, 0, 0, // 31-38
+    15, 17, 19, 21, // 39-42: river banks -> river corners
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 43-63
+];
+
+/// `mCoBG_SearchWaterAttributeFrom4Area` core: map a raw neighbor
+/// attribute through the water table.
+pub fn search_water_attribute(raw_attr: u8) -> u8 {
+    UNIT_ATTRIBUTE_WATER_INFO[(raw_attr as usize).min(63)]
+}
+
+/// Unit-area classification (`mCoBG_GetUnitArea`, verbatim): the
+/// triangle of the unit the local position falls in. Matches the
+/// header enum order AREA_N=0, AREA_W=1, AREA_S=2, AREA_E=3.
+pub fn get_unit_area(x: f32, z: f32) -> u8 {
+    if x < z {
+        if z > -x {
+            2 // AREA_S
+        } else {
+            1 // AREA_W
+        }
+    } else if z > -x {
+        3 // AREA_E
+    } else {
+        0 // AREA_N
+    }
+}
+
+/// Position-to-attribute bridge branch (`mCoBG_Wpos2Attribute`):
+/// wood bridges (27–31) use the area-dependent water/wood table;
+/// stone bridges (32–35) resolve to STONE. This is why the bridge
+/// family is NOT uniform in attribute lookup even though the wall
+/// policy treats 27–35 identically.
+pub fn bridge_wpos_attribute(bridge_attr: u8, area: u8) -> Option<u8> {
+    if (27..=31).contains(&bridge_attr) {
+        bridge_quarter_attribute(bridge_attr, area as usize)
+    } else if (32..=35).contains(&bridge_attr) {
+        Some(attribute::STONE)
+    } else {
+        None
+    }
+}
+
+/// Bridge ground/water search kernel — the `mCoBG_GroundCheck` bridge
+/// branch (m_collision_bg.c:1730) as a pure function.
+///
+/// Runs only when `old_in_water && !attribute_wall && is_bridge(attr)`.
+/// Scans directions 0..8 in order, masked by `bridge_search_water`;
+/// each neighbor's RAW attribute is mapped through the water table,
+/// and the FIRST water/river result wins (direction order is
+/// behaviorally significant — do NOT reorder or use `any()`).
+/// Returns the selected water attribute, or `None` when no water is
+/// found (caller then falls back to `Wpos2Attribute`).
+pub fn bridge_water_search(
+    bridge_attr: u8,
+    old_in_water: bool,
+    attribute_wall: bool,
+    neighbor_attrs: [u8; 8],
+) -> Option<u8> {
+    if attribute_wall || !old_in_water || !is_bridge_attribute(bridge_attr) {
+        return None;
+    }
+    let mask = bridge_search_water_mask(bridge_attr).unwrap_or(0);
+    for dir in 0..8u8 {
+        if mask & (1 << dir) != 0 {
+            let water_attr = search_water_attribute(neighbor_attrs[dir as usize]);
+            if is_water_attribute(water_attr) {
+                return Some(water_attr);
+            }
+        }
+    }
+    None
+}
+
+/// Positive form of the slate rule (the C code early-returns; this
+/// reads as "should a slate wall be made").
+pub fn bridge_should_make_slate(attribute: u8, old_in_water: bool) -> bool {
+    !slate_wall_suppressed(attribute, old_in_water)
+}
+
 // ---- C ABI ----
+
+/// C ABI: bridge water search; takes 8 raw neighbor attributes in
+/// Direct order (0=N..7=SW); returns the selected water attribute,
+/// or 0xFF when the search does not run or finds no water.
+#[no_mangle]
+pub unsafe extern "C" fn pc_bridge_water_search(
+    bridge_attr: u8,
+    old_in_water: u8,
+    attribute_wall: u8,
+    neighbors: *const u8,
+) -> u8 {
+    if neighbors.is_null() {
+        return 0xFF;
+    }
+    let n = unsafe { core::slice::from_raw_parts(neighbors, 8) };
+    let mut arr = [0u8; 8];
+    arr.copy_from_slice(n);
+    bridge_water_search(bridge_attr, old_in_water != 0, attribute_wall != 0, arr).unwrap_or(0xFF)
+}
 
 /// C ABI: wall policy for a unit boundary.
 /// 0=Normal, 1=FlattenFirst, 2=FlattenSecond, 3=Suppress.
@@ -604,15 +743,15 @@ mod tests {
     #[test]
     fn bridge_quarter_table() {
         use attribute::*;
-        assert_eq!(bridge_quarter_attribute(27, 0), Some(12)); // RIVER_NW
+        assert_eq!(bridge_quarter_attribute(27, 0), Some(15)); // RIVER_NW
         assert_eq!(bridge_quarter_attribute(27, 2), Some(WOOD));
-        assert_eq!(bridge_quarter_attribute(28, 1), Some(16)); // RIVER_SW
-        assert_eq!(bridge_quarter_attribute(29, 3), Some(17)); // RIVER_SE
-        assert_eq!(bridge_quarter_attribute(30, 0), Some(13)); // RIVER_NE
+        assert_eq!(bridge_quarter_attribute(28, 1), Some(17)); // RIVER_SW
+        assert_eq!(bridge_quarter_attribute(29, 3), Some(19)); // RIVER_SE
+        assert_eq!(bridge_quarter_attribute(30, 0), Some(21)); // RIVER_NE
         assert_eq!(bridge_quarter_attribute(31, 2), Some(WOOD));
         assert_eq!(bridge_quarter_attribute(32, 0), Some(WOOD));
         assert_eq!(bridge_quarter_attribute(33, 0), None); // beyond row 5
-        assert_eq!(pc_bridge_quarter_attribute(27, 0), 12);
+        assert_eq!(pc_bridge_quarter_attribute(27, 0), 15);
         assert_eq!(pc_bridge_quarter_attribute(99, 0), 0xFF);
     }
 
@@ -649,6 +788,84 @@ mod tests {
         let (n, a, _) = slate_wall_geometry(&u, wn::SLATE_DOWN);
         assert!((n[0] + s).abs() < 1e-6 && (n[1] - s).abs() < 1e-6);
         assert_eq!(a, -45.0);
+    }
+
+    #[test]
+    fn bridge_wpos_attribute_branches() {
+        use attribute::*;
+        // Wood bridges: area-dependent.
+        assert_eq!(bridge_wpos_attribute(27, 0), Some(RIVER_NW));
+        assert_eq!(bridge_wpos_attribute(31, 3), Some(WOOD));
+        // Stone bridges: always STONE, regardless of area.
+        assert_eq!(bridge_wpos_attribute(32, 0), Some(STONE));
+        assert_eq!(bridge_wpos_attribute(35, 3), Some(STONE));
+        assert_eq!(bridge_wpos_attribute(26, 0), None);
+    }
+
+    #[test]
+    fn water_table_and_search() {
+        use attribute::*;
+        // Water attrs map to themselves; ordinary attrs to GRASS0.
+        assert_eq!(search_water_attribute(WATER), WATER);
+        assert_eq!(search_water_attribute(RIVER_NE), RIVER_NE);
+        assert_eq!(search_water_attribute(WOOD), GRASS0);
+        assert_eq!(search_water_attribute(0), GRASS0);
+        // Wood bridge corners map to their river corners.
+        assert_eq!(search_water_attribute(27), RIVER_NW);
+        assert_eq!(search_water_attribute(30), RIVER_NE);
+        // River banks 39-42 map to river corners.
+        assert_eq!(search_water_attribute(39), RIVER_NW);
+        assert_eq!(search_water_attribute(42), RIVER_NE);
+        assert!(is_water_attribute(WATER));
+        assert!(is_water_attribute(RIVER_NE));
+        assert!(!is_water_attribute(WOOD));
+        assert!(!is_water_attribute(GRASS0));
+    }
+
+    #[test]
+    fn unit_area_classification() {
+        // x < z, z > -x -> S(2); x < z, z <= -x -> W(1).
+        assert_eq!(get_unit_area(-1.0, 5.0), 2);
+        assert_eq!(get_unit_area(-5.0, 1.0), 1);
+        // x >= z, z > -x -> E(3); else N(0).
+        assert_eq!(get_unit_area(5.0, 1.0), 3);
+        assert_eq!(get_unit_area(5.0, -6.0), 0);
+    }
+
+    #[test]
+    fn bridge_water_search_kernel() {
+        use attribute::*;
+        // Attr 27 (wood NW): mask 3 = N(0) + W(1).
+        let mut n = [GRASS0; 8];
+        n[0] = WATER; // north neighbor is water
+        assert_eq!(bridge_water_search(27, true, false, n), Some(WATER));
+        // Direction order matters: N checked before W.
+        let mut n = [GRASS0; 8];
+        n[0] = RIVER_N;
+        n[1] = RIVER_W;
+        assert_eq!(bridge_water_search(27, true, false, n), Some(RIVER_N));
+        // Stone bridge S (35): mask 4 = S(2) only.
+        let mut n = [GRASS0; 8];
+        n[0] = WATER; // north water is NOT searched
+        assert_eq!(bridge_water_search(35, true, false, n), None);
+        n[2] = RIVER_S;
+        assert_eq!(bridge_water_search(35, true, false, n), Some(RIVER_S));
+        // Gates: needs old_in_water and !attribute_wall and a bridge attr.
+        let n = [WATER; 8];
+        assert_eq!(bridge_water_search(27, false, false, n), None);
+        assert_eq!(bridge_water_search(27, true, true, n), None);
+        assert_eq!(bridge_water_search(26, true, false, n), None);
+        // No water anywhere -> None (caller falls back to Wpos2Attribute).
+        assert_eq!(bridge_water_search(27, true, false, [GRASS0; 8]), None);
+        // Slate positive form.
+        assert!(bridge_should_make_slate(27, false));
+        assert!(!bridge_should_make_slate(27, true));
+        assert!(bridge_should_make_slate(26, true));
+        // C ABI.
+        let n = [WATER; 8];
+        assert_eq!(unsafe { pc_bridge_water_search(27, 1, 0, n.as_ptr()) }, WATER);
+        assert_eq!(unsafe { pc_bridge_water_search(27, 0, 0, n.as_ptr()) }, 0xFF);
+        assert_eq!(unsafe { pc_bridge_water_search(27, 1, 0, core::ptr::null()) }, 0xFF);
     }
 
     #[test]

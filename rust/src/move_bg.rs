@@ -61,7 +61,7 @@ pub mod size_preset {
 /// Boat consumer constants (`mCoBG_MakeBoatCollision`).
 pub mod boat {
     pub const HEIGHT: f32 = 30.0;
-    pub const ATTRIBUTE_SAND: u8 = 18;
+    pub const ATTRIBUTE_SAND: u8 = 22;
     pub const ACTIVE_DIST: f32 = 120.0;
     pub const MAX_SLOTS: usize = 2;
 }

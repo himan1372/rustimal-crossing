@@ -588,6 +588,26 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 `rust/src/move_bg.rs`: `MoveBgSize` + 6 verbatim presets + boat constants, `MoveBgTransform` (current pos, short-angle Y, optional base offset, scale, height), `short_to_rad`/`deg_to_short`, `rotate_y` (verbatim sign convention), `make_move_bg_walls` (4 walls verbatim, threshold + always-accumulate angle), `range_check_line_point`, `judge_move_bg_ground_check`, `move_bg_footprint_height`, `move_bg_delta` (translation-only carry), `MoveBgContact` + `set_side_contact`/`set_on_contact` (5-cap, no dedup), `register_slot` (first free of 64). C ABI: `pc_make_move_bg_walls` (writes `PcMoveBgWall[4]`), `pc_move_bg_delta`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: the 64-slot registry itself stays in C for now (per the kernel-first strategy); no C callers rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Bridge Policy
+
+### Source findings (all verified against the local decomp)
+
+- **Bridge = terrain state, not an object**: attributes 27-35 live in the terrain unit's 6-bit attribute field; the bridge is not part of the moving-background system.
+- **Two policy layers** sharing `old_in_water` (copied from the previous frame's `result.is_in_water`): the wall-generation policy (what walls exist) and the ground/water policy (whether the actor stays water-classified).
+- **Wall policy formalization** (`mCoBG_RegistNormalWallVector_AttributeOff`): !old_in_water -> normal; WOOD<->bridge(27-35) -> flatten bridge side to min corner height, slate off, ordinary generation; bridge<->bridge -> suppress; bridge<->non-wood -> suppress; non-bridge<->non-bridge -> normal. The special case requires the non-bridge side to be specifically WOOD.
+- **Slope policy**: `mCoBG_RegistSlatingWallVector_AttributeOff_Slate_OldInWater` returns early for 27-35 when old_in_water — no slope wall on bridges in the water state.
+- **Attribute lookup split** (`mCoBG_Wpos2Attribute`, m_collision_bg.c:1561): 27-31 -> area-dependent `mCoBG_woodb_water_info` (RIVER_*/WOOD per quarter); 32-35 -> STONE. The wall policy treats 27-35 uniformly, but attribute lookup does NOT.
+- **Unit areas** (`mCoBG_GetUnitArea`, verbatim): triangle test on local (x,z) -> AREA_N=0/W=1/S=2/E=3.
+- **Water table** (`mCoBG_unit_attribute_water_info`, verbatim, 64 entries): water/river attrs map to themselves; wood-bridge corners 27-30 and river banks 39-42 map to their river corners; everything else -> GRASS0.
+- **Ground/water search** (m_collision_bg.c:1730): gated on `attribute_wall == FALSE && old_in_water && 27 <= attr <= 35`; scans directions 0..8 masked by `bridge_search_water`; each neighbor's RAW attribute goes through the water table; FIRST water/river result wins (direction order significant); result unit_attribute = selected water attr; water height computed at the actor's CURRENT position, not the neighbor's.
+- **Feedback loop**: `result.is_in_water` -> next frame's `old_in_water` -> bridge policies -> new `is_in_water`.
+- **Inference**: the machinery's purpose (water<->bridge transitions without phantom cliff walls, preserving water behavior around bridges) is interpretation, not a source comment.
+- **CORRECTION during this work**: the attribute constants in the first terrain_walls commit were wrong (WATER=8/WOOD=19/SAND=18); the actual enum is GRASS0=0, WATER=12, RIVER_NE=21, SAND=22, WOOD=23, SEA=24. Fixed in this commit along with the woodb table values. The earlier tests passed only because they used the wrong constants consistently - caught by re-verifying against the header enum.
+
+### Rust rewrite implementation
+
+`rust/src/terrain_walls.rs` additions: `BridgeAttribute` enum, `is_water_attribute` (WATER..=RIVER_NE), `UNIT_ATTRIBUTE_WATER_INFO` (verbatim 64-entry table), `search_water_attribute`, `get_unit_area`, `bridge_wpos_attribute` (27-31 -> woodb table, 32-35 -> STONE), `bridge_water_search` (first-match-wins direction order), `bridge_should_make_slate` (positive form). C ABI: `pc_bridge_water_search` (8 raw neighbor attrs in Direct order, returns water attr or 0xFF). Corrected attribute numbers as above. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 ### Rust rewrite implementation
 
 `rust/src/decal_circles.rs`: `DEFENCE_WALL_INFO[8]` verbatim, `circle_defence_wall_idx`, `make_circle_defence_walls` (ordered-pair scan, 128 cap, gate), `RegistCircleInfo`, `DecalCircleSystem` (`regist`/`calc_timer`/`init`/`active_circles`, `calc_adjust` interpolation). Reuses `columns::Column` for the live records and `segment_map::UNIT_SIZE` for unit coords. No C ABI added (registration is gameplay-driven, no stable external caller yet). `cargo check --lib` clean. Unit tests: 198/198 pass in the authorized `cargo test --lib` run on 2026-10-07 (run #6). Gaps: `mCoBG_CrossOffDecalCircle` is decomp-marked @unused/@fabricated and intentionally not ported. No C callers are rewired; full Windows game link unverified.
