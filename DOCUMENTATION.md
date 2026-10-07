@@ -407,6 +407,27 @@ Verified formulas and limits:
 
 `rust/src/bg_check.rs` ports the verified sequence: `BgStage` (recovered call order), `BgCheckType` (player vs actor wall ordering), `BgActorInfo` (old/new ground state, speeds), `neighborhood_size`, `distance_reverse`, `adjust_actor_y` (both the snap-up and descending-snap branches), `water_y_river`/`water_y_sea`, `wave_rate`, `RoomSizeClass`/`room_scope_extent`, `carry_out_reverse`, and the source limits as constants. C ABI: `pc_bg_neighborhood`, `pc_bg_distance_reverse`, `pc_bg_room_scope`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. The inner wall solver's geometric internals (crossing tests, player prioritization, attribute tables) remain future work. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Inner Wall Solver Geometry
+
+### Source findings
+
+The brief's solver model was verified against `src/game/m_collision_bg.c`:
+
+- **Verified wall record** (`m_collision_bg.c:27`): start/end XZ, vertical bounds (start_top/btm, end_top/btm), normal, normal_angle, wall_name, regist_p, atr_wall.
+- **Verified kind dispatch** (`m_collision_bg.c:816`): `cross_rev_proc[] = { Normal, Attribute, Normal }` — moving walls reuse the normal crossing routine.
+- **Verified vector gate** (`m_collision_bg.c:533`): `mCoBG_JudgeWallFromVector` returns TRUE when `|angle| > 89.5°` under the engine's angle convention.
+- **Verified height tests:** `mCoBG_RoughCheckWallHeight` uses `bot_y + 3.0f`; `mCoBG_GetWallHeight` interpolates top/bottom along the wall.
+- **Verified crossing corrections:** normal → `rev_dist = range + dist + 0.00001f`, `reverse = normal * rev_dist`; attribute → `reverse = cross - actor_end` (line-line intersection).
+- **Verified distance dispatch:** `dist < range` → push `(range - dist) + 0.00001f`; `|dist - range| < 2.7f` → register contact only (two occurrences: lines 844, 961).
+- **Verified normal-actor order** (`m_collision_bg.c:1181`): `spd > range * 0.5` → crossing pass; then static distance pass (`regist_p == NULL`); then moving distance pass; `actor_end += rev` after every wall.
+- **Verified player order** (`m_collision_bg.c:1140`): distance pass (as NORMAL) → `mCoBG_GetWallPriority` (merge-sort by squared midpoint distance from actor_start) → distance pass in priority order (as PLAYER) → crossing pass. The brief's summary omitted the first unordered distance pass; the code has it.
+- **Verified final:** `rev_pos = actor_end - original_end`; start is preserved while end is corrected iteratively.
+- **Verified padding:** `mCoBG_tab_data = { {5.0f, 10.0f}, {0.000001f, 0.000002f} }` expands wall segments beyond tile edges.
+
+### Rust rewrite implementation
+
+`rust/src/wall_solver.rs` ports the verified dispatch: `WallSeg2` (full record), `WallKind2`, `judge_wall_from_vector` (89.5° gate with the convention caveat), `rough_check_wall_height`, `wall_height_at` (interpolation), `cross_reverse_normal` / `cross_reverse_attribute`, `distance_dispatch` (push/contact/ignore with the 2.7 tolerance), `distance_push`, `wall_priority` (midpoint sort), and `solve_walls` implementing the exact player vs normal-actor orderings with iterative `actor_end` correction and `rev_pos` reconstruction. C ABI: `pc_judge_wall_from_vector`, `pc_distance_dispatch`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Endpoint-circle geometry and the 0.1f neighbor-suppression test remain future work. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Dialogue Topic Tables
 
 ### Source findings

@@ -42,6 +42,7 @@ mod save;
 mod town_gen;
 mod vi;
 mod villager_mail;
+mod wall_solver;
 
 const CISO_HEADER_SIZE: usize = 0x8000;
 const CISO_MAP_OFFSET: usize = 8;
