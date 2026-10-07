@@ -196,6 +196,19 @@ The house/shop brief was traced through `include/m_player.h`, `include/m_home_h.
 
 ### Source findings
 
+The menu/init brief was traced through `src/game/m_game_dlftbls.c`, `src/graph.c`, `src/game.c`, `include/game.h`, `include/m_game_dlftbls.h`, `src/first_game.c`, `src/game/m_trademark.c`, and `src/game/m_select.c`. The brief's core claim is confirmed: there is no single main-menu function — the game is a scene dispatcher.
+
+- **Verified scene table:** `DLFTBL_GAME game_dlftbls[]` ("Display List Function TaBLe"): first_game (0), select (1), play (2), second_game (3), NULL (4, "removed & unused"), trademark (5), player_select (6), save_menu (7), famicom_emu (8), prenmi (9), pc_model_viewer (10, `#ifdef TARGET_PC`). Each entry holds an init function pointer, a cleanup pointer, and `alloc_size` (`sizeof(GAME_<class>)`).
+- **Verified GAME struct:** `exec` at 0x0, `cleanup` at 0x8, `next_game_init` at 0xC, `next_game_class_size` at 0x10 — confirming the brief's offset-0xC observation. `frame_counter` at 0xA0.
+- **Verified transition mechanism:** `GAME_GOTO_NEXT` sets `doing = FALSE` and records `next_game_init` + the next scene's state size; `game_get_next_game_dlftbl` matches that init pointer against the table (`ARE_INIT_PROCS_EQUAL` comparisons) to find the next entry.
+- **Verified lifecycle:** `graph_proc` starts at `game_dlftbls[0]`, then loops: `malloc(alloc_size)` → `game_ct(init)` (sets `doing = TRUE`, clears next) → per-frame `graph_main` → `game_main` → `scene->exec()` while doing → resolve next entry → `game_dt` (cleanup) → `free`.
+- **Verified transitions:** first_game → second_game (`first_game.c:16`); trademark → play (`m_trademark.c:183`); select → play (`m_select.c:25`).
+- **Doc correction:** the earlier "player_select (scene 19)" note was wrong; the current decomp places player_select at table index 6 (fixed above).
+
+### Rust rewrite implementation
+
+`rust/src/scene.rs` ports the dispatcher: `SceneId` with verified table indices (index 4 maps to nothing), `SCENE_TABLE` with init-function names, the `Scene` trait (init/exec/cleanup), `SceneRequest` (Continue/Goto/Shutdown), and `SceneManager` modeling the `doing` flag, the next-init pointer, and table-based transition resolution. Also models the boot chain (`BOOT_CHAIN`), marking the six PC-port wrapper stages vs the original game's `ac_entry` → `boot_main` → `entry` → `mainproc` → `graph_proc`. C ABI: `pc_scene_table_index`, `pc_game_dlftbls_count`. Scene state sizes are per-build C values and are not reproduced. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings
@@ -213,18 +226,20 @@ The brief's AI-architecture claims were traced through `include/ac_npc.h`, `src/
 
 `rust/src/behavior.rs` ports the engine: `BehaviorAction` (23 actions in decomp order), `ActionKind`, `ActionTarget`, `ActionRequest` with the priority-wins rule, head tracking, `VisibleMood` with interaction gating (angry/sad can refuse talk), `WorldEvent` → `reaction_for` (fish/bug caught → clap, pitfall → trapped state, tool use → react), the `FavorState` machine (None/Offered/Accepted/InProgress/Completed/Rewarded with NPC-chained deliveries), `BehaviorStage` pipeline ordering (schedule → world events → mood → activity → movement → interaction), `VillagerBehavior` runtime state, `select_move_out` with the met-preference order, `transfer_allowed` validation, `TransferRecord`, and letter→friendship via the `m_quest.h` bonuses clamped to the 0..=127 GameCube friendship range (not New Horizons' 0-255). C ABI: `pc_letter_friendship_delta`. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
-The menu/init brief was traced through `src/game/m_game_dlftbls.c`, `src/graph.c`, `src/game.c`, `include/game.h`, `include/m_game_dlftbls.h`, `src/first_game.c`, `src/game/m_trademark.c`, and `src/game/m_select.c`. The brief's core claim is confirmed: there is no single main-menu function — the game is a scene dispatcher.
+### Runtime Port Progress: Villager Interest & Interaction
 
-- **Verified scene table:** `DLFTBL_GAME game_dlftbls[]` ("Display List Function TaBLe"): first_game (0), select (1), play (2), second_game (3), NULL (4, "removed & unused"), trademark (5), player_select (6), save_menu (7), famicom_emu (8), prenmi (9), pc_model_viewer (10, `#ifdef TARGET_PC`). Each entry holds an init function pointer, a cleanup pointer, and `alloc_size` (`sizeof(GAME_<class>)`).
-- **Verified GAME struct:** `exec` at 0x0, `cleanup` at 0x8, `next_game_init` at 0xC, `next_game_class_size` at 0x10 — confirming the brief's offset-0xC observation. `frame_counter` at 0xA0.
-- **Verified transition mechanism:** `GAME_GOTO_NEXT` sets `doing = FALSE` and records `next_game_init` + the next scene's state size; `game_get_next_game_dlftbl` matches that init pointer against the table (`ARE_INIT_PROCS_EQUAL` comparisons) to find the next entry.
-- **Verified lifecycle:** `graph_proc` starts at `game_dlftbls[0]`, then loops: `malloc(alloc_size)` → `game_ct(init)` (sets `doing = TRUE`, clears next) → per-frame `graph_main` → `game_main` → `scene->exec()` while doing → resolve next entry → `game_dt` (cleanup) → `free`.
-- **Verified transitions:** first_game → second_game (`first_game.c:16`); trademark → play (`m_trademark.c:183`); select → play (`m_select.c:25`).
-- **Doc correction:** the earlier "player_select (scene 19)" note was wrong; the current decomp places player_select at table index 6 (fixed above).
+### Source findings
+
+The brief's "no formal hobby system" warning was honored and its open questions were traced through `include/m_npc.h`, `src/game/m_npc.c`, and `include/m_quest.h`:
+
+- **Verified feel (mood) enum:** `mNpc_FEEL_*` — Normal, Happy, Angry, Sad, Sleepy, Pitfall, plus two "uzai" (pestering) feels, 9 total (`mNpc_FEEL_ALL_NUM`). This corrects the earlier `npc.rs` note that claimed the decomp does not name the moods.
+- **Verified talk-frequency mechanic:** `m_npc.c` has per-villager talk info (timer, talk_num, quest_request flag, unlock/reset timers) and a per-feel temper table `l_npc_temper` with verbatim values: Normal (4000, 12, 15), Happy (3000, 10, 13), Angry (4000, 12, 15), Sad (4000, 10, 13), Sleepy (5000, 9, 12), Pitfall (5000, 9, 12) as (unlock_timer, over_impatient_num, talk_num_max). `mNpc_GetOverImpatient` returns MILDLY_ANNOYED past the impatient threshold and ANNOYED (refuse to talk) past the max. Happy villagers lose patience faster than normal ones.
+- **Verified quest system:** `mQst_QUEST_TYPE_*` — Delivery (kinds: normal/foreign/removed/lost, with sender + recipient IDs = the chained-favor machinery), Errand (chain/first-job types; first-job quests include deliver furniture, send letter, deliver carpet/axe, post notice, introductions), Contest (fruit, ball, snowman, flower, fish, insect, letter).
+- Inventory inspection ("impulse buying") remains player-documented but untraced to a source function; individual item-preference structures also remain untraced. Both are marked as such in the code.
 
 ### Rust rewrite implementation
 
-`rust/src/scene.rs` ports the dispatcher: `SceneId` with verified table indices (index 4 maps to nothing), `SCENE_TABLE` with init-function names, the `Scene` trait (init/exec/cleanup), `SceneRequest` (Continue/Goto/Shutdown), and `SceneManager` modeling the `doing` flag, the next-init pointer, and table-based transition resolution. Also models the boot chain (`BOOT_CHAIN`), marking the six PC-port wrapper stages vs the original game's `ac_entry` → `boot_main` → `entry` → `mainproc` → `graph_proc`. C ABI: `pc_scene_table_index`, `pc_game_dlftbls_count`. Scene state sizes are per-build C values and are not reproduced. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/interaction.rs` ports the interaction layer: `Feel` (named moods), `TEMPER_TABLE` verbatim, `TalkInfo` with `count_talk`/`patience`/`over_impatient`, `Patience`, `QuestType`/`DeliveryKind`/`ContestKind`/`ErrandType`, the five `InterestLayer`s (personality, individual, current desire, opportunistic, environmental — no hobby field), `InteractionKind`, and `InteractionContext` with the selection hierarchy (annoyed → refused; pending request → request; held item → item trade; else conversation). C ABI: `pc_npc_patience`. Also corrected the `npc.rs` mood comment to reference the feel enum. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Video Interface
 

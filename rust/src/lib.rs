@@ -21,6 +21,7 @@ mod buried_items;
 mod house;
 mod shop;
 mod behavior;
+mod interaction;
 mod gbi_runtime;
 mod letter_score;
 mod mtx;

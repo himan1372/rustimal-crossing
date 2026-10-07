@@ -201,8 +201,10 @@ pub fn is_asleep(personality: Personality, seconds: u32) -> bool {
     schedule_state_at(personality, seconds) == ScheduleState::Sleep
 }
 
-/// Mood value count (`mNpc_MOOD_NUM`). The decomp does not name the moods;
-/// they are tracked as an opaque index plus timer (`mood`/`mood_time`).
+/// Mood value count (`mNpc_FEEL_ALL_NUM`). The decomp names the moods as
+/// "feels" (`mNpc_FEEL_*`: Normal, Happy, Angry, Sad, Sleepy, Pitfall,
+/// plus two "uzai" feels); they are tracked as an opaque index plus timer
+/// (`mood`/`mood_time`). See `interaction.rs` for the named mapping.
 pub const MOOD_NUM: usize = 9;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
