@@ -90,6 +90,7 @@ game inputs. `wall_priority.rs` already contains the template
 | Rust kernel | C function | C call site |
 |---|---|---|
 | `pc_bg_neighborhood_coords` (fixed 49-elem buffer, no `Vec` over FFI) | `mCoBG_MakeSizeUnitInfo` coordinate core | `m_collision_bg.c` |
+| `pc_make_move_bg_walls` (`PcMoveBgWall[4]`), `pc_move_bg_delta` | `mCoBG_SizeData2CollisionData`, `mCoBG_MoveActorWithMoveBg_OnMoveBg` | `m_collision_bg_move.c_inc` — registry stays in C for now |
 | `pc_bg_room_scope` | room-size lookup | room-scope check |
 | `pc_door_next_scene` (arithmetic only) | `goto_other_scene` ID math | `m_scene.c` — C keeps the fade/wipe/scene mutation |
 | `house_surface_lookup` → `pc_house_wall_floor` | `mNpc_GetNpcFloorNo/WallNo` core | `m_npc.c` — C keeps `Common_Get`/`Save_Get` lookups |
