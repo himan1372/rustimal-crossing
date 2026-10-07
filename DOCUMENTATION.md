@@ -227,6 +227,26 @@ The brief's deep-dive was verified function-by-function against the decomp:
 
 Extended `rust/src/scene.rs`: `SCENE_EXEC_TABLE` with the verified per-scene exec/cleanup names (first_game has no exec), `SCENE_TABLE_NULL_INDEX = 4`, `GAME_MAIN_PHASES` (the six `game_main` wrapper phases), `PlayExecPhase` (Move/Draw), `VisualTransition` (wipe/fade as separate from scene transitions), `SceneDataKind` (the 10 level-2 scene-data types), and `SceneManager::goto_play/goto_famicom_emu/goto_prenmi` transition helpers mirroring the C helpers. The `Scene` trait docs now record the init-installs-exec contract and the first_game exception. **Build fix:** an earlier edit had accidentally replaced `mod scene;` with `mod behavior;` in `lib.rs`, silently dropping the scene module from the build (its tests never ran, its C ABI exports never existed); restored. `cargo test --lib`: 94/94 pass. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Villager Movement
+
+### Source findings
+
+The brief's "no global pathfinder" claim was verified function-by-function against the decomp:
+
+- **Verified wander destination** (`ac_npc_think_wander.c_inc:20`): `angle = RANDOM(360°)`, `dst = center + (sin(angle), cos(angle)) * radius` — a continuous world-space point, filtered by foreground (empty/item/furniture only), `mCoBG_Wpos2CheckNpc`, and the movement-range check.
+- **Verified movement struct** (`ac_npc.h`): `dst_pos` (goal) vs `avoid_pos` (steering target), range center/radius/type, `mv_angl`, speed with max/acceleration/deceleration.
+- **Verified range types:** block, circle, square (square is later-revision only, `#if VERSION >= VER_GAFU01_00`).
+- **Verified avoidance probes** (`ac_npc_think.c_inc:283`): `add_angl` table is literally {±22.5°, ±45°, ±90°}, probed two unit-widths ahead; recursion `n → n+1` on failure; fallback is a 180° turn. Badly-stuck fallback is a random ±112.5° turn (`turn_angl_table`).
+- **Verified decide tables** with the source's own probability comments: normal 40/30/30 wait/walk/run, peppy 70/20/10, lazy 60/20/20, jock 30/20/50, cranky 40/30/30, snooty 50/40/10. Roll is `RANDOM(10)` against the borders. Fatigued/sleepy villagers always wait.
+- **Verified friendship movement** (`ac_npc_move.c_inc:507`): same block + friendship < 0 → AVOID; > 128 → SEARCH.
+- **Verified clap check** (`ac_npc_think.c_inc`): normal feel + player catching fish/bug + within 3 units + facing within 67.5°.
+- **Verified go-home:** `house + (20, 60)` requested as WALK.
+- **Verified walk dispatch:** move / avoid-move / search-move / to-point-move.
+
+### Rust rewrite implementation
+
+`rust/src/movement.rs` ports the steering system: `MoveRangeType`, `FriendshipMode`, `WalkProc`, `WanderChoice`, `DECIDE_BORDERS` verbatim with `decide_wander`, `AVOID_PROBE_ANGLES`/`TURN_BACKWARD_ANGLES`/`GO_HOME_OFFSET` constants, `friendship_mode`, `Movement` (dst/avoid split, `set_dst`/`set_avoid`/`restore_dst`, acceleration-based `step`, circular `wander_destination`, `probe_avoid`, circle containment), and `check_clap`. C ABI: `pc_wander_choice`, `pc_friendship_mode`. `cargo test --lib`: 101/101 pass. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings
