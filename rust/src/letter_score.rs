@@ -535,37 +535,41 @@ pub unsafe extern "C" fn mMck_check_key_hit_nes(body: *const u8) -> i32 {
 }
 
 /// `mMck_check_key_hit`: trigram hit percentage; writes the word count to
-/// `words_out` when non-null. Returns 0 for a null body.
+/// `len` when non-null. Returns 0 for a null body.
+///
+/// Parameter order matches the C declaration
+/// (`m_mail_check_ovl.h`: `int mMck_check_key_hit(int* len, u8* str)`).
 ///
 /// # Safety
-/// `body` must point to at least 192 readable bytes; `words_out` must be
-/// writable when non-null.
+/// `str` must point to at least 192 readable bytes; `len` must be writable
+/// when non-null.
 #[no_mangle]
-pub unsafe extern "C" fn mMck_check_key_hit(body: *const u8, words_out: *mut i32) -> i32 {
-    if body.is_null() {
+pub unsafe extern "C" fn mMck_check_key_hit(len: *mut i32, str_: *const u8) -> i32 {
+    if str_.is_null() {
         return 0;
     }
     // SAFETY: the caller guarantees a 192-byte body per the C ABI contract.
-    let body = unsafe { std::slice::from_raw_parts(body, MAIL_BODY_LEN) };
+    let body = unsafe { std::slice::from_raw_parts(str_, MAIL_BODY_LEN) };
     let Ok(body) = <&[u8; MAIL_BODY_LEN]>::try_from(body) else {
         return 0;
     };
     let mut words = 0u32;
     let rate = hit_rate(body, &mut words, TrigramMode::Intended);
-    if !words_out.is_null() {
+    if !len.is_null() {
         // SAFETY: checked non-null; writable per the C ABI contract.
-        *words_out = words as i32;
+        *len = words as i32;
     }
     rate as i32
 }
 
 /// Quest letter rank 0-11 (mirrors the static `mQst_GetMailRank`).
-/// `present` is nonzero when a gift is attached. Returns 0 for a null body.
+/// `present` is nonzero when a gift is attached; its type matches the C
+/// `mActor_name_t` (u16). Returns 0 for a null body.
 ///
 /// # Safety
 /// `body` must point to at least 192 readable bytes.
 #[no_mangle]
-pub unsafe extern "C" fn mQst_GetMailRank(body: *const u8, present: i32) -> u8 {
+pub unsafe extern "C" fn mQst_GetMailRank(body: *const u8, present: u16) -> u8 {
     if body.is_null() {
         return 0;
     }

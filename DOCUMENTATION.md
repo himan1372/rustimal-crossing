@@ -197,6 +197,11 @@ Trigram tables: the 776 intended pairs were extracted from `str_a_table..str_z_t
 
 Source findings that correct earlier research prose: check D does not strip spaces; the run-on rule needs 4 ordinary / 9 symbol repeats (the counter resets to 0, so "3+"/"up to 7" summaries are simplifications — C and the Rust port agree); check F only fires after a separator; friendship clamps at `0..=127`, contradicting the infographics' `0..255`. An empty body would read one byte before the buffer in C (undefined behavior); the Rust port scores it as 0 instead. Unit tests cover each check, both trigram modes, quest extremes, and the `"!!!!!"` case; `cargo check --lib` is clean. Tests were written but not run (standing rule); the i686 Windows build runs on the MSYS2 machine. Workbook rows 31-34 and new Image Research Leads rows record all findings.
 
+**ABI audit (2026-10-07).** Three findings against the decomp headers:
+1. **Fixed:** `mMck_check_key_hit`'s Rust parameters were reversed vs the C declaration (`m_mail_check_ovl.h:29`: `int mMck_check_key_hit(int* len, u8* str)`). The Rust export now takes `(len: *mut i32, str_: *const u8)` in C order. Had the old order ever interposed, every C caller would have passed the word-count pointer as the body.
+2. **Fixed:** `mQst_GetMailRank`'s second parameter is now `u16`, matching the C `mActor_name_t` (was `i32`; benign on i686 cdecl but wrong).
+3. **Open — duplicate symbols in the game link:** the Rust crate builds with `codegen-units = 1`, so `libac_pc_rust.a` is a single object defining `mMck_check_key_hit` and `mMck_check_key_hit_nes`. The game build globs `m_mail_check_ovl.c` from `DECOMP_ROOT` (no exclusion) and links `ac_pc_rust` (needed for `PSMTX*` etc.), so the linker will see both definitions — a "multiple definition" error once the Rust object is extracted. The Rust letter engine is therefore **not live-wired**: the C version wins or the link fails, and `mQst_GetMailRank` is `static` in `m_quest.c`, so the Rust export can never intercept that call site anyway. Wiring it up needs a build decision (see workbook row 52). Full Windows game link remains unverified.
+
 ### Runtime Port Progress: Real-Time/Calendar Engine
 
 This increment ports the GameCube time stack to `pc/rust/src/game_time.rs`, verified against the decompilation before porting. The architecture has four layers:
