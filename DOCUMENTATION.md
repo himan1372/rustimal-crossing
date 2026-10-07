@@ -609,6 +609,22 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 ### Runtime Port Progress: AttributeWall_Special Exact Differences
 
 
+### Runtime Port Progress: Check45Angle Direction Classification
+
+### Source findings (all verified against the local decomp)
+
+- **Correction to the brief**: `mCoBG_Check45Angle` (m_collision_bg.c:641) is NOT a 4-way FRONT/RIGHT/LEFT/BACK classifier — it is a boolean predicate: `ABS(angle1-angle0) <= 8192 (0x2000 = 45°) || ABS(angle1-angle0) >= 57343 (0xDFFF = (u16)(-8193))`. The second clause is the wraparound catcher (verbatim off-by-one: accepts circular distance up to 8193 ticks).
+- **The 4-way classification is the caller's else-if chain** (`mCoBG_SearchColOwnPart`, m_collision_bg.c:692), probing rotated wall angles in FRONT > RIGHT > LEFT > BACK priority:
+  - FRONT: `Check45Angle(wall + (180° - 1 tick), actor)` — actor faces within 45° of the reversed wall normal; sets HIT_WALL_FRONT, records `in_front_wall_angle_y`, sets `unk_flag4`.
+  - RIGHT: `Check45Angle(wall - 90°, actor)`; LEFT: `Check45Angle(wall + 90°, actor)`; BACK: `Check45Angle(wall, actor)`.
+  - Flags go to `hit_wall` or `hit_attribute_wall` by wall type (WALL_TYPE0/1).
+- **Two-wall logic** (`mCoBG_MakePartDirectHitWallFlag`): opposing walls = u16 angle difference within ±3 ticks of 180°; close-angle = < 12288 ticks (67.5°). `mCoBG_RegistWallCount`: with exactly 2 walls, averages their normals (sin/cos/atan tables) and probes the actor against (avg + 180° - 1 tick).
+- This resolves the brief's open question #17 structurally: FRONT ⟺ actor faces anti-parallel to the wall normal (within 45°).
+
+### Rust rewrite implementation
+
+`rust/src/wall_hit_dir.rs`: `hit_flag` bits, tick constants, `check_45_angle` (verbatim incl. off-by-one), `search_col_own_part` (priority chain with wrapping rotation), `walls_opposing`, `walls_close_angle`. C ABI: `pc_check_45_angle`, `pc_hit_wall_dir`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 #### Follow-up 2: the "debugger trace" of height inputs — done statically
 
 The brief proposed a Dolphin debugger session to trace the height inputs. That session can't run here (no game image or emulator in this environment), but the decomp source gives the exact dataflow — better than a sampled trace:
