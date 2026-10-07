@@ -31,11 +31,15 @@
 //!
 //! [`TrigramMode::NtscU`] reproduces the North American/Australian bug: the
 //! tables lack the `0x7F` terminator, so the lookup scan runs past each
-//! table's end into the following tables. The post-Z RAM tail (a few thousand
-//! more pairs up to the `0x7F` at `0x806A102E` in the original ROM) is *not*
-//! modeled here: those bytes are layout-specific and mostly unreachable from
-//! the letter keyboard, so the scan stops at the end of the Z table. This is
-//! a documented, deliberate approximation.
+//! table's end into the following tables, and past the Z table into the RAM
+//! tail (5,858 bytes up to the `0x7F` at `0x806A102E` in the original ROM).
+//! The tail is modeled via `tables::TRIGRAM_RAM_EXTRA`: 758 byte pairs
+//! reconstructed from Hunter R.'s published `trigrams-bugged.txt` `~~~`
+//! section (779 entries) using the decomp's `m_font.h` charset. 21 entries
+//! use obscure symbols whose byte mapping could not be determined reliably
+//! and are omitted. With the 758, per-letter effective trigram counts match
+//! Hunter's published table (A=1000 ... Z=780, total 23,670) to within those
+//! 21 omitted pairs.
 //!
 //! # Source quirks reproduced here
 //!
@@ -64,7 +68,13 @@
 //! (`src/game/m_mail_check_ovl.c`, `src/game/m_npc.c`, `src/game/m_quest.c`).
 //! Trigram pair data extracted from the decomp's `str_a_table..str_z_table`
 //! (see `letter_score_tables.rs`); per-table counts match the published
-//! research (57/49/44/.../1, 776 total). No game code is copied: only the
+//! research (57/49/44/.../1, 776 total). The NTSC-U RAM tail
+//! (`TRIGRAM_RAM_EXTRA`) is reconstructed from Hunter R.'s
+//! `trigrams-bugged.txt` (https://github.com/HunterRDev/AC-Letter-Scorer,
+//! `Resources/trigrams-bugged.txt`), whose `~~~` section holds the 779
+//! deduplicated tail pairs; each entry was mapped back to game bytes via the
+//! decomp's `m_font.h` charset. Article:
+//! https://hunter-r.com/posts/ac-trigrams/. No game code is copied: only the
 //! short functional pair data and reimplemented algorithms are used.
 
 // Public API surface for the rewrite (consumed via the C ABI below and by
@@ -93,7 +103,8 @@ pub enum TrigramMode {
     /// Matches the PC port's `BUGFIXES` build.
     Intended,
     /// Faithful North American/Australian behavior: the scan runs past each
-    /// table's missing terminator into the following tables.
+    /// table's missing terminator into the following tables, then through
+    /// the post-Z RAM tail (`TRIGRAM_RAM_EXTRA`).
     NtscU,
 }
 
@@ -171,7 +182,8 @@ fn trigram_hit(body: &[u8; MAIL_BODY_LEN], pos: usize, mode: TrigramMode) -> boo
             tables::TRIGRAM_TABLE_STARTS[table + 1],
         ),
         // The NTSC-U scan never terminates per table: it keeps reading into
-        // the following tables (the missing-0x7F bug).
+        // the following tables (the missing-0x7F bug), then into the RAM tail
+        // past the Z table (tables::TRIGRAM_RAM_EXTRA).
         TrigramMode::NtscU => (
             tables::TRIGRAM_TABLE_STARTS[table],
             tables::TRIGRAM_TABLE_STARTS[26],
@@ -179,7 +191,14 @@ fn trigram_hit(body: &[u8; MAIL_BODY_LEN], pos: usize, mode: TrigramMode) -> boo
     };
     // pos + 2 <= 191: callers only pass word starts within the trimmed body.
     let want = [body[pos + 1], body[pos + 2]];
-    tables::TRIGRAM_PAIRS[lo..hi].iter().any(|&p| p == want)
+    if tables::TRIGRAM_PAIRS[lo..hi].iter().any(|&p| p == want) {
+        return true;
+    }
+    // NTSC-U only: after the Z table, the scan continues through the RAM tail.
+    if mode == TrigramMode::NtscU {
+        return tables::TRIGRAM_RAM_EXTRA.iter().any(|&p| p == want);
+    }
+    false
 }
 
 /// Run `f` at the start of every word in the trimmed body, mirroring the
@@ -603,6 +622,15 @@ mod tests {
         // "aab": ('a','b') is not an intended A-table pair, but the NTSC-U
         // scan bleeds into the B table where it exists.
         let body = body_of(b"aab");
+        assert_eq!(check_b(&body, TrigramMode::Intended), 0);
+        assert_eq!(check_b(&body, TrigramMode::NtscU), 3);
+    }
+
+    #[test]
+    fn ram_tail_pair_scores_in_ntsc_u_only() {
+        // "A! ": ('!',' ') is not in any intended table, but the NTSC-U scan
+        // reaches the post-Z RAM tail where the pair exists.
+        let body = body_of(b"A! ");
         assert_eq!(check_b(&body, TrigramMode::Intended), 0);
         assert_eq!(check_b(&body, TrigramMode::NtscU), 3);
     }
