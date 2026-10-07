@@ -219,9 +219,26 @@ pub fn interp_axis(wall_name: WallName) -> InterpAxis {
     }
 }
 
+/// C-compatible segment for the ABI boundary.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PcSegment {
+    pub start_x: f32,
+    pub start_z: f32,
+    pub end_x: f32,
+    pub end_z: f32,
+}
+
+/// Safe value-returning kernel: wall name → segment.
+pub fn segment_for_wall(ux: f32, uz: f32, wall_name: WallName, check_type: CheckType) -> PcSegment {
+    let (s, e) = unit_no_name_2_start_end(ux, uz, wall_name, check_type);
+    PcSegment { start_x: s[0], start_z: s[1], end_x: e[0], end_z: e[1] }
+}
+
 /// C ABI: segment placement; writes start[2], end[2].
+/// Thin shim over the safe `segment_for_wall` kernel.
 #[no_mangle]
-pub extern "C" fn pc_unit_no_name_2_start_end(
+pub unsafe extern "C" fn pc_unit_no_name_2_start_end(
     ux: f32,
     uz: f32,
     wall_name: u8,
@@ -238,14 +255,16 @@ pub extern "C" fn pc_unit_no_name_2_start_end(
         _ => WallName::SlateDown,
     };
     let ct = if check_type == 1 { CheckType::Player } else { CheckType::Normal };
-    let (s, e) = unit_no_name_2_start_end(ux, uz, name, ct);
+    let seg = segment_for_wall(ux, uz, name, ct);
     if !out_start.is_null() {
         let d = unsafe { core::slice::from_raw_parts_mut(out_start, 2) };
-        d.copy_from_slice(&s);
+        d[0] = seg.start_x;
+        d[1] = seg.start_z;
     }
     if !out_end.is_null() {
         let d = unsafe { core::slice::from_raw_parts_mut(out_end, 2) };
-        d.copy_from_slice(&e);
+        d[0] = seg.end_x;
+        d[1] = seg.end_z;
     }
 }
 

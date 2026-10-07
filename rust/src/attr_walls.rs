@@ -228,7 +228,53 @@ pub extern "C" fn pc_forbid_vectors(attr: u8, out: *mut u8) -> u8 {
     v.len() as u8
 }
 
-/// C ABI: the generation gate (`forbid_proc`).
+/// C-compatible forbidden-vector record for the ABI boundary.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PcForbidVector {
+    pub normal_x: f32,
+    pub normal_z: f32,
+    pub normal_angle: i16,
+    pub wall_name: u8,
+}
+
+/// Safe value-returning kernel: attribute → up to two C-compatible
+/// vector records (`mCoBG_MakeForbidVectorData` core).
+/// Angles are kept as degrees here; the engine's short-angle
+/// conversion (`DEG2SHORT_ANGLE2`) happens at the C boundary.
+pub fn forbid_vector_kernel(attr: u8) -> [Option<PcForbidVector>; 2] {
+    let mut out = [None, None];
+    for (slot, vid) in forbid_vectors(attr).into_iter().enumerate() {
+        let v = MAKE_VECTOR_TABLE[vid];
+        // i16 angle placeholder: degrees rounded; the exact
+        // short-angle packing is the C side's job.
+        out[slot] = Some(PcForbidVector {
+            normal_x: v.norm[0],
+            normal_z: v.norm[1],
+            normal_angle: v.norm_angle_deg.round() as i16,
+            wall_name: v.wall_name,
+        });
+    }
+    out
+}
+
+/// Explicit generation gate (`mCoBG_MakeUnitVector` line 508 +
+/// `mCoBG_MakeForbidAttrVector` range check, combined): true only
+/// when the actor was on ground, the attribute-wall flag is set,
+/// AND the attribute is in the 27–62 forbid range.
+pub fn forbid_proc(old_on_ground: bool, attr_wall: bool, attribute: u8) -> bool {
+    forbid_generation_enabled(old_on_ground, attr_wall) && is_forbid_attribute(attribute)
+}
+
+/// C ABI: the combined gate; returns 1 when forbid vectors should
+/// be generated for this attribute.
+#[no_mangle]
+pub extern "C" fn pc_forbid_proc(old_on_ground: u8, attr_wall: u8, attribute: u8) -> u8 {
+    forbid_proc(old_on_ground != 0, attr_wall != 0, attribute) as u8
+}
+
+/// C ABI: the raw generation gate (`forbid_proc`), kept for
+/// compatibility; prefer `pc_forbid_proc` for new call sites.
 #[no_mangle]
 pub extern "C" fn pc_forbid_gate(old_on_ground: u8, attr_wall: u8) -> u8 {
     forbid_generation_enabled(old_on_ground != 0, attr_wall != 0) as u8
@@ -309,6 +355,29 @@ mod tests {
         assert_eq!(s.wall_name, wall_name::SLATE_UP);
         assert_eq!(wall_registrar_variant(true), "AttributeOn");
         assert_eq!(wall_registrar_variant(false), "AttributeOff");
+    }
+
+    #[test]
+    fn forbid_proc_gate() {
+        assert!(forbid_proc(true, true, 32));
+        assert!(!forbid_proc(false, true, 32));
+        assert!(!forbid_proc(true, false, 32));
+        assert!(!forbid_proc(true, true, 26)); // below range
+        assert!(!forbid_proc(true, true, 63)); // above range
+        assert_eq!(pc_forbid_proc(1, 1, 51), 1);
+        assert_eq!(pc_forbid_proc(1, 1, 63), 0);
+    }
+
+    #[test]
+    fn forbid_vector_kernel_values() {
+        let v = forbid_vector_kernel(32);
+        assert!(v[0].is_some() && v[1].is_none());
+        let r = v[0].unwrap();
+        assert_eq!((r.normal_x, r.normal_z, r.wall_name), (0.0, 1.0, wall_name::UP));
+        let v = forbid_vector_kernel(51);
+        assert!(v[0].is_some() && v[1].is_some());
+        let v = forbid_vector_kernel(31);
+        assert!(v[0].is_none() && v[1].is_none());
     }
 
     #[test]

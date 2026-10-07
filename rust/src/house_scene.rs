@@ -227,10 +227,34 @@ pub extern "C" fn pc_house_wall_floor(
     floor_id: u16,
     has_owner: i32,
 ) -> i32 {
-    if is_npc_room_field == 0 || has_owner == 0 {
-        return -1;
+    let s = house_surface_lookup(is_npc_room_field != 0, has_owner != 0, wall_id, floor_id);
+    match s {
+        Some(v) => (((v.wall_id & 0xFF) << 8) | (v.floor_id & 0xFF)) as i32,
+        None => -1,
     }
-    (((wall_id & 0xFF) << 8) | (floor_id & 0xFF)) as i32
+}
+
+/// C-compatible house surface for the ABI boundary.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PcHouseSurface {
+    pub wall_id: u16,
+    pub floor_id: u16,
+}
+
+/// Pure wall/floor lookup kernel: the C side gathers field type,
+/// owner validity, and house data; Rust owns only the selection
+/// (`mNpc_GetNpcFloorNo` / `mNpc_GetNpcWallNo` core).
+pub fn house_surface_lookup(
+    is_npc_room_field: bool,
+    has_owner: bool,
+    wall_id: u16,
+    floor_id: u16,
+) -> Option<PcHouseSurface> {
+    if !is_npc_room_field || !has_owner {
+        return None;
+    }
+    Some(PcHouseSurface { wall_id, floor_id })
 }
 
 #[cfg(test)]
@@ -288,5 +312,15 @@ mod tests {
         let ok = |actor: u32, req: u32| actor == 7 && req == 0x0D8B;
         assert!(force_call_req_proc(7, 0x0D8B, &ok));
         assert!(!force_call_req_proc(7, 0x0D8C, &ok));
+    }
+
+    #[test]
+    fn house_surface_kernel() {
+        let s = house_surface_lookup(true, true, 0x12, 0x34).unwrap();
+        assert_eq!((s.wall_id, s.floor_id), (0x12, 0x34));
+        assert!(house_surface_lookup(false, true, 1, 2).is_none());
+        assert!(house_surface_lookup(true, false, 1, 2).is_none());
+        assert_eq!(pc_house_wall_floor(1, 0x12, 0x34, 1), 0x1234);
+        assert_eq!(pc_house_wall_floor(0, 0x12, 0x34, 1), -1);
     }
 }

@@ -194,6 +194,50 @@ pub extern "C" fn pc_msg_max() -> u32 {
     MSG_MAX
 }
 
+/// Patience classification derived from talk counts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TalkPatience {
+    Normal = 0,
+    Impatient = 1,
+    OverImpatient = 2,
+}
+
+/// Pure talk-count gate: the C side keeps `mNpc_Talk_Info_c` state
+/// (talk_num, timer) and passes the values in; Rust owns only the
+/// comparison (`talk_num < talk_num_max`).
+pub fn talk_count_allowed(talk_num: u8, talk_num_max: u8, timer: u16) -> bool {
+    timer == 0 && talk_num < talk_num_max
+}
+
+/// Pure patience classification from the temper table values.
+pub fn talk_patience(talk_num: u8, over_impatient_num: u8, talk_num_max: u8) -> TalkPatience {
+    if talk_num >= talk_num_max {
+        TalkPatience::OverImpatient
+    } else if talk_num >= over_impatient_num {
+        TalkPatience::Impatient
+    } else {
+        TalkPatience::Normal
+    }
+}
+
+/// Convenience: patience for a feeling index using `NPC_TEMPER`.
+pub fn talk_patience_for_feeling(feeling: usize, talk_num: u8) -> TalkPatience {
+    let t = NPC_TEMPER[feeling.min(NPC_TEMPER.len() - 1)];
+    talk_patience(talk_num, t.over_impatient_num, t.talk_num_max)
+}
+
+/// C ABI: talk-count gate.
+#[no_mangle]
+pub extern "C" fn pc_talk_count_allowed(talk_num: u8, talk_num_max: u8, timer: u16) -> u8 {
+    talk_count_allowed(talk_num, talk_num_max, timer) as u8
+}
+
+/// C ABI: patience classification (0/1/2).
+#[no_mangle]
+pub extern "C" fn pc_talk_patience(talk_num: u8, over_impatient_num: u8, talk_num_max: u8) -> u8 {
+    talk_patience(talk_num, over_impatient_num, talk_num_max) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +305,18 @@ mod tests {
     fn conversation_flags_pack() {
         let f = ConversationFlags { beesting: true, fish_complete: false, insect_complete: true };
         assert_eq!(f.pack(), 0b101);
+    }
+
+    #[test]
+    fn talk_gates() {
+        assert!(talk_count_allowed(3, 15, 0));
+        assert!(!talk_count_allowed(15, 15, 0));
+        assert!(!talk_count_allowed(3, 15, 100)); // timer running
+        assert_eq!(talk_patience(3, 12, 15), TalkPatience::Normal);
+        assert_eq!(talk_patience(12, 12, 15), TalkPatience::Impatient);
+        assert_eq!(talk_patience(15, 12, 15), TalkPatience::OverImpatient);
+        assert_eq!(talk_patience_for_feeling(0, 14), TalkPatience::Impatient);
+        assert_eq!(pc_talk_count_allowed(3, 15, 0), 1);
+        assert_eq!(pc_talk_patience(15, 12, 15), 2);
     }
 }

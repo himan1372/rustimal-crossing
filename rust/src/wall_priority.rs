@@ -48,23 +48,43 @@
 //!   (`m_collision_bg.c:894`): front(end) && front(start), then
 //!   `mCoBG_JudgePointInCircle` endpoint tests.
 
+/// C-compatible 2D vector for the ABI boundary.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PcVec2 {
+    pub x: f32,
+    pub z: f32,
+}
+
 /// Backward movement-tail adjustment (`mCoBG_MakeTab2MoveTail`).
-pub fn make_tab_2_move_tail(dst: &mut [f32; 2], src: [f32; 2]) {
+///
+/// Faithfulness note: the C code divides by `|dx| + |dz|` with NO
+/// zero check, so a zero movement vector produces NaN biases exactly
+/// as in C (IEEE 754). This port deliberately does NOT clamp the
+/// denominator — "fixing" it would diverge from the original.
+pub fn make_tab_2_move_tail(dst: [f32; 2], src: [f32; 2]) -> [f32; 2] {
     let ax = src[0].abs();
     let az = src[1].abs();
-    let denom = (ax + az).max(1e-9);
-    let x_bias = ax / denom;
+    let x_bias = ax / (ax + az);
     let z_bias = 1.0 - x_bias;
+    let mut out = dst;
     if src[0] > 0.0 {
-        dst[0] -= x_bias * 0.2;
+        out[0] -= x_bias * 0.2;
     } else if src[0] < 0.0 {
-        dst[0] += x_bias * 0.2;
+        out[0] += x_bias * 0.2;
     }
     if src[1] > 0.0 {
-        dst[1] -= z_bias * 0.2;
+        out[1] -= z_bias * 0.2;
     } else if src[1] < 0.0 {
-        dst[1] += z_bias * 0.2;
+        out[1] += z_bias * 0.2;
     }
+    out
+}
+
+/// Safe value-returning kernel used by the C shim below.
+pub fn make_tab_2_move_tail_v(dst: PcVec2, src: PcVec2) -> PcVec2 {
+    let r = make_tab_2_move_tail([dst.x, dst.z], [src.x, src.z]);
+    PcVec2 { x: r[0], z: r[1] }
 }
 
 /// Recursive merge sort with left-first `<=` merge
@@ -224,16 +244,19 @@ pub fn point_in_circle(center: [f32; 2], p: [f32; 2], radius: f32) -> bool {
 }
 
 /// C ABI: apply the movement-tail adjustment in place.
+/// Thin unsafe shim over the safe `make_tab_2_move_tail_v` kernel.
 #[no_mangle]
-pub extern "C" fn pc_make_tab_2_move_tail(dst_xz: *mut f32, src_x: f32, src_z: f32) {
+pub unsafe extern "C" fn pc_make_tab_2_move_tail(dst_xz: *mut f32, src_x: f32, src_z: f32) {
     if dst_xz.is_null() {
         return;
     }
     let dst = unsafe { core::slice::from_raw_parts_mut(dst_xz, 2) };
-    let mut d = [dst[0], dst[1]];
-    make_tab_2_move_tail(&mut d, [src_x, src_z]);
-    dst[0] = d[0];
-    dst[1] = d[1];
+    let r = make_tab_2_move_tail_v(
+        PcVec2 { x: dst[0], z: dst[1] },
+        PcVec2 { x: src_x, z: src_z },
+    );
+    dst[0] = r.x;
+    dst[1] = r.z;
 }
 
 #[cfg(test)]
@@ -243,17 +266,62 @@ mod tests {
     #[test]
     fn move_tail_adjustment() {
         // Pure +x movement: shift back 0.2 in x only.
-        let mut d = [10.0f32, 5.0];
-        make_tab_2_move_tail(&mut d, [4.0, 0.0]);
+        let d = make_tab_2_move_tail([10.0f32, 5.0], [4.0, 0.0]);
         assert!((d[0] - 9.8).abs() < 1e-6 && (d[1] - 5.0).abs() < 1e-6);
         // Diagonal: proportional split.
-        let mut d = [0.0f32, 0.0];
-        make_tab_2_move_tail(&mut d, [3.0, 3.0]);
+        let d = make_tab_2_move_tail([0.0f32, 0.0], [3.0, 3.0]);
         assert!((d[0] + 0.1).abs() < 1e-6 && (d[1] + 0.1).abs() < 1e-6);
         // Negative direction shifts forward-positive.
-        let mut d = [0.0f32, 0.0];
-        make_tab_2_move_tail(&mut d, [-2.0, 0.0]);
+        let d = make_tab_2_move_tail([0.0f32, 0.0], [-2.0, 0.0]);
         assert!((d[0] - 0.2).abs() < 1e-6);
+        // Zero movement: C produces NaN biases with no zero check;
+        // the port reproduces that instead of clamping.
+        let d = make_tab_2_move_tail([1.0f32, 2.0], [0.0, 0.0]);
+        assert_eq!(d, [1.0, 2.0]); // comparisons false, no shift
+        let v = make_tab_2_move_tail_v(PcVec2 { x: 1.0, z: 2.0 }, PcVec2 { x: 0.0, z: 0.0 });
+        assert_eq!((v.x, v.z), (1.0, 2.0));
+    }
+
+    #[test]
+    fn move_tail_differential_bits() {
+        // Differential-testing pattern: an independent transcription
+        // of the C source (the "oracle") is compared against the
+        // kernel by IEEE-754 BIT PATTERN, not epsilon. A tiny float
+        // difference can flip branches like `dist < range`, so
+        // approximate equality is not good enough for collision math.
+        fn c_oracle(dst: [f32; 2], src: [f32; 2]) -> [f32; 2] {
+            let x_bias = src[0].abs() / (src[0].abs() + src[1].abs());
+            let z_bias = 1.0 - x_bias;
+            let mut out = dst;
+            if src[0] > 0.0 {
+                out[0] -= x_bias * 0.2;
+            } else if src[0] < 0.0 {
+                out[0] += x_bias * 0.2;
+            }
+            if src[1] > 0.0 {
+                out[1] -= z_bias * 0.2;
+            } else if src[1] < 0.0 {
+                out[1] += z_bias * 0.2;
+            }
+            out
+        }
+        let cases: [([f32; 2], [f32; 2]); 6] = [
+            ([10.0, 5.0], [4.0, 0.0]),
+            ([0.0, 0.0], [3.0, 3.0]),
+            ([-7.5, 2.25], [-1.0, 8.0]),
+            ([1.0, 1.0], [0.0, 0.0]), // zero-speed NaN-bias path
+            ([100.0, -50.0], [0.001, -0.002]),
+            ([0.0, 0.0], [12345.678, -9876.543]),
+        ];
+        for (dst, src) in cases {
+            let kernel = make_tab_2_move_tail(dst, src);
+            let oracle = c_oracle(dst, src);
+            assert_eq!(
+                (kernel[0].to_bits(), kernel[1].to_bits()),
+                (oracle[0].to_bits(), oracle[1].to_bits()),
+                "bit divergence for dst={dst:?} src={src:?}"
+            );
+        }
     }
 
     #[test]

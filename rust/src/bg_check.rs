@@ -206,6 +206,52 @@ pub extern "C" fn pc_bg_neighborhood(range: f32) -> i32 {
     neighborhood_size(range) as i32
 }
 
+/// C-compatible unit coordinate.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PcUnitCoord {
+    pub x: i32,
+    pub z: i32,
+}
+
+/// Fixed-buffer neighborhood (`mCoBG_MakeSizeUnitInfo` coordinate
+/// core): 3×3/5×5/7×7 row-major coordinates centered on
+/// (`center_x`, `center_z`). No allocation — the caller provides
+/// the buffer (capacity ≥ 49).
+pub fn neighborhood_coords(center_x: i32, center_z: i32, size: i32) -> [PcUnitCoord; 49] {
+    let mut out = [PcUnitCoord::default(); 49];
+    let half = size / 2;
+    let mut n = 0;
+    for dz in 0..size {
+        for dx in 0..size {
+            if n < 49 {
+                out[n] = PcUnitCoord { x: center_x - half + dx, z: center_z - half + dz };
+                n += 1;
+            }
+        }
+    }
+    out
+}
+
+/// C ABI: fill the caller's `coords` buffer (capacity ≥ 49) with the
+/// neighborhood coordinates; returns the count written.
+#[no_mangle]
+pub unsafe extern "C" fn pc_bg_neighborhood_coords(
+    center_x: i32,
+    center_z: i32,
+    size: i32,
+    coords: *mut PcUnitCoord,
+) -> u8 {
+    if coords.is_null() {
+        return 0;
+    }
+    let all = neighborhood_coords(center_x, center_z, size);
+    let count = ((size * size).min(49).max(0)) as usize;
+    let dst = unsafe { core::slice::from_raw_parts_mut(coords, count) };
+    dst.copy_from_slice(&all[..count]);
+    count as u8
+}
+
 /// C ABI: horizontal wall distance correction.
 #[no_mangle]
 pub extern "C" fn pc_bg_distance_reverse(range: f32, dist: f32) -> f32 {
@@ -290,5 +336,22 @@ mod tests {
         assert_eq!(MOVE_REGIST_MAX, 64);
         assert_eq!(WALL_COL_NUM, 2);
         assert_eq!(CONTACT_CAP, 5);
+    }
+
+    #[test]
+    fn neighborhood_coords_cover() {
+        let c = neighborhood_coords(10, 20, 3);
+        assert_eq!(c[0], PcUnitCoord { x: 9, z: 19 });
+        assert_eq!(c[8], PcUnitCoord { x: 11, z: 21 });
+        // Row-major order, 7x7 fills 49.
+        let c = neighborhood_coords(0, 0, 7);
+        assert_eq!(c[48], PcUnitCoord { x: 3, z: 3 });
+        // ABI writes into caller buffer.
+        let mut buf = [PcUnitCoord::default(); 49];
+        let n = unsafe { pc_bg_neighborhood_coords(5, 5, 5, buf.as_mut_ptr()) };
+        assert_eq!(n, 25);
+        assert_eq!(buf[0], PcUnitCoord { x: 3, z: 3 });
+        assert_eq!(buf[24], PcUnitCoord { x: 7, z: 7 });
+        assert_eq!(unsafe { pc_bg_neighborhood_coords(0, 0, 3, core::ptr::null_mut()) }, 0);
     }
 }

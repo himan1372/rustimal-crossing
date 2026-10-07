@@ -525,6 +525,29 @@ The brief's correction was verified verbatim against `src/game/m_collision_bg.c`
 
 `rust/src/endpoint_circle.rs`: `judge_point_in_circle`, `dist_point_and_line_2d_norm`, `cross_circle_and_line_2dvector` (verbatim quadratic), `get_special_distance_reverse`, and `endpoint_circle_collision` implementing the full gate sequence (reusing `segment_map::point_info_front_line` and the `CheckDistSPCheck` test from `wall_priority.rs`). C ABI: `pc_cross_circle_line`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. This closes the endpoint-circle gap flagged since the wall-solver work. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Wave 1 Rewiring Prep
+
+### Source findings
+
+Per the brief's reclassification, Wave 1 was reorganized from "stateless functions" into pure **kernels** with C **shims**:
+
+- **Wave 1A — pure numerical kernels:** `pc_msg_max`, `make_tab_2_move_tail`, `segment_for_wall`, `pc_inventory_find`/`pc_inventory_count`, `pc_judge_wall_from_vector` (with the faithful atan backend noted as a dependency).
+- **Wave 1B — pure lookup/mapping:** `forbid_vector_kernel`, `forbid_proc` (explicit `old_on_ground, attr_wall, attribute` gate), `priority_order`, `pc_scene_word_type`, `pc_column_recipe` (C keeps ground-height lookup and the `check_proc` callback).
+- **Wave 1C — simple data ops:** `pc_bg_neighborhood_coords` (fixed 49-elem buffer, no `Vec` over FFI), `pc_bg_room_scope`, `pc_door_next_scene` arithmetic, `house_surface_lookup`.
+- **Wave 1D — extracted stateless pieces:** `talk_count_allowed`/`talk_patience` (C keeps `l_npc_talk_info` state), `pc_bg_distance_reverse` (to be split further before plugging).
+- Postponed: `pc_distance_dispatch` (kernels first), `pc_request_proc_id` (table not pinned), `pc_topic_talk_check` (stateful; gates are the Wave 1 piece), full `GetWallReverse`.
+
+### Rust rewrite implementation
+
+- `wall_priority.rs`: `make_tab_2_move_tail` is now value-returning with the **faithful zero-division behavior** (no denominator clamp — zero input yields NaN biases exactly like C, instead of the previous 1e-9 clamp); `#[repr(C)] PcVec2` + `make_tab_2_move_tail_v` kernel; the C ABI is a thin unsafe shim. Added the differential bit-pattern test template (`move_tail_differential_bits`) comparing the kernel against an independent C transcription via `to_bits()`.
+- `segment_map.rs`: `#[repr(C)] PcSegment` + `segment_for_wall` kernel; ABI is a shim.
+- `attr_walls.rs`: `#[repr(C)] PcForbidVector` + `forbid_vector_kernel`; new `forbid_proc`/`pc_forbid_proc` combining gate + 27–62 range (old `pc_forbid_gate` kept for compatibility).
+- `dialogue_topics.rs`: new `talk_count_allowed`, `talk_patience`/`TalkPatience`, `talk_patience_for_feeling` + C ABIs `pc_talk_count_allowed`, `pc_talk_patience`.
+- `house_scene.rs`: `#[repr(C)] PcHouseSurface` + `house_surface_lookup` kernel; `pc_house_wall_floor` now routes through it.
+- `bg_check.rs`: `#[repr(C)] PcUnitCoord` + `neighborhood_coords` (fixed `[T; 49]`, row-major) + `pc_bg_neighborhood_coords` ABI writing into the caller's buffer.
+- `rewiring.md` rewritten: kernel+shim architecture, `USE_RUST` fallback pattern, differential-testing guidance (`to_bits()`, not epsilon), `f32` discipline, no_std note, and the 1A/1B/1C/1D tables with postponed items.
+- `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 ### Rust rewrite implementation
 
 `rust/src/decal_circles.rs`: `DEFENCE_WALL_INFO[8]` verbatim, `circle_defence_wall_idx`, `make_circle_defence_walls` (ordered-pair scan, 128 cap, gate), `RegistCircleInfo`, `DecalCircleSystem` (`regist`/`calc_timer`/`init`/`active_circles`, `calc_adjust` interpolation). Reuses `columns::Column` for the live records and `segment_map::UNIT_SIZE` for unit coords. No C ABI added (registration is gameplay-driven, no stable external caller yet). `cargo check --lib` clean. Unit tests: 188/188 pass in the authorized `cargo test --lib` run on 2026-10-07. Gaps: `mCoBG_CrossOffDecalCircle` is decomp-marked @unused/@fabricated and intentionally not ported. No C callers are rewired; full Windows game link unverified.
