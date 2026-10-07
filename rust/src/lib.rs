@@ -21,6 +21,7 @@ mod gbi_runtime;
 mod letter_score;
 mod mtx;
 mod profiler;
+mod save;
 mod town_gen;
 mod vi;
 mod villager_mail;

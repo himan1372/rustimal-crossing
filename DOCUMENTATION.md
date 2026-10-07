@@ -115,6 +115,24 @@ This is a gameplay connection, not a full replacement of legacy field behavior. 
 
 The Rust module has isolated unit checks for deterministic output, fixed facility regions, reciprocal river edges and a southern outlet, resident roster selection, distinct resident homes with complete non-overlapping 3 by 3 footprints and source sign offsets, field-assessment rules, C record sizes, and invalid inputs. `pc/tests/pc_town_adapter_checks.c` adds a standalone C check target that exercises the actual adapter against a synthetic table containing every authored block type. It checks Rust facility-to-block placement, elevation transfer, river-to-rail alignment, bridge count, out-of-bounds preservation, and all-or-nothing behavior for rejected layouts. In an MSYS2 MINGW32 build directory, build it with `mingw32-make pc_town_adapter_checks` and run it with `ctest -R pc_town_adapter_checks --output-on-failure`. Neither the Rust nor C checks have been run, per the current instruction. The 32-bit CMake/MSYS2 build is still required to validate C compilation and linker integration on this checkout. Do not infer bit-exact original town reproduction from the module tests or adapter checks.
 
+## Runtime Port Progress: Save & Storage System
+
+### Source findings
+
+The save/storage infographic was checked against `include/m_card.h`, `src/game/m_card.c`, `include/m_common_data.h`, `src/game/m_flashrom.c`, `include/m_private.h`, `include/m_personal_id.h`, and `pc/src/pc_save_bswap.c`.
+
+- **Verified file layout:** the town file is `DobutsunomoriP_MURA` (`l_mCD_land_file_name`), `mCD_LAND_SAVE_SIZE` = 0x72000 = 57 blocks; with the 64-byte GCI header the file is 467,008 bytes (0x72040). Sibling names: `DobutsunomoriP_MURA_d` (dummy/backup), `DobutsunomoriP_PL_` (travel, index appended), `DobutsunomoriP_Omake_` (bonus/gift letters).
+- **Verified sub-entry table:** `l_mcd_file_table` (`mCD_FILE_*` order) subdivides the MURA file into misc, main save, main backup (`SAVE_MAIN_BAK`), mail region (0xC000), original/design region (0xE000), and diary region (0xC000); presents (0x2000) and travel/player (0x6000) are separate files. `sizeof(Save_t)` = 148,128 bytes (0x242A0), sector-aligned by the `Save` union.
+- **Verified record counts:** `PLAYER_NUM` = 4, `FOREIGNER_NUM` = 1, `mPr_POCKETS_SLOT_COUNT` = 15, `mPr_INVENTORY_MAIL_COUNT` = 10, `mPr_ORIGINAL_DESIGN_COUNT` = 8 personal patterns. `keep_mail` = 8 pages x 20 = 160 town-wide saved letters; `keep_original` = 8 x 12 = 96 town-wide saved patterns; `keep_diary` = 4 players x 12 months. Each keep region carries a u16 checksum and a land ID. Bonus letters: `mCD_PRESENT_MAX` = 9.
+- **Verified checksum:** `mFRm_ReturnCheckSum` adds native u16 words (odd lengths sum to zero); `mFRm_GetFlatCheckSum` stores the two's complement fixup so the region sums to zero; loads validate `ReturnCheckSum(...) == 0` alongside land ID checks.
+- **Verified endianness:** the GameCube format is big-endian; `pc_save_bswap.c` byte-swaps `Save_t` (including u8 bitfield repacking) on load/save.
+- **Verified reset semantics:** the `keep_*` regions are separate land-ID-keyed card regions, which is why saved letters/patterns/diaries can survive an in-game town rebuild while `Save_t` world state is reinitialized. Travel uses `mCD_foreigner_c` (checksum + player record + removed villager + copy-protect).
+- **Not decomp-traced:** the "3 items per storage furniture unit" rule (contemporary guides only); NES 1-block and travel 3-block sizes (contemporary documentation); e+ expanded file layout (out of scope for the USA decomp).
+
+### Rust rewrite implementation
+
+`rust/src/save.rs` ports the storage architecture: physical constants (sector size, GCI header, `SAVE_DATA_OFFSET` = 0x1440), file names and sizes, the 8-entry `SAVE_FILE_TABLE` mirroring `l_mcd_file_table`, all record counts above, a 33-region `SAVE_T_REGIONS` map with decomp offsets (spans derived to the next field, including padding), the big-endian checksum trio (`checksum_sum` / `checksum_fixup` / `checksum_valid`), block/GCI math helpers, and the `ResetPreserved` town-rebuild model. C ABI exports: `pc_save_checksum`, `pc_save_checksum_fixup`, `pc_save_checksum_valid`. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired yet; full Windows game link unverified.
+
 ### Runtime Port Progress: Video Interface
 
 The image shows a game/rendering path ending in a platform presentation step. Repository code supports a narrower fact: the PC `VIWaitForRetrace` implementation polls SDL events, drains pending GX work, swaps the window, applies frame pacing, records profiler data, and advances the PC frame counter. Those operations now live in `pc/rust/src/vi.rs`; calls still enter through the Dolphin VI API in `include/dolphin/vi.h`. This does not move scene logic, display-list generation, GX rendering, or gameplay into Rust.
