@@ -23,6 +23,7 @@ mod shop;
 mod behavior;
 mod bg_check;
 mod collision;
+mod dialogue_topics;
 mod interaction;
 mod inventory;
 mod item_prefs;

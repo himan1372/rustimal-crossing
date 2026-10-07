@@ -407,6 +407,25 @@ Verified formulas and limits:
 
 `rust/src/bg_check.rs` ports the verified sequence: `BgStage` (recovered call order), `BgCheckType` (player vs actor wall ordering), `BgActorInfo` (old/new ground state, speeds), `neighborhood_size`, `distance_reverse`, `adjust_actor_y` (both the snap-up and descending-snap branches), `water_y_river`/`water_y_sea`, `wave_rate`, `RoomSizeClass`/`room_scope_extent`, `carry_out_reverse`, and the source limits as constants. C ABI: `pc_bg_neighborhood`, `pc_bg_distance_reverse`, `pc_bg_room_scope`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. The inner wall solver's geometric internals (crossing tests, player prioritization, attribute tables) remain future work. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Dialogue Topic Tables
+
+### Source findings
+
+The brief's layered model was verified against `ac_npc_talk.c_inc`/`m_npc.c`/`m_msg_main.c_inc`/`m_npc.h`/`m_msg_data.h`:
+
+- **Verified message index:** `MSG_MAX = 0x3F91` (`m_msg_data.h:22`); `mMsg_Get_BodyParam` maps ID → (addr, size) from the ARAM offset table (entry 0 → base/size table[0]; entry i → table[i-1], table[i]−table[i-1]). The PC port byte-swaps the u32 table on little-endian (`TARGET_PC`).
+- **Verified personality pools** (`ac_npc_talk.c_inc:539`): `aNPC_set_talk_info_talk_request_check` — island → `0x34AC + looks*3 + RANDOM(3)`; mainland → `0x075F + looks*3 + RANDOM(3)`. Six personalities × three variants.
+- **Verified talk gate** (`aNPC_force_talk_request`): forced message wins if set; else spontaneous talk needs friendship > 0x80, SEARCH action targeting player, force_call_timer ≤ 0, dist_xz < 80.0, |dist_y| < 60.0.
+- **Verified talk state** (`m_npc.c:4865`): `mNpc_Talk_Info_c` = {timer, talk_num, quest_request, unlock_timer, reset_timer}, one per villager + islanders.
+- **Verified temper table** (`m_npc.c:4874`): Normal {4000,12,15}, Happy {3000,10,13}, Angry {4000,12,15}, Sad {4000,10,13}, Sleepy {5000,9,12}, Pitfall {5000,9,12}.
+- **Verified quest gating:** `mNpc_CheckQuestRequest` / `mNpc_SetQuestRequestOFF` (FALSE + unlock timer); `mNpc_TalkEndMove` sets timer = 1000 and counts the talk.
+- **Verified conversation flags** (`m_npc.h:261`): beesting:1, fish_complete:1, insect_complete:1 — explicit world-state topic triggers.
+- No monolithic `topic_table[]` exists; topics resolve via condition → message-ID arithmetic → offset table → encoded script. The `talk_request_proc` implementation behind the quest-manager clip remains untraced, as does the full ordinary-villager topic taxonomy.
+
+### Rust rewrite implementation
+
+`rust/src/dialogue_topics.rs` ports the verified mechanisms: `MSG_MAX`, `msg_body_param` (offset-table resolution), `talk_check_msg` (both pool bases), `force_talk_gate`/`TalkGate` (verbatim thresholds), `TalkInfo` (talk_end, quest-request off), `NPC_TEMPER` (verbatim), `ConversationFlags` (bitfield pack), and a rewrite-owned `TopicCategory` taxonomy. C ABI: `pc_topic_talk_check`, `pc_msg_max`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings
