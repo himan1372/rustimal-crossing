@@ -522,32 +522,45 @@ pub fn bridge_wpos_attribute(bridge_attr: u8, area: u8) -> Option<u8> {
 /// Bridge ground/water search kernel — the `mCoBG_GroundCheck` bridge
 /// branch (m_collision_bg.c:1730) as a pure function.
 ///
+/// Outcome of the bridge water-neighbor search, mirroring the source's
+/// control flow exactly:
+/// - `Skipped`: the search did not run (gated) — the caller assigns
+///   `result.unit_attribute = mCoBG_Wpos2Attribute(pos, NULL)`.
+/// - `NoWater`: the search ran but found no water neighbor —
+///   `result.unit_attribute` is left unassigned (stale), NOT fallen back.
+/// - `Found(attr)`: first water neighbor wins in direction order;
+///   `result.unit_attribute = attr`, `water_flag = TRUE`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BridgeWaterSearch {
+    Skipped,
+    NoWater,
+    Found(u8),
+}
+
 /// Runs only when `old_in_water && !attribute_wall && is_bridge(attr)`.
 /// Scans directions 0..8 in order, masked by `bridge_search_water`;
 /// each neighbor's RAW attribute is mapped through the water table,
 /// and the FIRST water/river result wins (direction order is
 /// behaviorally significant — do NOT reorder or use `any()`).
-/// Returns the selected water attribute, or `None` when no water is
-/// found (caller then falls back to `Wpos2Attribute`).
 pub fn bridge_water_search(
     bridge_attr: u8,
     old_in_water: bool,
     attribute_wall: bool,
     neighbor_attrs: [u8; 8],
-) -> Option<u8> {
+) -> BridgeWaterSearch {
     if attribute_wall || !old_in_water || !is_bridge_attribute(bridge_attr) {
-        return None;
+        return BridgeWaterSearch::Skipped;
     }
     let mask = bridge_search_water_mask(bridge_attr).unwrap_or(0);
     for dir in 0..8u8 {
         if mask & (1 << dir) != 0 {
             let water_attr = search_water_attribute(neighbor_attrs[dir as usize]);
             if is_water_attribute(water_attr) {
-                return Some(water_attr);
+                return BridgeWaterSearch::Found(water_attr);
             }
         }
     }
-    None
+    BridgeWaterSearch::NoWater
 }
 
 /// Positive form of the slate rule (the C code early-returns; this
@@ -875,8 +888,10 @@ pub unsafe extern "C" fn pc_check_height_exactly(
 }
 
 /// C ABI: bridge water search; takes 8 raw neighbor attributes in
-/// Direct order (0=N..7=SW); returns the selected water attribute,
-/// or 0xFF when the search does not run or finds no water.
+/// Direct order (0=N..7=SW).
+/// - water attribute found -> that attribute
+/// - 0xFE -> search ran, no water (result.unit_attribute left stale)
+/// - 0xFF -> search skipped (caller falls back to Wpos2Attribute)
 #[no_mangle]
 pub unsafe extern "C" fn pc_bridge_water_search(
     bridge_attr: u8,
@@ -890,7 +905,11 @@ pub unsafe extern "C" fn pc_bridge_water_search(
     let n = unsafe { core::slice::from_raw_parts(neighbors, 8) };
     let mut arr = [0u8; 8];
     arr.copy_from_slice(n);
-    bridge_water_search(bridge_attr, old_in_water != 0, attribute_wall != 0, arr).unwrap_or(0xFF)
+    match bridge_water_search(bridge_attr, old_in_water != 0, attribute_wall != 0, arr) {
+        BridgeWaterSearch::Found(a) => a,
+        BridgeWaterSearch::NoWater => 0xFE,
+        BridgeWaterSearch::Skipped => 0xFF,
+    }
 }
 
 /// C ABI: wall policy for a unit boundary.
@@ -1151,28 +1170,54 @@ mod tests {
     #[test]
     fn bridge_water_search_kernel() {
         use attribute::*;
+        use super::BridgeWaterSearch;
         // Attr 27 (wood NW): mask 3 = N(0) + W(1).
         let mut n = [GRASS0; 8];
         n[0] = WATER; // north neighbor is water
-        assert_eq!(bridge_water_search(27, true, false, n), Some(WATER));
+        assert_eq!(
+            bridge_water_search(27, true, false, n),
+            BridgeWaterSearch::Found(WATER)
+        );
         // Direction order matters: N checked before W.
         let mut n = [GRASS0; 8];
         n[0] = RIVER_N;
         n[1] = RIVER_W;
-        assert_eq!(bridge_water_search(27, true, false, n), Some(RIVER_N));
+        assert_eq!(
+            bridge_water_search(27, true, false, n),
+            BridgeWaterSearch::Found(RIVER_N)
+        );
         // Stone bridge S (35): mask 4 = S(2) only.
         let mut n = [GRASS0; 8];
         n[0] = WATER; // north water is NOT searched
-        assert_eq!(bridge_water_search(35, true, false, n), None);
+        assert_eq!(
+            bridge_water_search(35, true, false, n),
+            BridgeWaterSearch::NoWater
+        );
         n[2] = RIVER_S;
-        assert_eq!(bridge_water_search(35, true, false, n), Some(RIVER_S));
+        assert_eq!(
+            bridge_water_search(35, true, false, n),
+            BridgeWaterSearch::Found(RIVER_S)
+        );
         // Gates: needs old_in_water and !attribute_wall and a bridge attr.
         let n = [WATER; 8];
-        assert_eq!(bridge_water_search(27, false, false, n), None);
-        assert_eq!(bridge_water_search(27, true, true, n), None);
-        assert_eq!(bridge_water_search(26, true, false, n), None);
-        // No water anywhere -> None (caller falls back to Wpos2Attribute).
-        assert_eq!(bridge_water_search(27, true, false, [GRASS0; 8]), None);
+        assert_eq!(
+            bridge_water_search(27, false, false, n),
+            BridgeWaterSearch::Skipped
+        );
+        assert_eq!(
+            bridge_water_search(27, true, true, n),
+            BridgeWaterSearch::Skipped
+        );
+        assert_eq!(
+            bridge_water_search(26, true, false, n),
+            BridgeWaterSearch::Skipped
+        );
+        // Search ran, no water anywhere -> NoWater (NOT a Wpos2Attribute
+        // fallback: the source leaves result.unit_attribute unassigned).
+        assert_eq!(
+            bridge_water_search(27, true, false, [GRASS0; 8]),
+            BridgeWaterSearch::NoWater
+        );
         // Slate positive form.
         assert!(bridge_should_make_slate(27, false));
         assert!(!bridge_should_make_slate(27, true));
@@ -1181,6 +1226,8 @@ mod tests {
         let n = [WATER; 8];
         assert_eq!(unsafe { pc_bridge_water_search(27, 1, 0, n.as_ptr()) }, WATER);
         assert_eq!(unsafe { pc_bridge_water_search(27, 0, 0, n.as_ptr()) }, 0xFF);
+        let n = [GRASS0; 8];
+        assert_eq!(unsafe { pc_bridge_water_search(27, 1, 0, n.as_ptr()) }, 0xFE);
         assert_eq!(unsafe { pc_bridge_water_search(27, 1, 0, core::ptr::null()) }, 0xFF);
     }
 

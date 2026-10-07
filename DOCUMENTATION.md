@@ -611,6 +611,23 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Water-Translation Deep Dive
+
+### Source findings (verified against the local decomp, USA Rev. 0)
+
+- `mCoBG_unit_attribute_water_info[64]` (m_collision_bg.c:1609) already ported verbatim in commit ab41f9a; re-verified entry-by-entry against the source this round — the port matches exactly, including the 55-58 = GRASS0 region (the brief's caution about miscounting high-number entries was warranted).
+- GroundCheck water-branch structure (m_collision_bg.c:1728-1768):
+  - Bridge path (attr 63 or 27-62): search runs only when `!attribute_wall && old_in_water && attr in 27-35`. First water neighbor (in mask direction order) wins: `result.unit_attribute = next_unit_attr`, `water_flag = TRUE`, `water_y = GetWaterHeight_File(...)`.
+  - Correction to the earlier port: when the search RUNS but finds no water, the source does NOT fall back to `Wpos2Attribute` — `result.unit_attribute` is left unassigned (stale). The `Wpos2Attribute` fallback happens only when the search is SKIPPED (gated). `bridge_water_search` now returns a 3-state enum `BridgeWaterSearch::{Skipped, NoWater, Found(u8)}`; C ABI `pc_bridge_water_search` returns 0xFF / 0xFE / the attribute.
+  - Non-bridge path: `attr in WATER..RIVER_NE` -> water_flag, `water_y = 20 + GetBgY_AngleS_FromWpos(...)`; `attr == SEA` -> water_flag, `water_y = 20.0`; else `result.unit_attribute = Wpos2Attribute(...)`.
+- The brief's "dead SEA/37/38 branch" is a GAFU01 (Australian) version delta, not our target: USA GAFE01_00 has NO such branch in the bridge-search loop — the loop tests only `WATER..RIVER_NE`. No dead code to preserve.
+- Architecture (source-proven, three independent layers on the raw 6-bit attribute): `l_attribute_action_info[64]` (NPC/place/plant permissions) vs `mCoBG_Wpos2Attribute()` (contextual terrain interpretation, with hole/slope/wave/bridge/bank rewriting + cant_dig) vs `mCoBG_unit_attribute_water_info[64]` (bridge water-connectivity: what a NEIGHBORING unit means for the old_in_water continuity test).
+- `mCoBG_SearchWaterAttributeFrom4Area` (m_collision_bg.c:1680): pure raw-attribute lookup — no field-type check, no wave dynamics, no area geometry; the "4Area" refers to the caller's 8-direction neighbor search, not an internal triangle lookup.
+
+### Gaps
+
+- Water height (`GetWaterHeight_File`) and `AdjustActorY` water branch not yet ported; `woodb_water_info[][4]` (Wpos2Attribute's bridge-area table) not yet ported; no C callers rewired. Unit tests updated but NOT run, per the standing instruction.
+
 ### Runtime Port Progress: Attribute Action-Policy Table
 
 ### Source findings (all verified against the local decomp)
