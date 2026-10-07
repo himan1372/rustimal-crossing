@@ -336,6 +336,25 @@ The brief's open question — the junction between house furniture and inventory
 
 `rust/src/request_selector.rs` ports the verified machinery: `pick_random_eligible` (count + `rng % count` + walk, returning pocket idx and item), `pick_first_eligible`, `decide_msg_check_possession` (message binding), `decide_idx_prob_table` (cumulative-weight dispatch) with the verbatim `TRADE_PROBS`/`NORMAL_3_PROBS` tables, `TradeOffer` + `build_trade_offer` (wanted item, category goods with `GoodsSource` per slot via the 1/10 rule, random/pitfall offered item). C ABI: `pc_request_pick_carried`, `pc_request_dispatch`. `cargo check --lib` clean. Unit tests: 130/130 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Per-Scene NPC House State Layouts
+
+### Source findings
+
+The brief's three-domain model was verified against `m_npc.h`/`m_npc.c`/`m_quest.c`:
+
+- **Verified `mNpc_NpcList_c`** (`m_npc.h:268`): name, field_name, house_position, position, appear_flag, conversation_flags, quest_info, house_data, reward_furniture — the runtime per-NPC/per-house state object.
+- **Verified `mNpc_NpcHouseData_c`** (`m_npc.h:252`): type, palette, wall_id, floor_id, main_layer_id, secondary_layer_id.
+- **Verified dual actor links** (`m_npc.c:2852`): `mNpc_SetNpcinfo` sets `npc->npc_info.animal` (persistent `Animal_c`) and `npc->npc_info.list` (runtime `mNpc_NpcList_c`) from one `npc_info_idx`; `-ANIMAL_NUM_MAX` selects the island fallback.
+- **Verified scene dispatch** (`m_npc.c:2925`): `SCENE_NPC_HOUSE`/`SCENE_KAMAKURA`/`SCENE_COTTAGE_NPC` route into `mNpc_AddNpc_inNpcRoom` / `...Island`.
+- **Verified owner resolution** (`m_npc.c:2876`): `mNpc_AddNpc_inNpcRoom` reads `house_owner_name`, resolves it via `mNpc_SearchAnimalinfo`, and places the move actor at unit (4, 7) — skipping reserved/empty/joint-event owners.
+- **Verified room wall/floor** (`mNpc_RenewalNpcRoom`): for an `mFI_FIELD_NPCROOM0` field with a valid owner, wall/floor come from `npclist->house_data.wall_id`/`floor_id`.
+- **Verified scan shape** (`m_npc.c:3083`): `data_idx = main_layer_id - fg_base_id` clamped at 0, `fg_items = fg_data_table[data_idx]->items[0]`, two-pass 10x10 scan with `fg_items += UT_X_NUM - 10` stride, `num = RANDOM(num)`, second pass returns the num-th eligible item.
+- **Verified request-dispatch call** (`m_quest.c:980`): `(*Common_Get(clip).npc_clip->force_call_req_proc)(npc_actor, 0x0D8B + looks)` — request-procedure ID from base plus looks category. The function behind the pointer remains untraced.
+
+### Rust rewrite implementation
+
+`rust/src/house_scene.rs` ports the verified structures: `NpcListEntry` (full `mNpc_NpcList_c` layout; conversation/quest fields opaque), `NpcActorLinks` + `resolve_npc_links` (normal and island branches), `HouseSceneKind`, `resolve_house_owner` (owner → NPC index + (4,7) placement, with the reserved/empty/joint-event guards), `renewal_npc_room` (wall/floor from owner house data), `scan_house_furniture` (verbatim two-pass strided scan), `request_proc_id` (`0x0D8B + looks`), and `force_call_req_proc` modeled as a caller-supplied callback since the implementation is untraced. C ABI: `pc_request_proc_id`, `pc_house_wall_floor`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings
