@@ -150,6 +150,27 @@ The conversation/NPC infographic was checked against `include/m_npc_personal_id.
 
 `rust/src/npc.rs` ports the NPC/conversation architecture: the six personalities, the six schedule tables verbatim with `schedule_state_at`/`is_asleep` lookups, opaque 9-value moods, 10-char catchphrases, the message-window state machine (`MsgWindow::load` mirrors the cursor-reset + 20.0s timer), message script ops (text, pause, wait-input, substitution variables), dialogue-category selection from personality + context, a conversation tree (talk/favor/give/trade/bye) with answer resolution feeding mood/friendship deltas, and `NpcActor` runtime state with the source 0..=127 friendship clamp. C ABI exports: `pc_npc_schedule_state`, `pc_npc_is_asleep`. Dialogue categories, script ops, and answer effects are rewrite-owned models of the documented architecture; no authored message text or IDs are reproduced. `cargo check --lib` passes with no new warnings. Full test suite (`cargo test --lib`): **54/54 pass**, run 2026-10-07 after Philip authorized tests, including 6 new NPC tests (schedule sleep windows, transitions, catchphrase truncation, message-window stepping, friendship clamp, sleep refusal). No C callers are rewired yet; full Windows game link unverified.
 
+### Runtime Port Progress: Buried Items
+
+### Source findings
+
+The buried-item brief was traced through `include/m_common_data.h`, `src/game/m_field_info.c`, `src/game/m_museum.c`, `src/game/m_all_grow_ovl.c`, `src/game/m_name_table.c`, and `src/actor/ac_event_manager.c`. The brief's core claim is confirmed: "buried" is a state attached to a town item, not a separate object class.
+
+- **Verified buried-bit storage:** `u16 deposit[FG_BLOCK_X_NUM * FG_BLOCK_Z_NUM][UT_Z_NUM]` at save offset 0x020F1C, commented "flags for which items are buried around town". One bit per tile: `mFI_LineDepositON`/`mFI_LineDepositOFF`/`mFI_GetLineDeposit` set/clear/read bit `ut_x` of row `ut_z`; block-level wrappers `mFI_BlockDepositON/OFF`, `mFI_GetBlockDeposit`, `mFI_BkUtNum2DepositON/OFF/GET`, `mFI_Wpos2DepositON/OFF/GET`.
+- **Verified geometry:** 16×16 tiles per acre (`UT_BASE_NUM`), 5×6 main acres (`FG_BLOCK_X_NUM`/`FG_BLOCK_Z_NUM`) = 80×96 town tiles. This corrects the third-party "80×80" claim flagged in the brief.
+- **Verified bury operation:** `mMsm_DepositItemBlock_cancel` writes `*fg_items = deposit_item; *deposit |= (1 << ut_x);` — item ID plus buried bit together.
+- **Verified daily fossils:** `mMsm_DepositFossil` keeps at most `mMsm_DEPOSIT_FOSSIL_MAX` (5) buried fossils, one per x-column of acres (`mMsm_RecordDepositFossil` sets bit `1 << (block_x + 1)`; `mMsm_GetDepositBlockNum` counts them), skipping player/shrine/station/pool/dump acres, placed with `ITM_FOSSIL` (0x2511).
+- **Verified gyroids:** `mAGrw_HANIWA_NUM` (3) deposited via the same `mMsm_DepositItemBlock_cancel` path.
+- **Pitfall correction:** pitfalls do NOT use item + deposit bit. `mMsm_DepositItemBlock` stores `BURIED_PITFALL_HOLE_START + hole_num` (0x002A–0x0042, 25 holes, plus reserved 0x0043–0x005B) with `ITEM_IS_BURIED_PITFALL_HOLE` / `_RSV` predicates. This refines the brief's model.
+- **Verified dig conversion:** `bg_item_fg_sub_dig2take_conv` maps buried pitfall holes to `ITM_PITFALL` (0x2512) and `SHINE_SPOT` (0x005C) to bell bags by money-power roll (30k if `rng <= 2*money_power/40` or money-luck destiny, 10k if `rng <= 12*money_power/40`, else 1k); everything else passes through. Bell IDs 0x2100/0x2101/0x2102.
+- **Verified interaction gate:** `Player_actor_CheckItem_fromPosition` requires `mFI_Wpos2DepositGet(...) == FALSE` — buried tiles can't be picked up by the ordinary path.
+- **Verified clear sequence:** `be_flat_unit` converts with `bg_item_fg_sub_dig2take_conv`, sets the foreground item to `EMPTY_NO` (0x0000), and calls `mFI_Wpos2DepositOFF`.
+- **Verified glowing-spot placement:** `mAGrw_SetShineGroundBlock` picks a random flat tile per player (`TOTAL_PLAYER_NUM`) with no item where a hole can be dug.
+
+### Rust rewrite implementation
+
+`rust/src/buried_items.rs` ports the burial architecture: geometry constants, verified item IDs, line/block deposit bit operations, `BurialGrid` (foreground item grid + parallel deposit array), `bury_item` (item + deposit bit), `bury_pitfall` (hole-item allocation 0x002A+, no deposit bit), `dig_up` (conversion + clear sequence), `dig2take_conv` (exact bell-roll logic), `can_pickup` (deposit gate), `is_pitfall_trap`, fossil daily-count and deposit-record bit logic, and a rewrite-owned `can_bury_item` validity heuristic (labeled as such). C ABI exports: `pc_buried_get`, `pc_buried_set`, `pc_buried_clear`. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired yet; full Windows game link unverified.
+
 ### Runtime Port Progress: Video Interface
 
 The image shows a game/rendering path ending in a platform presentation step. Repository code supports a narrower fact: the PC `VIWaitForRetrace` implementation polls SDL events, drains pending GX work, swaps the window, applies frame pacing, records profiler data, and advances the PC frame counter. Those operations now live in `pc/rust/src/vi.rs`; calls still enter through the Dolphin VI API in `include/dolphin/vi.h`. This does not move scene logic, display-list generation, GX rendering, or gameplay into Rust.
