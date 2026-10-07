@@ -606,6 +606,20 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Rust rewrite implementation
 
+### Runtime Port Progress: Slope-Wall Policy
+
+### Source findings (all verified against the local decomp)
+
+- **The brief's open question — answered from the decomp**: the brief could not retrieve the terrain source through the web interface. The mechanism is: `mFI_UtNum2UtCol` (m_field_info.c:842) reads collision from `g_fdinfo->block_info[num].bg_info.collision`, and `m_field_make.c` (`mFM_SetBG`) fills that array by COPYING the `collision[UT_Z_NUM][UT_X_NUM]` array from a predefined `mFM_bg_data_c` entry (`data_bgd[]`) selected by bg_name. So slate flags, corner heights, and bridge attributes are baked into acre template data at build time — the field maker does NOT compute slopes procedurally. This confirms the brief's "predefined acre configurations" model at the collision-data level.
+- **Slope ground height** (`mCoBG_GetAreaYSlatingUnit`, m_collision_bg.c:1284, verbatim): the slope is a tilted plane along its diagonal; the actor's unit area (triangle from `mCoBG_GetUnitArea`) selects the ground corner — SLATE_UP: S/E areas -> bot_right*10, N/W -> top_left*10; SLATE_DOWN: N/E -> top_right*10, W/S -> bot_left*10. NOTE the switch fallthrough: SLATE_UP with an unrecognized area falls into the SLATE_DOWN case.
+- **Ground dispatch** (`mCoBG_GetBGHeight_Normal`): `slate_flag` selects the slate path vs the normal (possibly triangulated) path. The slate-detail test here is a SINGLE comparison (`top_left != bot_right` -> SLATE_UP, else SLATE_DOWN) — subtly different from `mCoBG_SearchSlateDetail` (two comparisons + SLATE_UP default). Both are preserved as separate functions.
+- **Slate wall registration** (`mCoBG_RegistSlatingWallVector_AttributeOff`): `make_slate_wall_proc_table[slate_flag & 1]` — only sloped units generate slate walls (AttributeOn variant always generates via its own table).
+- **Scope honesty**: the brief's Policies A-G (embedded upper section, protruding lower mound, cardinal ramp orientation, corner resolution) describe the town-generation/visual-terrain level. The exact per-tile ramp footprints live in the binary BG data (display lists + collision arrays), not in derivable code — so they are documented as the data-level mechanism, not ported as geometry. The collision-level slope policy (walls + ground height) is fully ported.
+
+### Rust rewrite implementation
+
+`rust/src/terrain_walls.rs` additions: `get_area_y_slating_unit` (verbatim area mapping + fallthrough), `slate_detail_for_ground` (single-comparison variant, kept separate from `search_slate_detail`). C ABI: `pc_slate_ground_y`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 ### Runtime Port Progress: Cardinal Wall-Edge Construction
 
 ### Source findings (all verified against the local decomp)

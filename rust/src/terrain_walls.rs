@@ -754,10 +754,81 @@ pub fn check_height_exactly(
     }
 }
 
+//
+// ---- Slope ground policy ----
+//
+
+/// Ground height on a sloped unit (`mCoBG_GetAreaYSlatingUnit`
+/// verbatim): the slope is treated as a tilted plane along its
+/// diagonal, and the actor's unit area (triangle) selects which
+/// diagonal corner height is the ground. Raw 5-bit samples in,
+/// `* 10.0` applied (the base height is added by the caller, as in
+/// the source).
+///
+/// NOTE the fallthrough: SLATE_UP with an area outside S/E/N/W falls
+/// through to the SLATE_DOWN case — reproduced here.
+pub fn get_area_y_slating_unit(
+    top_left: u32,
+    bot_left: u32,
+    bot_right: u32,
+    top_right: u32,
+    slate_detail: u8,
+    area: u8,
+) -> f32 {
+    // area: 0=N, 1=W, 2=S, 3=E
+    let v = match slate_detail {
+        wall_name::SLATE_UP => match area {
+            2 | 3 => Some(bot_right),
+            0 | 1 => Some(top_left),
+            _ => None, // fallthrough to SLATE_DOWN
+        },
+        _ => None,
+    };
+    let raw = match v {
+        Some(r) => r,
+        None => match area {
+            // SLATE_DOWN (and the SLATE_UP fallthrough)
+            0 | 3 => top_right,
+            1 | 2 => bot_left,
+            _ => 0,
+        },
+    };
+    (raw & 0x1F) as f32 * 10.0
+}
+
+/// Slope-vs-normal ground dispatch (`mCoBG_GetBGHeight_Normal`
+/// table): `slate_flag` selects the slate ground path, otherwise the
+/// normal (possibly triangulated) ground path.
+///
+/// NOTE: the slate-detail test here differs from
+/// `search_slate_detail`: it is a single comparison —
+/// `top_left != bot_right` → SLATE_UP, else SLATE_DOWN.
+pub fn slate_detail_for_ground(top_left: u32, bot_right: u32) -> u8 {
+    if top_left != bot_right {
+        wall_name::SLATE_UP
+    } else {
+        wall_name::SLATE_DOWN
+    }
+}
+
 /// C ABI: edge-ownership mask for a neighborhood cell.
 #[no_mangle]
 pub extern "C" fn pc_cardinal_edge_mask(size: u8, index: u8) -> u8 {
     cardinal_edge_mask(size as usize, index as usize)
+}
+
+/// C ABI: slope ground height for raw corner samples + area;
+/// returns `raw * 10.0` (caller adds the unit base height).
+#[no_mangle]
+pub extern "C" fn pc_slate_ground_y(
+    top_left: u32,
+    bot_left: u32,
+    bot_right: u32,
+    top_right: u32,
+    slate_detail: u8,
+    area: u8,
+) -> f32 {
+    get_area_y_slating_unit(top_left, bot_left, bot_right, top_right, slate_detail, area)
 }
 
 /// C ABI: cardinal height test; writes top/bot, returns 1 when the
@@ -1111,6 +1182,27 @@ mod tests {
         assert_eq!(unsafe { pc_bridge_water_search(27, 1, 0, n.as_ptr()) }, WATER);
         assert_eq!(unsafe { pc_bridge_water_search(27, 0, 0, n.as_ptr()) }, 0xFF);
         assert_eq!(unsafe { pc_bridge_water_search(27, 1, 0, core::ptr::null()) }, 0xFF);
+    }
+
+    #[test]
+    fn slate_ground_height() {
+        // SLATE_UP diagonal (top_left=4, bot_right=1): N/W areas -> top_left, S/E -> bot_right.
+        assert_eq!(get_area_y_slating_unit(4, 0, 1, 0, wall_name::SLATE_UP, 0), 40.0);
+        assert_eq!(get_area_y_slating_unit(4, 0, 1, 0, wall_name::SLATE_UP, 1), 40.0);
+        assert_eq!(get_area_y_slating_unit(4, 0, 1, 0, wall_name::SLATE_UP, 2), 10.0);
+        assert_eq!(get_area_y_slating_unit(4, 0, 1, 0, wall_name::SLATE_UP, 3), 10.0);
+        // SLATE_DOWN diagonal (top_right=3, bot_left=2): N/E -> top_right, W/S -> bot_left.
+        assert_eq!(get_area_y_slating_unit(0, 2, 0, 3, wall_name::SLATE_DOWN, 0), 30.0);
+        assert_eq!(get_area_y_slating_unit(0, 2, 0, 3, wall_name::SLATE_DOWN, 3), 30.0);
+        assert_eq!(get_area_y_slating_unit(0, 2, 0, 3, wall_name::SLATE_DOWN, 1), 20.0);
+        assert_eq!(get_area_y_slating_unit(0, 2, 0, 3, wall_name::SLATE_DOWN, 2), 20.0);
+        // SLATE_UP fallthrough: unknown area falls to the SLATE_DOWN mapping.
+        assert_eq!(get_area_y_slating_unit(4, 2, 1, 3, wall_name::SLATE_UP, 9), 20.0); // W/S -> bot_left
+        // Ground dispatch uses a single comparison, unlike search_slate_detail.
+        assert_eq!(slate_detail_for_ground(4, 1), wall_name::SLATE_UP);
+        assert_eq!(slate_detail_for_ground(1, 1), wall_name::SLATE_DOWN);
+        // C ABI.
+        assert_eq!(unsafe { pc_slate_ground_y(4, 0, 1, 0, wall_name::SLATE_UP, 2) }, 10.0);
     }
 
     #[test]
