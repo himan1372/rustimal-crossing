@@ -609,6 +609,20 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 ### Runtime Port Progress: AttributeWall_Special Exact Differences
 
 
+### Runtime Port Progress: Line-vs-Column Sweep
+
+### Source findings (all verified against the local decomp)
+
+- `mCoBG_LineWallCheck_Column` (m_collision_bg_column.c_inc:454, verbatim): swept movement vs vertical cylinder columns. `vec_end_start = start - end`; XZ circle-line intersections via `mCoBG_GetCrossCircleAndLine2DvectorPlaneXZ_Xyz` (which delegates to the already-ported vector-form `mCoBG_GetCrossCircleAndLine2Dvector`); nearer intersection by squared XZ distance wins (strict `<`, ties go to cross1); per-axis segment-bounds test; `mult = (len_xz - sqrt(d_sq)) / len_xz`; rewind scales the FULL XYZ `vec_end_start` (trajectory truncated, direction preserved); accepted iff `end.y + rev.y <= col.height`. No actor radius added. Start-inside-column -> no sweep.
+- `F32_IS_ZERO` is NOT exact zero: `|v| < 0.008` (types.h:146) — reproduced.
+- The `tmp_end = end + reverse` per-column accumulation is DEAD CODE in the source: `reverse` is reset to zero at the top of every iteration and the function returns on the first accept, so `tmp_end` is always exactly `end_pos`. Documented, not replicated.
+- Complementary `mCoBG_LineGroundCheck_Column` also ported: accepted when `start.y > height && end.y < height` (downward plane crossing); `mult = (height - end.y) / (start.y - end.y)`; verbatim early-out (returns FALSE immediately, skipping later columns, when the Y gate passes but the Y delta is ~zero). Its static `reverse0` is zero-initialized (the source's @BUG comment notwithstanding).
+- This is a different primitive from the wall-vector endpoint path: no normal_angle, no WallBounds, no atr_wall — just pos/radius/height.
+
+### Rust rewrite implementation
+
+`rust/src/column_sweep.rs`: `f32_is_zero`, `Column`, `line_wall_check_column_one` / `line_wall_check_column`, `line_ground_check_column_one` / `line_ground_check_column`. C ABI: `pc_line_wall_check_column_one`, `pc_line_ground_check_column_one`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 ### Runtime Port Progress: Check45Angle Direction Classification
 
 ### Source findings (all verified against the local decomp)

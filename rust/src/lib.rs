@@ -29,6 +29,7 @@ mod segment_map;
 mod collision;
 mod dialogue_topics;
 mod bridge_acre;
+mod column_sweep;
 mod endpoint_circle;
 mod move_bg;
 mod terrain_walls;
