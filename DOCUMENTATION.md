@@ -611,6 +611,25 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: FG Template Data + SIGN Distribution Groundwork
+
+### Source findings (all verified against the local decomp)
+
+- KEY FINDING: the per-template SIGN00-SIGN20 locations are NOT in the decomp source. They live in `fgdata.bin`, a binary asset inside `forest_1st.arc` on the game disc (loaded via `RESOURCE_FGDATA` in jsyswrap.cpp, mounted from the user's game files at runtime). The decomp carries only the structs + the combination table.
+- Binary format (from `mFM_fg_data_c`, m_field_make.h): per record `fg_id: u16 BE` + `items[16][16]: u16 BE` (row-major z,x) + `haniwa_step: [u8;4]` = 518 bytes/record. `mActor_name_t` is u16; the PC port byte-swaps u16s after load (`mFM_ByteSwapFGData`), so the file is big-endian.
+- SIGN range: STRUCTURE_START=0x5800, SIGN00=0x5810 (22544) .. SIGN20=0x5824 (22564) (m_name_table.h).
+- `data_combi.c` statistics (derived by script, not hand-counted): 368 combinations, 267 distinct FG types. Per-type variant counts: FLAT 10, BEACH 10, RIVER_SOUTH/EAST/WEST 4, CLIFF_HORIZONTAL 5, border/ocean types mostly share FG_TYPE_EMPTY. FLAT's 10 FG variants (GRD_S_F_1_2F, GRD_S_F_2..GRD_S_F_10) are the prime house-lot candidates.
+- OCEAN_5 enum value corrected to 97 during verification (hand-count was wrong; script-extracted from the header).
+- To finish the distribution: extract fgdata.bin from forest_1st.arc (game disc), parse with the provided parser, join SIGN locations with the combination table.
+
+### Rust rewrite implementation
+
+`rust/src/fg_data.rs`: FG_RECORD_SIZE (518), SIGN_FIRST/LAST, FgRecord, parse_fg_records (big-endian), sign_locations, COMBI_COUNTS table, house_lot_candidates, build_fg_index. C ABI: pc_fg_parse_count, pc_fg_sign_count. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Actual SIGN locations per template require fgdata.bin from the game disc (not in the repo; copyrighted asset, can't be vendored). The parser + join logic is ready for Philip to run on his Windows machine where the disc files exist.
+
 ### Runtime Port Progress: Villager Selection + House Lots
 
 ### Source findings (all verified against the local decomp)

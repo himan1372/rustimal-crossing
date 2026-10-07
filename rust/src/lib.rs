@@ -62,6 +62,7 @@ mod player_action;
 mod player_tools;
 mod field_gen;
 mod villager_home;
+mod fg_data;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;
