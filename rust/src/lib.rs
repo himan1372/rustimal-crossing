@@ -64,6 +64,8 @@ mod field_gen;
 mod villager_home;
 mod fg_data;
 mod scene_table;
+mod weather_season;
+mod tool_resolvers;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;

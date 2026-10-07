@@ -611,6 +611,39 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Weather/Seasons + Tool Target Resolvers
+
+### Source findings (all verified against the local decomp)
+
+Weather/seasons:
+- 18 calendar terms (mTM_calender, m_time.c): end-date table with season + bgitem_profile + bgitem_bank per term; lookup returns first term with month<end_month || (month==end_month && day<=end_day). Island climate bypasses the table and forces term 7 (summer).
+- mTM_set_season_com writes four fields: season, term_idx, bgitem_profile, bgitem_bank.
+- 20 weather terms (mEnv_GetWeatherChangeStep) with a 20-entry probability table; each entry sums to 10; roll is RANDOM_F(10) walked cumulatively. Outcomes: clear/rain-light/rain-heavy(Thunder)/snow-light/snow-heavy(snow)/sakura-light/sakura-heavy.
+- @BUG confirmed in source: without BUGFIXES the sakura probability reads (weather>>8)&0xF (the snow field) instead of (weather>>0)&0xF; the port documents the intended fix. Port defaults to original behavior.
+- Event weather override (mEv_GetEventWeather): WEATHER_CLEAR -> CLEAR, WEATHER_SNOW -> SNOW, WEATHER_SPORTS_FAIR -> CLEAR, else -1; then first-job rain is cleared to CLEAR/NONE. Weather saved as one byte: intensity | (weather<<4).
+- Wind: 5 terms (end dates), (calm/normal/gusty) percents per term, power ranges calm 0-0.4 / normal 0.4-0.6 / gusty 0.6-1.0. Koinobori event forces wind angle 135 deg (0x6000) and power 1.0 in both mEnv_ChangeWind and mEnv_InitWind.
+- Daily renewal boundary: mTM_FIELD_RENEW_HOUR = 6.
+
+Tool resolvers:
+- mPlib_Check_scoop_after: 8-neighbor unit search (player's unit omitted), angle-first selection with 180/360 wrap, diagonal wall rejection (both cardinal neighbors walled) + SQ(63.245553) distance cutoff with cardinal fallback, missing unit -> AIR_SCOOP, +/-63.245552 vertical threshold, NPC exclusion within SQ(39) -> AIR_SCOOP (10-Bell rock exception on GAFU+), snowman/snowball/ball stored as reflect actors.
+- mFI_GetDigStatus: dig check table {MISS,CANCEL,FILLIN,DIG,PUT_ITEM,GET_ITEM}; golden shovel only affects DIG: area gate (differs by >half unit from static old_pos) + RANDOM(10)==1 -> GET_ITEM with ITM_MONEY_100 (0x2103). old_pos updates on every DIG regardless of shovel.
+- PUTIN_SCOOP: player_drop_entry_proc runs at state entry (logic before animation); burial effect at frame 18 (25 for FILL_UP_I1); golden flag -> DEMO_GET_GOLDEN_ITEM(SHOVEL) at completion instead of normal fill completion.
+- REFLECT_SCOOP frame 13: speed 4.8 + 180deg reversal, UZAI set, sound/vibration, insect notify; strike effect at 37 units forward + 2 lateral from player pos.
+- Axe durability (Player_actor_GetitemNo_forDamageAxe): +1 normal / +3 reflected; at >=9 damage the item advances one wear stage (AXE->USE_1->...->USE_7->EMPTY_NO) and the counter resets (verified: damage reset in swing_axe frame 15). Golden tools bypass.
+- Net: capture evaluated after frame 6 (CatchSomethingCheck_common 6.0f); sweep 50/60, radial tolerance 15/21 + target radius for normal/gold.
+- Rod: ready-rod frame >=10 projects 100 units forward; 5 samples (center + 4x +/-10); each needs water attribute, no movable-BG collision, surface <60 above player; else AIR_ROD.
+
+### Rust rewrite implementation
+
+`rust/src/weather_season.rs`: CALENDAR_TERMS (18), term_idx, season constants, WEATHER_TERMS/TABLE (20), weather_term, weather_roll (with bugfix_sakura flag), event_weather_override, pack/unpack save byte, FIELD_RENEW_HOUR, WIND_TERMS/PERCENTS/POWER_RANGES, wind_term, Koinobori constants. C ABI: pc_term_idx, pc_weather_term, pc_weather_roll, pc_event_weather, pc_wind_term.
+`rust/src/tool_resolvers.rs`: SCOOP_NEIGHBORS/DIAGONALS, distance/vertical/NPC constants, dig_status enum, gold-shovel area gate + injection, PUTIN/REFLECT frame constants, reflect_scoop_effect_offset, axe durability (axe_apply_damage), net geometry (net_sweep_length, net_radial_tol), rod validation (rod_sample_ok). C ABI: pc_gold_shovel_dig, pc_axe_apply_damage, pc_net_geometry, pc_rod_sample_ok. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Event schedule compiler (event_schedule_data[] symbolic dates, decode_date, event_today[] bitmasks) not yet ported -- the event-scheduling half of the brief. NPC schedule event overrides (first-job/Halloween -> FIELD) already in npc_ai.rs.
+- Weather actor (ac_weather) particle/state machine not ported.
+- Axe ±75deg candidate filtering and the net sweep line-collision not ported (geometry helpers live in C).
+
 ### Runtime Port Progress: Scene Table + Scene_ct Interpreter
 
 ### Source findings (all verified against the local decomp)
