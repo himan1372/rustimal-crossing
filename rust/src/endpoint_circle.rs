@@ -174,9 +174,124 @@ pub fn endpoint_circle_collision(
     Some((edge, reverse))
 }
 
+/// Wall-kind dispatch values (`mCoBG_GetWallKind` enum verbatim):
+/// `regist_p != NULL` -> MOVE; else `atr_wall` -> ATTRIBUTE; else NORMAL.
+/// The player table is `{ NormalWall_Special, AttributeWall_Special,
+/// NormalWall_Special }`, so MOVE walls reuse the normal-special path.
+pub mod wall_kind {
+    pub const NORMAL: u8 = 0;
+    pub const ATTRIBUTE: u8 = 1;
+    pub const MOVE: u8 = 2;
+}
+
+/// `mCoBG_GetWallKind` verbatim.
+pub fn get_wall_kind(has_regist: bool, atr_wall: bool) -> u8 {
+    if has_regist {
+        wall_kind::MOVE
+    } else if atr_wall {
+        wall_kind::ATTRIBUTE
+    } else {
+        wall_kind::NORMAL
+    }
+}
+
+/// The normal player-special height gate, factored out so the exact
+/// difference is explicit: `(old_ground_y - 5.0) + 3.0 <= height_top`
+/// (i.e. `old_ground_y - 2.0 <= top`). The attribute path never calls
+/// this — it has no height gate at all.
+pub fn normal_special_height_gate(old_ground_y: f32, height_top: f32) -> bool {
+    (old_ground_y - 5.0) + 3.0 <= height_top
+}
+
+/// Attribute-wall player special path
+/// (`mCoBG_Distance2Reverse_AttributeWall_Special` verbatim):
+/// IDENTICAL horizontal test to `endpoint_circle_collision` — same
+/// front-line gates, same `dist < range`, same endpoint-circle tests,
+/// same SP suppression, same `GetSpecialDistanceReverse` — but with
+/// NO height gate (the wall always blocks regardless of elevation)
+/// and NULL registered height. It also does not set the
+/// moving-background contact side.
+pub fn attribute_wall_special_collision(
+    wall_start: [f32; 2],
+    wall_end: [f32; 2],
+    normal: [f32; 2],
+    actor_start: [f32; 2],
+    actor_end: [f32; 2],
+    range: f32,
+    sp_suppress: bool,
+) -> Option<(EndpointChoice, [f32; 2])> {
+    if !(point_info_front_line(wall_start, actor_end, normal)
+        && point_info_front_line(wall_start, actor_start, normal))
+    {
+        return None;
+    }
+    if dist_point_and_line_2d_norm(wall_start, actor_end, normal) >= range {
+        return None;
+    }
+    let edge = if judge_point_in_circle(wall_start, actor_end, range) {
+        EndpointChoice::Start
+    } else if judge_point_in_circle(wall_end, actor_end, range) {
+        EndpointChoice::End
+    } else {
+        return None;
+    };
+    if sp_suppress {
+        return None;
+    }
+    let edge_pt = match edge {
+        EndpointChoice::Start => wall_start,
+        EndpointChoice::End => wall_end,
+    };
+    let (cross0, cross1) = cross_circle_and_line_2dvector(edge_pt, normal, actor_end, range)?;
+    // NOTE: no height gate here — this is THE difference from the
+    // normal-special path (which rejects when
+    // `(old_ground_y - 5.0) + 3.0 > height_top`).
+    let reverse = get_special_distance_reverse(edge_pt, cross0, cross1, wall_start, normal)?;
+    Some((edge, reverse))
+}
+
 /// Re-export of the corner-suppression test for the endpoint path
 /// (`mCoBG_CheckDistSPCheck`; see `wall_priority.rs`).
 pub use crate::wall_priority::check_dist_sp_suppress as check_dist_sp_check;
+
+/// C ABI: attribute-wall special path; writes reverse[2]; returns 1 on hit.
+#[no_mangle]
+pub extern "C" fn pc_attribute_wall_special(
+    ws_x: f32,
+    ws_z: f32,
+    we_x: f32,
+    we_z: f32,
+    n_x: f32,
+    n_z: f32,
+    as_x: f32,
+    as_z: f32,
+    ae_x: f32,
+    ae_z: f32,
+    range: f32,
+    sp_suppress: u8,
+    out_reverse: *mut f32,
+) -> u8 {
+    match attribute_wall_special_collision(
+        [ws_x, ws_z],
+        [we_x, we_z],
+        [n_x, n_z],
+        [as_x, as_z],
+        [ae_x, ae_z],
+        range,
+        sp_suppress != 0,
+    ) {
+        Some((_, rev)) => {
+            if !out_reverse.is_null() {
+                unsafe {
+                    *out_reverse.add(0) = rev[0];
+                    *out_reverse.add(1) = rev[1];
+                }
+            }
+            1
+        }
+        None => 0,
+    }
+}
 
 /// C ABI: line/circle intersection; writes cross0[2], cross1[2];
 /// returns 1 on intersection.
@@ -273,6 +388,36 @@ mod tests {
         assert!(endpoint_circle_collision(ws, we, n, [2.0, 6.0], [2.0, 4.0], 18.0, 0.0, -10.0, false).is_none());
         // Endpoint outside the circle -> None.
         assert!(endpoint_circle_collision(ws, we, n, [60.0, 6.0], [60.0, 4.0], 18.0, 0.0, 100.0, false).is_none());
+    }
+
+    #[test]
+    fn attribute_wall_special_exact_differences() {
+        let ws = [0.0, 0.0];
+        let we = [10.0, 0.0];
+        let n = [0.0, 1.0];
+        // Same horizontal setup the normal path accepts.
+        let args = (ws, we, n, [2.0, 6.0], [2.0, 4.0], 18.0);
+        // Normal path: too low a wall -> None (height gate).
+        assert!(endpoint_circle_collision(args.0, args.1, args.2, args.3, args.4, args.5, 0.0, -10.0, false).is_none());
+        // Attribute path: NO height gate -> hit even with a very low wall top.
+        let (choice, rev) = attribute_wall_special_collision(ws, we, n, [2.0, 6.0], [2.0, 4.0], 18.0, false).unwrap();
+        assert_eq!(choice, EndpointChoice::Start);
+        // Same reverse math as the normal path: parallel to the normal.
+        assert!(rev[0].abs() < 1e-3 && rev[1] > 0.0);
+        // The normal gate, factored: (0 - 5) + 3 = -2 <= -10 is false.
+        assert!(!normal_special_height_gate(0.0, -10.0));
+        assert!(normal_special_height_gate(0.0, 100.0));
+        // Boundary: (10 - 5) + 3 = 8 <= 8 -> hit.
+        assert!(normal_special_height_gate(10.0, 8.0));
+        assert!(!normal_special_height_gate(10.0, 7.9));
+        // Attribute path still respects the horizontal gates.
+        assert!(attribute_wall_special_collision(ws, we, n, [2.0, -6.0], [2.0, -4.0], 18.0, false).is_none());
+        assert!(attribute_wall_special_collision(ws, we, n, [2.0, 6.0], [2.0, 4.0], 18.0, true).is_none());
+        // Wall-kind dispatch.
+        assert_eq!(get_wall_kind(false, false), wall_kind::NORMAL);
+        assert_eq!(get_wall_kind(false, true), wall_kind::ATTRIBUTE);
+        assert_eq!(get_wall_kind(true, true), wall_kind::MOVE);
+        assert_eq!(get_wall_kind(true, false), wall_kind::MOVE);
     }
 
     #[test]

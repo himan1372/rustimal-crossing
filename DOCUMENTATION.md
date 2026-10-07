@@ -606,6 +606,22 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Rust rewrite implementation
 
+### Runtime Port Progress: AttributeWall_Special Exact Differences
+
+### Source findings (all verified against the local decomp)
+
+- **The symbol exists** (`mCoBG_Distance2Reverse_AttributeWall_Special`, m_collision_bg.c:970). The brief's hypothesis is confirmed and sharpened with the exact diffs vs `mCoBG_Distance2Reverse_NormalWall_Special`:
+  1. **Same horizontal math**: identical front-line gates on actor_start/actor_end, same `dist < range`, same endpoint-circle tests (`JudgePointInCircle` -> `CheckDistSPCheck` -> `GetCrossCircleAndLine2Dvector`), same `GetSpecialDistanceReverse` (reverse = edge - cross).
+  2. **THE difference — no height gate**: the normal-special path requires `(actor_info->old_ground_y - 5.0f) + 3.0f <= height.top` (i.e. `old_ground_y - 2.0 <= top`) per endpoint using that endpoint's wall bounds. The attribute path has NO height test — the wall always blocks the player regardless of elevation.
+  3. **NULL registered height**: the attribute path registers `NULL` instead of the endpoint's `mCoBG_WallHeight_c`, so downstream consumers get no height info.
+  4. **No `SetMoveBgContactSide`**: the attribute path never sets moving-background contact sides.
+- **Dispatch** (`mCoBG_GetWallKind`, m_collision_bg.c:760): `regist_p != NULL` -> MOVE (2); else `atr_wall` -> ATTRIBUTE (1); else NORMAL (0). Player table: `{ NormalWall_Special, AttributeWall_Special, NormalWall_Special }` (MOVE reuses the normal-special path). `atr_wall` is set for forbid-vector walls and special collision walls (m_collision_bg_wall.c_inc:478,634,650).
+- **Scope**: non-player attribute walls use `mCoBG_Distance2Reverse_AttributeWall` (point-to-line, no height check either, NULL height, 2.7f graze band) — not ported here; only the player special paths were in scope.
+
+### Rust rewrite implementation
+
+`rust/src/endpoint_circle.rs` additions: `wall_kind` constants + `get_wall_kind` (verbatim dispatch), `normal_special_height_gate` (the gate factored out so the difference is explicit), `attribute_wall_special_collision` (identical horizontal test, no height gate, no height registration). C ABI: `pc_attribute_wall_special`. The existing `endpoint_circle_collision` already modeled the normal path including its height gate. Scoped test run (`cargo test --lib endpoint_circle`): 5/5 pass.
+
 ### Runtime Port Progress: Bridge-Water Mask (Town-Gen Side)
 
 ### Source findings (all verified against the local decomp)
