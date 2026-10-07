@@ -430,6 +430,24 @@ The brief's solver model was verified against `src/game/m_collision_bg.c`:
 
 ### Runtime Port Progress: Player Wall-Priority Sort
 
+### Attribute/Forbidden-Wall Tables
+
+### Source findings
+
+The brief's forbidden-wall model was verified against `src/game/m_collision_bg.c`, `src/game/m_collision_bg_wall.c_inc`, `src/game/m_collision_bg_info.c_inc`, and `include/m_collision_bg.h`:
+
+- **Verified eight-vector table** (`m_collision_bg.c:82`): `mCoBG_make_vector_table[8]` — 0°/UP, −90°/RIGHT, 90°/LEFT, 180°/DOWN, plus 45°/135°/225°/315° diagonal slate entries with `SQRT_OF_2_DIV_2` normals.
+- **Verified index table** (`m_collision_bg.c:93`): `mCoBG_forbid_vector_idx[36][2]` verbatim, mapping attributes 27–62 to up to two vector IDs (`-1` = none). Two-wall corner attributes: 51–54 (tunnels) and 59–62 (river-bank corners), e.g. 51 = UP+LEFT. Attribute 31 (wood bridge center) maps to none.
+- **Verified attribute comments** (`include/m_collision_bg.h:79`): the 27–62 family is wood bridge (27–31), stone bridge (32–35), wave (36–38), river bank (39–42), grass/river (43–46), grass/cliff (47–50), tunnel (51–54), diagonal cliff (55–58), diagonal river bank (59–62); 63 is a separate slate/slope representation, not part of the table.
+- **Verified generation gate** (`m_collision_bg_wall.c_inc:508`): `forbid_proc = (old_on_ground & attr_wall) & 1` selects `mCoBG_MakeForbidAttrVector` vs the DUMMY no-op — forbidden vectors appear only when the actor was grounded AND the attribute-wall flag is set.
+- **Verified wall record:** generated walls get `atr_wall = TRUE`, `regist_p = NULL`, normal/angle/name from the vector table, segment from `mCoBG_UnitNoName2StartEnd` with the check-type padding table, and no wall-height bounds.
+- **Verified ball-rolling reuse** (`m_collision_bg_info.c_inc:858`): `mCoBG_CheckAttribute_BallRolling` reads the same forbid table, flipping each emitted normal angle by +180°.
+- `attr_wall` also switches ordinary normal/slate wall registration between the `AttributeOff`/`AttributeOn` variants (modeled, internals not yet ported).
+
+### Rust rewrite implementation
+
+`rust/src/attr_walls.rs` ports the tables verbatim: `MAKE_VECTOR_TABLE`, `FORBID_VECTOR_IDX`, the decomp header comments as `ATTRIBUTE_NAMES`, the 27–62 range gate, `forbid_vectors` (0–2 vector IDs), `is_two_wall_attribute`, the `(old_on_ground & attr_wall) & 1` gate as `forbid_generation_enabled`, the ball-rolling +180° reuse as `ball_rolling_angles`, the `AttributeWallSpec` record (`atr_wall = TRUE`, no moving-BG pointer), and `wall_registrar_variant`. These feed into the existing solver: attribute walls enter `wall_solver.rs` as `WallSeg2` with `atr_wall = true`, where the dispatch tables already route them to the attribute solver. C ABI: `pc_forbid_vectors`, `pc_forbid_gate`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: exact `mCoBG_UnitNoName2StartEnd` segment-orientation mapping, the AttributeOn normal/slate registrar internals, the bridge/water special case in `RegistNormalWallVector_AttributeOff`, and the parallel `l_attribute_action_info` / water-translation tables — all marked future work. No C callers are rewired; full Windows game link unverified.
+
 ### Source findings
 
 The brief's three-pass model was verified against `src/game/m_collision_bg.c`, with exact implementation details:
