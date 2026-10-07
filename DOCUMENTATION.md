@@ -611,6 +611,22 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Player Tool Families (Axe, Net, Rod)
+
+### Source findings (all verified against the local decomp)
+
+- Axe family. SWING_AXE: frame 10 whoosh sound; frame 15 = the hit — effect at offset (-7,20,24) rotated by player angle, tree resolution via tree_cutcount_check_proc (cutcount<=0 -> stump via bg_item_fg_sub, else shake; fruit drops unless bee tree; bee tree sets bee_counter=5.0), AXE_CUT sound, axe-damage bookkeeping; frame 16.5 -> bee attack status; frame >=17 -> shock if bee disturbed else WALK (priority 1). REFLECT_AXE settles at 30.5/31, AIR_AXE at 35.5/36 (same tail shape). Semantic actions CHOP_TREE / CHOP_PALM_TREE reported via mISL. BROKEN_AXE has separate reflect/swing request variants.
+- Net family. READY_NET / READY_WALK_NET -> SWING_NET at priority 22. Catch test is a capsule from net_top_col to net_bot_col, length 50 (normal) / 60 (gold net); insects self-register into catch request tables. SWING_NET outcome: check_type 2 -> PULL_NET (priority 26, hit sound + vibration); check_type 0 -> STOP_NET (priority 26, NPC UZAI marking). PULL_NET runs the catch demo (base msg 0xA2C, insect-specific otherwise).
+- Rod family. CAST_ROD: stroke sound at frame 20. RELAX_ROD case 5 -> VIB_ROD (priority 26, the bite); case 6 -> COLLECT_ROD (priority 26). VIB_ROD with nonzero item status -> FLY_ROD (priority 27, the hook).
+
+### Rust rewrite implementation
+
+`rust/src/player_tools.rs`: swing_axe_frame_event, AXE_HIT_OFFSET, tree_hit_outcome, AXE_BEE_COUNTER, reflect/air settle frames, net_catch_length, net_swing_outcome, tool_priority constants, PULL_NET_MSG_BASE, relax_rod_case, vib_rod_hook, cast_rod_frame_event. C ABI: pc_swing_axe_frame_event, pc_tree_hit_outcome, pc_net_catch_length, pc_net_swing_outcome, pc_relax_rod_case, pc_vib_rod_hook. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Axe-damage accumulation -> BROKEN_AXE transition thresholds, REFLECT_AXE's own frame-15 resolution details, insect catch-table registration, COLLECT_ROD/FLY_ROD bodies, NOTICE variants, and the remaining main-index states not yet ported. No C callers rewired.
+
 ### Runtime Port Progress: Player Action State Machines (Scoop, Wade, Pitfall)
 
 ### Source findings (all verified against the local decomp)
