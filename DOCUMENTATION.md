@@ -171,6 +171,27 @@ The buried-item brief was traced through `include/m_common_data.h`, `src/game/m_
 
 `rust/src/buried_items.rs` ports the burial architecture: geometry constants, verified item IDs, line/block deposit bit operations, `BurialGrid` (foreground item grid + parallel deposit array), `bury_item` (item + deposit bit), `bury_pitfall` (hole-item allocation 0x002A+, no deposit bit), `dig_up` (conversion + clear sequence), `dig2take_conv` (exact bell-roll logic), `can_pickup` (deposit gate), `is_pitfall_trap`, fossil daily-count and deposit-record bit logic, and a rewrite-owned `can_bury_item` validity heuristic (labeled as such). C ABI exports: `pc_buried_get`, `pc_buried_set`, `pc_buried_clear`. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired yet; full Windows game link unverified.
 
+### Runtime Port Progress: House & Nook Shop
+
+### Source findings
+
+The house/shop brief was traced through `include/m_player.h`, `include/m_home_h.h`, `include/m_private.h`, `include/m_shop.h`, `src/game/m_shop.c`, `src/actor/npc/ac_npc_shop_common.c`, `src/actor/ac_shop_design.c`, and `src/actor/ac_intro_demo_move.c_inc`.
+
+- **Verified mortgage values:** `mPlayer_DEBT0` 17400 (buy house), `DEBT1` 148000 (medium), `DEBT2` 398000 (large), `DEBT3` 49800 (basement), `DEBT4` 798000 (upper). The Nook dialogue side mirrors them as `aNSC_LOAN_MEDIUM/LARGE/UPPER/STATUE(0)/BASEMENT`. The mortgage lives in `Private_c.inventory.loan` (`m_private.h:204`); the intro sets `loan = mPlayer_DEBT0` directly (17400 outstanding, confirming the brief's 19800 − 1000 − 1400 breakdown).
+- **Verified house sizes:** `mHm_HOMESIZE_SMALL/MEDIUM/LARGE/UPPER/STATUE` with the decomp's own comments (medium = paid off first debt, large = second debt excluding basement, upper = third debt & basement, statue = final debt). No separate basement size — it is a flag.
+- **Verified size state:** `home_size_info_s` packs `size:3`, `next_size:3`, `statue_rank:2` (0=gold, 1=silver, 2=bronze, 3=jade), `renew:1`, `statue_ordered:1`, `basement_ordered:1`, plus the upgrade order date.
+- **Verified expansion rule:** `aNSC_set_talk_info_start_wait` — when construction finishes (`renew`), the new loan is assigned for the house just built: basement orders get 49800, otherwise `rehouse_loan[size-1]` = {148000, 398000, 798000, 0}. The house only changes after the existing debt reaches zero. Statue rank = town statue count capped at 3 (`Save_Get(num_statues)`).
+- **Verified shop thresholds (cumulative):** `mSP_COMBINI_SUM` 25000, `mSP_SUPER_SUM` 90000, `mSP_DSUPER_SUM` 240000 (`m_shop.h`). The old guides' 65,000/150,000 are the incremental deltas, as the brief suspected.
+- **Verified sales counter:** `Shop_c.sales_sum` (u32 at save offset 0x128, "current money towards upgrading shop"). `mSP_PlusSales` adds and **clamps to the current tier's threshold** — the brief's "excess is discarded" quirk, now source code.
+- **Verified transaction accounting:** selling calls `mSP_PlusSales(money / 2)` (`ac_npc_shop_common.c:2220`) — half of Nook's payout; catalog orders call `mSP_PlusSales(price)` (`ac_npc_shop_common.c:2358`) and furniture orders too (`ac_shop_design.c:368`) — full price.
+- **Verified tier state machine:** `mSP_GetRealShopLevel` derives the tier from the counter; Nookington's additionally requires `visitor_flag` ("set when a foreign player enters Nook's shop"). The PC port already has a `disable_shop_visitor_req` toggle for it. `mSP_RenewShopLevel` syncs the saved (displayed) level; `shop_info.upgrading_today` marks the remodeling day.
+- **Verified tool lockout:** `mSP_SelectTool` — shovel always; net at 3000, rod at 8000, axe at 12000, but the lockout applies **only in Nook's Cranny**; higher tiers unlock all four.
+- **Verified persistent stock:** `Shop_c.items[mSP_GOODS_COUNT]` (39 slots — confirms the save-editor finding), `rare_item`, `lottery_items[3]`, `shop_info` bitfields, `exchange_time`, `renewal_time`, `visitor_flag`.
+
+### Rust rewrite implementation
+
+`rust/src/house.rs` ports the house FSM: the five `mPlayer_DEBT*` values, `HouseSize`, `HomeSizeInfo`, per-player `House` with `pay`/`order_expansion`/`order_basement`/`complete_construction` (the renew-branch loan assignment)/`order_statue`/`complete_statue`, and C ABI `pc_house_next_loan`. `rust/src/shop.rs` ports the shop: tiers, cumulative thresholds, `ShopState` with `plus_sales` (exact clamp logic), `record_purchase`/`record_sale` (half payout)/`record_catalog_order`, `real_level` (with the visitor-requirement toggle), `renew_level`, `set_new_visitor`, `tool_slots` (Cranny-only lockout), the 39-slot stock, and the guide-derived per-tier category slot table (labeled as such). C ABI: `pc_shop_real_level`, `pc_shop_plus_sales`. `cargo check --lib` passes with no new warnings. Unit tests were not run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Video Interface
 
 The image shows a game/rendering path ending in a platform presentation step. Repository code supports a narrower fact: the PC `VIWaitForRetrace` implementation polls SDL events, drains pending GX work, swaps the window, applies frame pacing, records profiler data, and advances the PC frame counter. Those operations now live in `pc/rust/src/vi.rs`; calls still enter through the Dolphin VI API in `include/dolphin/vi.h`. This does not move scene logic, display-list generation, GX rendering, or gameplay into Rust.
