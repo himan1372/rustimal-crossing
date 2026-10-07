@@ -66,6 +66,7 @@ mod fg_data;
 mod scene_table;
 mod weather_season;
 mod tool_resolvers;
+mod frame_loops;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;

@@ -611,6 +611,30 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Full Trace Loops
+
+### Source findings (all verified against the local decomp)
+
+- graph_proc: outer game loop (construct/run/destroy/next game via dlftbl) + inner frame loop while game_is_doing(). Per iteration: dt from OS ticks, SECONDS_TO_FRAMES, capped at 4.0 60-Hz frames, PC speedhack multiplies; graph->dt/dt_num_60fps_frames/dt_total_60fps_frames feed simulation (not 1 frame = 1 tick).
+- graph_main: setup_double_buffer -> game_get_controller -> game_main -> draw_finish -> task_set00 (emu64) -> audio -> reset_check. Game logic precedes display-list submission.
+- game_main: game_draw_first -> mTM_time -> exec (play_main) -> mBGM_main -> game_move_first -> frame_counter++.
+- Game_play_move: submenu ctrl -> (WAIT: mDemo_Main, mEv_run) -> demo stock clear -> object-exchange DMA -> submenu move -> (WAIT: game_frame++, CollisionCheck_OC -> CollisionCheck_clear -> Actor_info_call_actor -> decal/msg) -> fade/camera/kankyo/wind/footsteps.
+- Key ordering: CollisionCheck_OC runs BEFORE Actor_info_call_actor (collision staged, not per-actor); CollisionCheck_clear also precedes the actor loop.
+- Actor_info_call_actor: ACTOR_PART_NUM partitions x linked lists; per actor: ct_proc (DMA-gated construction) / DMA-fail delete / no-mv_proc (delete or Actor_dt) / normal (last_world_position, player-relative metrics, ACTOR_STATE_24 clear, culling check incl. ACTOR_PART_NPC always moves, mv_proc, CollisionCheck_Status_Clear).
+- CollisionCheck_OC: pairwise col1p/col2p=col1p+1 over collider_table, group/flag/owner checks, oc_collision_function[type1][type2] dispatch; then CollisionCheck_OCC (mco_work.colliders x table, occ_collision_function, cap 10 registrations).
+- Axe/net: real ClObj triangles. Axe: start +31 Y, 35 units forward at +/-8.0255126953125 deg; hit test is just TRIS_HIT flag check (work done in the collision pass).
+- Line trace (mCoBG_LineCheck_RemoveFg): 3x3 unit neighborhood ground trace (4 polygons/unit, plane then triangle), moving-BG quad loop, FG column wall trace (iterative XZ circle + Y reconstruction) and ground trace, reverse vectors accumulated (wall, wall-column, ground, ground-column) and summed; water = 19-21 band crossing OR endpoint below water height (UNDERWATER).
+- NPC route trace (aNPC_trace_route): avoid_direction is the route-node cursor; FALSE means movement action completed, not failure; final node sets destination.
+- Four trace meanings kept separate: game/frame, actor, collision, terrain line, NPC route.
+
+### Rust rewrite implementation
+
+`rust/src/frame_loops.rs`: DT_MAX_FRAMES + clamp_dt_frames, graph_phase/game_phase/play_move_phase order enums, actor_branch, OCC_WORK_CAP=10, axe triangle constants, LINE_TRACE_UNITS/AREAS, water band + water_crossing, reverse_slot order, npc_route_step. C ABI: pc_clamp_dt_frames, pc_water_crossing, pc_npc_route_step. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- The suggested next layer (which registrations survive frames; when TRIS_HIT/collided_actor/OCC table clear) not yet traced. Column trace math and moving-BG quad generation not ported.
+
 ### Runtime Port Progress: Weather/Seasons + Tool Target Resolvers
 
 ### Source findings (all verified against the local decomp)
