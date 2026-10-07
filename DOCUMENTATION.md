@@ -606,6 +606,21 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Rust rewrite implementation
 
+### Runtime Port Progress: Cardinal Wall-Edge Construction
+
+### Source findings (all verified against the local decomp)
+
+- **Edge-ownership tables** (`l_make33/55/77_coldata`, verbatim): 3x3 = {00,02,02, 01,03,03, 01,03,03}; 5x5 and 7x7 follow the same pattern (first row 00,02,02...; remaining rows 01,03,03...). Only UP(1)/LEFT(2) bits are ever set - each shared edge is constructed once from the canonical side. `mCoBG_GetUnitInfSearchData` selects by count 3/5/7, defaulting to 3x3.
+- **Neighbor anchors** (`mCoBG_MakeUnitVector`): UP = index - size, LEFT = index - 1, DOWN = index + size, RIGHT = index + 1 in the row-major neighborhood.
+- **Slate-unit adjustment** (`mCoBG_UtInf2NormalSlateWallVector`, verbatim): when exactly one side is sloped, the slate unit is copied and one corner overwritten from its diagonal partner, per direction and slate orientation (e.g. unit1-slate + UP + SLATE_UP: leftDown = rightDown; unit0-slate + LEFT + SLATE_DOWN: leftUp = leftDown). All 8 direction/side/orientation combinations ported.
+- **Height interpolation** (`mCoBG_CheckHeightExactly`, verbatim): LEFT/RIGHT interpolate along Z, UP/DOWN along X, formula `start + (point-start) * ((end-start)/(end-start))` with a zero-division guard; moving walls use end bounds directly; gate is `pos_y + 3.0 <= top`. Slate walls take a separate `GetWallHeight` path (not ported here).
+- **wall_name is algorithmic**: CheckHeightExactly switches on it to pick the interpolation axis, so it is preserved as data, not metadata.
+- **Inference**: the tables are a canonical edge-ownership scheme to avoid duplicate shared edges (strongly implied by the asymmetric structure); the engineering reason for the exact ownership orientation is not proven from source.
+
+### Rust rewrite implementation
+
+`rust/src/terrain_walls.rs` additions: `MAKE_33/55/77_COLDATA` (verbatim), `cardinal_edge_mask` (with the source's default-to-3x3 fallback), `cardinal_neighbor_index`, `cardinal_edge_exists` (explicit existence kernel), `adjust_slate_unit_for_cardinal` (all 8 slate cases verbatim), `check_height_exactly` (verbatim interpolation + gate). C ABI: `pc_cardinal_edge_mask`, `pc_check_height_exactly`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 `rust/src/terrain_walls.rs` additions: `BridgeAttribute` enum, `is_water_attribute` (WATER..=RIVER_NE), `UNIT_ATTRIBUTE_WATER_INFO` (verbatim 64-entry table), `search_water_attribute`, `get_unit_area`, `bridge_wpos_attribute` (27-31 -> woodb table, 32-35 -> STONE), `bridge_water_search` (first-match-wins direction order), `bridge_should_make_slate` (positive form). C ABI: `pc_bridge_water_search` (8 raw neighbor attrs in Direct order, returns water attr or 0xFF). Corrected attribute numbers as above. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
 
 ### Rust rewrite implementation

@@ -556,7 +556,252 @@ pub fn bridge_should_make_slate(attribute: u8, old_in_water: bool) -> bool {
     !slate_wall_suppressed(attribute, old_in_water)
 }
 
-// ---- C ABI ----
+//
+// ---- Cardinal edge construction ----
+//
+
+// Canonical edge-ownership tables (`l_make33/55/77_coldata`, verbatim).
+// Bit 0=UP, 1=LEFT, 2=DOWN, 3=RIGHT. Only UP/LEFT bits are ever set:
+// each shared edge is constructed once, from the canonical side.
+const MAKE_33_COLDATA: [u8; 9] = [
+    0x00, 0x02, 0x02,
+    0x01, 0x03, 0x03,
+    0x01, 0x03, 0x03,
+];
+const MAKE_55_COLDATA: [u8; 25] = [
+    0x00, 0x02, 0x02, 0x02, 0x02,
+    0x01, 0x03, 0x03, 0x03, 0x03,
+    0x01, 0x03, 0x03, 0x03, 0x03,
+    0x01, 0x03, 0x03, 0x03, 0x03,
+    0x01, 0x03, 0x03, 0x03, 0x03,
+];
+const MAKE_77_COLDATA: [u8; 49] = [
+    0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+    0x01, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
+    0x01, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
+    0x01, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
+    0x01, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
+    0x01, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
+    0x01, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
+];
+
+/// Edge-ownership mask for a neighborhood cell
+/// (`mCoBG_GetUnitInfSearchData` + table lookup). Unknown sizes fall
+/// back to the 3×3 table, exactly like the source's `default` case.
+pub fn cardinal_edge_mask(size: usize, index: usize) -> u8 {
+    let (table, len) = match size {
+        5 => (&MAKE_55_COLDATA[..], 25),
+        7 => (&MAKE_77_COLDATA[..], 49),
+        _ => (&MAKE_33_COLDATA[..], 9),
+    };
+    if index < len {
+        table[index]
+    } else {
+        0
+    }
+}
+
+/// Neighbor anchor for a cardinal edge in a row-major neighborhood
+/// (`mCoBG_MakeUnitVector` call pattern): UP = index − size,
+/// LEFT = index − 1, DOWN = index + size, RIGHT = index + 1.
+/// `None` on underflow (the source relies on the padded neighborhood).
+pub fn cardinal_neighbor_index(index: usize, size: usize, wall_name: u8) -> Option<usize> {
+    match wall_name {
+        wall_name::UP => index.checked_sub(size),
+        wall_name::LEFT => index.checked_sub(1),
+        wall_name::DOWN => index.checked_add(size),
+        wall_name::RIGHT => index.checked_add(1),
+        _ => None,
+    }
+}
+
+/// Explicit edge-existence test: the two units' corresponding edge
+/// corners, per direction (the `mCoBG_SearchWallFlag` difference test
+/// without the normal selection).
+pub fn cardinal_edge_exists(unit0: &TerrainUnit, unit1: &TerrainUnit, wall_name: u8) -> bool {
+    match wall_name {
+        wall_name::UP => {
+            unit0.left_up != unit1.left_down || unit0.right_up != unit1.right_down
+        }
+        wall_name::LEFT => {
+            unit0.left_up != unit1.right_up || unit0.left_down != unit1.right_down
+        }
+        wall_name::DOWN => {
+            unit0.left_down != unit1.left_up || unit0.right_down != unit1.right_up
+        }
+        wall_name::RIGHT => {
+            unit0.right_up != unit1.left_up || unit0.right_down != unit1.left_down
+        }
+        _ => false,
+    }
+}
+
+/// Slate-unit corner adjustment (`mCoBG_UtInf2NormalSlateWallVector`
+/// verbatim): when exactly one side of the boundary is sloped, the
+/// slate unit is copied and one corner is overwritten from its diagonal
+/// partner so the cardinal wall meets the slope consistently.
+/// `slate_is_unit1` selects which side is the slate unit.
+pub fn adjust_slate_unit_for_cardinal(
+    unit: &TerrainUnit,
+    slate_detail: u8,
+    wall_name: u8,
+    slate_is_unit1: bool,
+) -> TerrainUnit {
+    let mut tmp = *unit;
+    let up = slate_detail == wall_name::SLATE_UP;
+    if slate_is_unit1 {
+        match wall_name {
+            wall_name::UP => {
+                if up {
+                    tmp.left_down = tmp.right_down;
+                } else {
+                    tmp.right_down = tmp.left_down;
+                }
+            }
+            wall_name::LEFT => {
+                if up {
+                    tmp.right_up = tmp.right_down;
+                } else {
+                    tmp.right_down = tmp.right_up;
+                }
+            }
+            wall_name::DOWN => {
+                if up {
+                    tmp.right_up = tmp.left_up;
+                } else {
+                    tmp.left_up = tmp.right_up;
+                }
+            }
+            wall_name::RIGHT => {
+                if up {
+                    tmp.left_down = tmp.left_up;
+                } else {
+                    tmp.left_up = tmp.left_down;
+                }
+            }
+            _ => {}
+        }
+    } else {
+        match wall_name {
+            wall_name::UP => {
+                if up {
+                    tmp.right_up = tmp.left_up;
+                } else {
+                    tmp.left_up = tmp.right_up;
+                }
+            }
+            wall_name::LEFT => {
+                if up {
+                    tmp.left_down = tmp.left_up;
+                } else {
+                    tmp.left_up = tmp.left_down;
+                }
+            }
+            wall_name::DOWN => {
+                if up {
+                    tmp.left_down = tmp.right_down;
+                } else {
+                    tmp.right_down = tmp.left_down;
+                }
+            }
+            wall_name::RIGHT => {
+                if up {
+                    tmp.right_down = tmp.right_up;
+                } else {
+                    tmp.right_up = tmp.right_down;
+                }
+            }
+            _ => {}
+        }
+    }
+    tmp
+}
+
+/// Height interpolation along a cardinal wall (`mCoBG_CheckHeightExactly`
+/// verbatim, cardinal branches): LEFT/RIGHT interpolate along Z,
+/// UP/DOWN along X, using the formula
+/// `start + (point − start) * ((end − start) / (end − start))` with a
+/// zero-division guard. Moving walls (`is_move_bg`) use the end
+/// bounds directly. Returns `Some((top, bot))` when
+/// `pos_y + 3.0 <= top`, else `None`.
+pub fn check_height_exactly(
+    bounds: &WallBounds,
+    start: [f32; 2],
+    end: [f32; 2],
+    wall_name: u8,
+    pos_y: f32,
+    point: [f32; 2],
+    is_move_bg: bool,
+) -> Option<(f32, f32)> {
+    if is_move_bg {
+        let (top, bot) = (bounds.end_top, bounds.end_btm);
+        return if pos_y + 3.0 <= top { Some((top, bot)) } else { None };
+    }
+    let (axis, p, s) = match wall_name {
+        wall_name::LEFT | wall_name::RIGHT => (end[1] - start[1], point[1], start[1]),
+        wall_name::UP | wall_name::DOWN => (end[0] - start[0], point[0], start[0]),
+        _ => return None,
+    };
+    if axis == 0.0 {
+        return None;
+    }
+    let top = bounds.start_top + (p - s) * ((bounds.end_top - bounds.start_top) / axis);
+    let bot = bounds.start_btm + (p - s) * ((bounds.end_btm - bounds.start_btm) / axis);
+    if pos_y + 3.0 <= top {
+        Some((top, bot))
+    } else {
+        None
+    }
+}
+
+/// C ABI: edge-ownership mask for a neighborhood cell.
+#[no_mangle]
+pub extern "C" fn pc_cardinal_edge_mask(size: u8, index: u8) -> u8 {
+    cardinal_edge_mask(size as usize, index as usize)
+}
+
+/// C ABI: cardinal height test; writes top/bot, returns 1 when the
+/// height gate passes.
+#[no_mangle]
+pub unsafe extern "C" fn pc_check_height_exactly(
+    start_top: f32,
+    start_btm: f32,
+    end_top: f32,
+    end_btm: f32,
+    start_x: f32,
+    start_z: f32,
+    end_x: f32,
+    end_z: f32,
+    wall_name: u8,
+    pos_y: f32,
+    point_x: f32,
+    point_z: f32,
+    is_move_bg: u8,
+    out_top: *mut f32,
+    out_bot: *mut f32,
+) -> u8 {
+    let bounds = WallBounds { start_top, start_btm, end_top, end_btm };
+    match check_height_exactly(
+        &bounds,
+        [start_x, start_z],
+        [end_x, end_z],
+        wall_name,
+        pos_y,
+        [point_x, point_z],
+        is_move_bg != 0,
+    ) {
+        Some((top, bot)) => {
+            if !out_top.is_null() {
+                unsafe { *out_top = top };
+            }
+            if !out_bot.is_null() {
+                unsafe { *out_bot = bot };
+            }
+            1
+        }
+        None => 0,
+    }
+}
 
 /// C ABI: bridge water search; takes 8 raw neighbor attributes in
 /// Direct order (0=N..7=SW); returns the selected water attribute,
@@ -874,5 +1119,117 @@ mod tests {
         assert_eq!(direct_offset(Direct::N), (0, -1));
         assert_eq!(direct_offset(Direct::E), (1, 0));
         assert_eq!(direct_offset(Direct::SW), (1, -1));
+    }
+
+    #[test]
+    fn edge_mask_tables() {
+        use direction_bit::*;
+        // 3x3 verbatim.
+        assert_eq!(cardinal_edge_mask(3, 0), 0x00);
+        assert_eq!(cardinal_edge_mask(3, 1), 0x02);
+        assert_eq!(cardinal_edge_mask(3, 3), 0x01);
+        assert_eq!(cardinal_edge_mask(3, 4), 0x03);
+        assert_eq!(cardinal_edge_mask(3, 8), 0x03);
+        // 5x5: first row LEFT-only except corner, rest UP or UP+LEFT.
+        assert_eq!(cardinal_edge_mask(5, 0), 0x00);
+        assert_eq!(cardinal_edge_mask(5, 4), 0x02);
+        assert_eq!(cardinal_edge_mask(5, 5), 0x01);
+        assert_eq!(cardinal_edge_mask(5, 24), 0x03);
+        // 7x7 spot checks.
+        assert_eq!(cardinal_edge_mask(7, 0), 0x00);
+        assert_eq!(cardinal_edge_mask(7, 7), 0x01);
+        assert_eq!(cardinal_edge_mask(7, 48), 0x03);
+        // Unknown size falls back to the 3x3 table.
+        assert_eq!(cardinal_edge_mask(9, 4), 0x03);
+        assert_eq!(cardinal_edge_mask(3, 99), 0x00);
+        // Only UP/LEFT bits are ever set in any table.
+        for size in [3, 5, 7] {
+            let n = size * size;
+            for i in 0..n {
+                let m = cardinal_edge_mask(size, i);
+                assert_eq!(m & !(UP | LEFT), 0, "size {size} idx {i}: {m:#x}");
+            }
+        }
+        assert_eq!(pc_cardinal_edge_mask(3, 4), 0x03);
+    }
+
+    #[test]
+    fn neighbor_anchors() {
+        assert_eq!(cardinal_neighbor_index(12, 5, wall_name::UP), Some(7));
+        assert_eq!(cardinal_neighbor_index(12, 5, wall_name::LEFT), Some(11));
+        assert_eq!(cardinal_neighbor_index(12, 5, wall_name::DOWN), Some(17));
+        assert_eq!(cardinal_neighbor_index(12, 5, wall_name::RIGHT), Some(13));
+        assert_eq!(cardinal_neighbor_index(2, 5, wall_name::UP), None); // underflow
+        assert_eq!(cardinal_neighbor_index(0, 3, wall_name::LEFT), None);
+    }
+
+    #[test]
+    fn edge_existence() {
+        let flat = unit(0, 10.0, 10.0, 10.0, 10.0);
+        let high = unit(0, 30.0, 30.0, 30.0, 30.0);
+        assert!(!cardinal_edge_exists(&flat, &flat, wall_name::UP));
+        assert!(cardinal_edge_exists(&flat, &high, wall_name::UP));
+        assert!(cardinal_edge_exists(&flat, &high, wall_name::LEFT));
+        assert!(cardinal_edge_exists(&flat, &high, wall_name::DOWN));
+        assert!(cardinal_edge_exists(&flat, &high, wall_name::RIGHT));
+        // Partial difference on one endpoint is enough.
+        let mut part = flat;
+        part.right_up = 11.0;
+        assert!(cardinal_edge_exists(&flat, &part, wall_name::UP));
+        assert!(!cardinal_edge_exists(&flat, &part, wall_name::LEFT));
+    }
+
+    #[test]
+    fn slate_corner_adjustment() {
+        // unit1 slate, UP edge, SLATE_UP: leftDown = rightDown.
+        let u = unit(0, 10.0, 20.0, 40.0, 30.0); // lu, ld, rd, ru
+        let a = adjust_slate_unit_for_cardinal(&u, wall_name::SLATE_UP, wall_name::UP, true);
+        assert_eq!((a.left_down, a.right_down), (40.0, 40.0));
+        // unit1 slate, UP edge, SLATE_DOWN: rightDown = leftDown.
+        let a = adjust_slate_unit_for_cardinal(&u, wall_name::SLATE_DOWN, wall_name::UP, true);
+        assert_eq!((a.left_down, a.right_down), (20.0, 20.0));
+        // unit0 slate, LEFT edge, SLATE_UP: leftDown = leftUp.
+        let a = adjust_slate_unit_for_cardinal(&u, wall_name::SLATE_UP, wall_name::LEFT, false);
+        assert_eq!((a.left_down, a.left_up), (10.0, 10.0));
+        // unit0 slate, RIGHT edge, SLATE_DOWN: rightUp = rightDown.
+        let a = adjust_slate_unit_for_cardinal(&u, wall_name::SLATE_DOWN, wall_name::RIGHT, false);
+        assert_eq!((a.right_up, a.right_down), (40.0, 40.0));
+        // Other fields untouched.
+        assert_eq!(a.attribute, 0);
+    }
+
+    #[test]
+    fn height_interpolation() {
+        let b = WallBounds { start_top: 20.0, start_btm: 10.0, end_top: 40.0, end_btm: 30.0 };
+        // UP wall along X: midpoint interpolates to 30/20.
+        let r = check_height_exactly(&b, [0.0, 0.0], [100.0, 0.0], wall_name::UP, 0.0, [50.0, 0.0], false);
+        assert_eq!(r, Some((30.0, 20.0)));
+        // LEFT wall along Z.
+        let r = check_height_exactly(&b, [0.0, 0.0], [0.0, 100.0], wall_name::LEFT, 0.0, [0.0, 25.0], false);
+        assert_eq!(r, Some((25.0, 15.0)));
+        // Gate: pos_y + 3 > top -> None.
+        let r = check_height_exactly(&b, [0.0, 0.0], [100.0, 0.0], wall_name::UP, 38.0, [50.0, 0.0], false);
+        assert_eq!(r, None);
+        // Zero-length axis -> None.
+        let r = check_height_exactly(&b, [5.0, 0.0], [5.0, 0.0], wall_name::UP, 0.0, [5.0, 0.0], false);
+        assert_eq!(r, None);
+        // Moving wall: end bounds directly.
+        let r = check_height_exactly(&b, [0.0, 0.0], [100.0, 0.0], wall_name::UP, 0.0, [50.0, 0.0], true);
+        assert_eq!(r, Some((40.0, 30.0)));
+        // Slate wall names are not handled here (GetWallHeight path).
+        let r = check_height_exactly(&b, [0.0, 0.0], [100.0, 0.0], wall_name::SLATE_UP, 0.0, [50.0, 0.0], false);
+        assert_eq!(r, None);
+        // C ABI.
+        let (mut top, mut bot) = (0.0f32, 0.0f32);
+        let ok = unsafe {
+            pc_check_height_exactly(
+                20.0, 10.0, 40.0, 30.0,
+                0.0, 0.0, 100.0, 0.0,
+                wall_name::UP, 0.0, 50.0, 0.0, 0,
+                &mut top as *mut f32, &mut bot as *mut f32,
+            )
+        };
+        assert_eq!(ok, 1);
+        assert_eq!((top, bot), (30.0, 20.0));
     }
 }
