@@ -301,6 +301,24 @@ The brief's inventory-query model was verified against `m_private.c`/`m_private.
 
 `rust/src/inventory.rs` ports the query layer: `Inventory` (15 pockets + packed conditions), `find_item`/`find_item_with_cond`/`count_item`/`count_item_with_cond`/`find_free_slot`/`put`, `item_cond`/`set_item_cond` with the exact shift math, `ExcludedFurniture` + `selectable_furniture`, `CandidateStrategy` (FavoriteFirst/RandomCarried, marked rewrite-owned/untraced), and `resolve_candidate`. C ABI: `pc_inventory_find`, `pc_inventory_count`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Item Preference Structures
+
+### Source findings
+
+The brief's architecture was verified against `m_npc.h`/`m_npc.c`/`m_quest.c`:
+
+- **Verified: no static favorite-item list.** `Animal_c` carries identity, memories, friendship, house info, clothing, mood, relations, quest state — no `favorite_items[]` field. Modern-style style/color/series favorites are NOT in the GameCube decomp.
+- **Verified NPC definition data:** `npc_def_list[]` supplies cloth, umbrella, catchphrase string index via `mNpc_SetDefAnimalInfo` (`m_npc.c:2266`); personality comes from `npc_looks_table[npc_id & 0xFFF]`, while the house template is indexed by NPC ID directly, not by personality.
+- **Verified house template** (`m_npc.c:2825`): `npc_house_list[npc_id & 0xFFF]` gives type, palette, wall_id, floor_id, main_layer_id, secondary_layer_id.
+- **Verified NPC-associated furniture chain:** `mNpc_DecideNpcFurniture` scans 10x10 of the main furniture layer, filters eligible furniture, counts, picks `RANDOM(num)`; result stored as `reward_furniture`, retrieved with `mNpc_GetNpcFurniture`.
+- **Verified 1/10 house-furniture branch** (`m_quest.c:931-938`, with the source comment): `RANDOM(10)`; roll 0 uses the villager's house furniture for furniture "goods", else `mSP_SelectRandomItem_New`.
+- **Verified Islander structures:** `Anm_bestFtr_c { u32 check; u16 have_bitfield; }` inside `memuni_u` (`m_npc.h:166`); `mNpc_Island_Ftr_c { u16 set_ftr_bitfield; trade_list[4]; item_list[16]; }` (`m_npc.c:5204`); `mNpc_SetIslandRoomFtr` ORs each memory's `have_bitfield` into `set_ftr_bitfield`; `mNpc_GetIslandFtrIdx` normalizes variants via `aMR_CorrespondFurniture` / `aMR_GetFurnitureUnit`.
+- The "favorite furniture" lists players observed are best reconstructed as emergent from actual house contents — strong inference, not proven. Whether villager request dialogue uses `mNpc_GetNpcFurniture()` directly, and the exact request-selection caller, remain untraced.
+
+### Rust rewrite implementation
+
+`rust/src/item_prefs.rs` ports the verified structures: `NpcDefData` (cloth/umbrella/catchphrase), `NpcHouseData` (type/palette/wall/floor/layer IDs), `select_reward_furniture` (10x10 scan, eligible filter, RNG-index pick), `GoodsSource` + the verbatim 1/10 rule (`goods_source_for_furniture`), `AnmBestFtr`, `IslandFtr` (16 slots, 4 trade entries, bitfield merge, normalized slot lookup), and C ABI exports `pc_npc_house_goods`, `pc_eligible_furniture_count`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings

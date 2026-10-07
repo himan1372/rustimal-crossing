@@ -24,6 +24,7 @@ mod behavior;
 mod collision;
 mod interaction;
 mod inventory;
+mod item_prefs;
 mod movement;
 mod player_move;
 mod scene;
