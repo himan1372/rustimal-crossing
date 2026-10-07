@@ -376,6 +376,37 @@ The brief's scene-description model was verified against `m_scene.h`/`m_scene_ta
 
 `rust/src/scene_layout.rs` ports the verified system: `SceneWordType` (verbatim tags), `SceneWord` (decoded records), `RoomType`, `DoorData`, `interpret_scene` (walk-until-END dispatcher), `FieldInit` (FIELD_CT output with the verbatim flag values), `goto_other_scene`/`SceneTransition` (the +1 scene rule and wipe substitution), and the little-endian FIELD_CT caveat documented. C ABI: `pc_scene_word_type`, `pc_door_next_scene`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Full Background-Check Sequence
+
+### Source findings
+
+The brief's pipeline was verified against `m_collision_bg.c`/`m_collision_bg.h`, including the exact call order at `m_collision_bg.c:1899` (`mCoBG_BgCheckControll_RemoveDirectedUnitColumn`):
+
+1. `mCoBG_MoveActorWithMoveBg` — platform carry before anything else
+2. `mCoBG_InitRevpos`, current + old center positions
+3. `mCoBG_MakeActorInf` — old ground/water state, speeds, 3/5/7 neighborhood
+4. `mCoBG_WallCheck` — columns first, then wall vectors
+5. `mCoBG_GroundCheck` — terrain + water + jump flag
+6. `mCoBG_MoveBgGroundCheck` — moving-platform support
+7. `mCoBG_CarryOutReverse` — apply when `rev_type == 0`, else hold
+8. `mCoBG_GiveRevposToActor`
+9. `mCoBG_RoomScopeCheck` — scene-dependent room bounds
+
+Verified formulas and limits:
+
+- Neighborhood: `range <= 40 → 3`, `<= 80 → 5`, else `7` (`m_collision_bg.c:1806`).
+- `mCoBG_UNIT_VEC_INFO_MAX = 128`, `mCoBG_MOVE_REGIST_MAX = 64`, `mCoBG_WALL_COL_NUM = 2`, 5 on/side contacts.
+- Distance reverse: `(range - dist) + 0.00001f` (three occurrences).
+- Ground adjust: `ground_y >= foot_y` → snap + grounded + y-speed 0; descending snap when previously grounded and `|ground_y - foot_y| <= xz_speed` (`m_collision_bg.c:409`).
+- Water: river `20.0 + GetBgY`, sea `20.0`.
+- Wave: `rate = (1.0 + wave_cos) * 0.5`.
+- Room scope: MY_ROOM_S → 160, MY_ROOM_M/LL2 → 240, MY_ROOM_L/LL1 → 320.
+- Plane height: `dot / -norm->y` from the triangle normal.
+
+### Rust rewrite implementation
+
+`rust/src/bg_check.rs` ports the verified sequence: `BgStage` (recovered call order), `BgCheckType` (player vs actor wall ordering), `BgActorInfo` (old/new ground state, speeds), `neighborhood_size`, `distance_reverse`, `adjust_actor_y` (both the snap-up and descending-snap branches), `water_y_river`/`water_y_sea`, `wave_rate`, `RoomSizeClass`/`room_scope_extent`, `carry_out_reverse`, and the source limits as constants. C ABI: `pc_bg_neighborhood`, `pc_bg_distance_reverse`, `pc_bg_room_scope`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. The inner wall solver's geometric internals (crossing tests, player prioritization, attribute tables) remain future work. No C callers are rewired; full Windows game link unverified.
+
 ### Runtime Port Progress: Villager Behavior Engine
 
 ### Source findings
