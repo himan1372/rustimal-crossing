@@ -87,6 +87,69 @@ pub fn column_top_height(terrain_center_y: f32, kind: ColumnKind) -> f32 {
 /// Maximum columns per check (`mCoBG_MakeColumnCollisionData` cap).
 pub const COLUMN_MAX: usize = 16;
 
+/// `mCoBG_GetBGHeight_Column` as a pure kernel
+/// (m_collision_bg_column.c_inc:444): the column comes from the unit's
+/// foreground object (`column_spec`); if the query XZ is inside the
+/// column's circular footprint (`mCoBG_JudgePointInCircle_Xyz`: XZ only,
+/// `dx²+dz² <= r²`), the column top is the candidate ground, else 0.0 —
+/// the "no column" sentinel. `make_column_ok` models
+/// `mCoBG_MakeOneColumnCollisionData` succeeding; it is FALSE here for
+/// holes because this path passes `old_on_ground = FALSE`.
+/// The query Y is irrelevant.
+pub fn get_bg_height_column(
+    pos_x: f32,
+    pos_z: f32,
+    col_cx: f32,
+    col_cz: f32,
+    col_radius: f32,
+    col_height: f32,
+    make_column_ok: bool,
+) -> f32 {
+    if make_column_ok {
+        let dx = pos_x - col_cx;
+        let dz = pos_z - col_cz;
+        if dx * dx + dz * dz <= col_radius * col_radius {
+            return col_height;
+        }
+    }
+    0.0
+}
+
+/// `mCoBG_GetBGHeight_NormalColumn` (m_collision_bg.c:1689):
+/// ground = max(normal terrain, column). Ties go to the COLUMN
+/// (the comparison is strict `normal > column`), and when the column
+/// wins the ground angle is the zero-initialized `ground_angle0`
+/// (flat cap, no slope). `directed_excluded` is the
+/// `ut == (l_ActorInf._68, _6C)` case, forcing the column to 0.0.
+/// Returns (ground_y, column_won).
+pub fn get_bg_height_normal_column(
+    normal_ground_y: f32,
+    column_ground_y: f32,
+    directed_excluded: bool,
+) -> (f32, bool) {
+    let cy = if directed_excluded { 0.0 } else { column_ground_y };
+    if normal_ground_y > cy {
+        (normal_ground_y, false)
+    } else {
+        (cy, true)
+    }
+}
+
+/// `mCoBG_AdjustActorY` solid-ground branch (m_collision_bg.c:403):
+/// when `ground_y >= actor_foot_y`, the feet are placed exactly on the
+/// ground: returns the Y revision `(ground_y - ground_dist) - actor_y`
+/// (with `on_ground = TRUE`, vertical speed zeroed by the caller).
+/// Column-derived ground flows through this same branch — there is no
+/// separate "on object" state.
+pub fn adjust_actor_y_ground(ground_y: f32, actor_y: f32, ground_dist: f32) -> Option<f32> {
+    let foot_y = actor_y + ground_dist;
+    if ground_y >= foot_y {
+        Some((ground_y - ground_dist) - actor_y)
+    } else {
+        None
+    }
+}
+
 /// Single-column kernel of `mCoBG_LineWallCheck_Column` as a pure function.
 /// `start`/`end` are the movement segment endpoints. Returns the rewind
 /// vector on an accepted collision.
@@ -199,6 +262,24 @@ pub fn line_ground_check_column(
 }
 
 // ---- C ABI ----
+
+/// C ABI: ground selection; returns the winning ground Y.
+/// Writes 1 to out_column_won when the column wins (flat cap).
+#[no_mangle]
+pub extern "C" fn pc_column_ground_select(
+    normal_y: f32,
+    column_y: f32,
+    directed_excluded: u8,
+    out_column_won: *mut u8,
+) -> f32 {
+    let (y, won) = get_bg_height_normal_column(normal_y, column_y, directed_excluded != 0);
+    if !out_column_won.is_null() {
+        unsafe {
+            *out_column_won = won as u8;
+        }
+    }
+    y
+}
 
 /// C ABI: single-column wall sweep; writes rev[3]; returns 1 on accept.
 #[no_mangle]
@@ -394,6 +475,45 @@ mod tests {
         assert_eq!(column_top_height(100.0, ColumnKind::LargeTree), 160.0);
         assert_eq!(column_top_height(100.0, ColumnKind::Hole), 100.0);
         assert_eq!(COLUMN_MAX, 16);
+    }
+
+    #[test]
+    fn column_ground_height() {
+        // Inside the footprint -> column top; Y of the query is irrelevant.
+        assert_eq!(
+            get_bg_height_column(5.0, 0.0, 5.0, 0.0, 19.0, 130.0, true),
+            130.0
+        );
+        // On the boundary (<=) -> inside.
+        assert_eq!(
+            get_bg_height_column(24.0, 0.0, 5.0, 0.0, 19.0, 130.0, true),
+            130.0
+        );
+        // Outside -> 0.0 sentinel.
+        assert_eq!(
+            get_bg_height_column(25.0, 0.0, 5.0, 0.0, 19.0, 130.0, true),
+            0.0
+        );
+        // Column construction failed (e.g. hole via this path) -> 0.0.
+        assert_eq!(
+            get_bg_height_column(5.0, 0.0, 5.0, 0.0, 19.0, 130.0, false),
+            0.0
+        );
+        // Selection: column only ever raises the ground.
+        assert_eq!(get_bg_height_normal_column(100.0, 130.0, false), (130.0, true));
+        assert_eq!(get_bg_height_normal_column(100.0, 80.0, false), (100.0, false));
+        // Tie goes to the column (strict > for normal).
+        assert_eq!(get_bg_height_normal_column(100.0, 100.0, false), (100.0, true));
+        // Directed-unit exclusion forces the column to 0.0.
+        assert_eq!(get_bg_height_normal_column(100.0, 130.0, true), (100.0, false));
+        assert_eq!(get_bg_height_normal_column(0.0, 0.0, true), (0.0, true));
+        // AdjustActorY ground branch: feet placed exactly on the ground.
+        assert_eq!(adjust_actor_y_ground(130.0, 100.0, 5.0), Some(25.0));
+        assert_eq!(adjust_actor_y_ground(100.0, 100.0, 5.0), None);
+        // C ABI.
+        let mut won = 0u8;
+        let y = pc_column_ground_select(100.0, 130.0, 0, &mut won);
+        assert_eq!((y, won), (130.0, 1));
     }
 
     #[test]

@@ -611,6 +611,20 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Column-Derived Ground Height
+
+### Source findings (all verified against the local decomp)
+
+- `mCoBG_GetBGHeight_Column` (column.c_inc:444): builds ONE column from the unit's foreground object (`MakeOneColumnCollisionData` with `old_on_ground=FALSE`, so holes are rejected here), tests the query XZ against the footprint (`mCoBG_JudgePointInCircle_Xyz`: XZ only, `dx²+dz² <= r²` — exact body recovered, resolving the brief's open item), returns `col.height` or the 0.0 "no column" sentinel. The query Y is irrelevant.
+- `mCoBG_GetBGHeight_NormalColumn` (m_collision_bg.c:1689): ground = max(normal terrain, column); ties go to the COLUMN (strict `normal > column`); when the column wins the ground angle is the zero-initialized `ground_angle0` (flat cap, no slope inherited). Directed-unit exclusion (`ut == (l_ActorInf._68,_6C)`) forces the column to 0.0.
+- `mCoBG_AdjustActorY` ground branch (m_collision_bg.c:403): `ground_y >= foot_y` -> feet placed exactly on the ground, `on_ground=TRUE`, vertical speed zeroed. Column ground flows through the ordinary branch — no separate "on object" state.
+- Key asymmetries (all source-verified): wall collision expands the column radius by the actor radius, but ground selection uses the raw column radius against the actor CENTER (a ~10-unit annulus where the wall hits before the top becomes ground); the ground query examines only the current unit's single foreground object, while wall collision scans up to 16 columns over the 3×3/5×5/7×7 neighborhood.
+- Column height is absolute world Y (`pos.y + object height`), with `pos.y` sampled at the unit center — so a tree on a slope is a flat horizontal cap, constant across its footprint.
+
+### Rust rewrite implementation
+
+`rust/src/column_sweep.rs` additions: `get_bg_height_column`, `get_bg_height_normal_column` (returns ground + column-won flag), `adjust_actor_y_ground`. C ABI: `pc_column_ground_select`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
 #### Follow-up: deeper sweep analysis + column data table
 
 - The follow-up brief re-derived `mCoBG_LineWallCheck_Column` in detail; it matches the ported implementation. Two corrections/notes on the brief:
