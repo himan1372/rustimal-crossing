@@ -28,6 +28,7 @@ mod decal_circles;
 mod segment_map;
 mod collision;
 mod dialogue_topics;
+mod endpoint_circle;
 mod interaction;
 mod inventory;
 mod item_prefs;

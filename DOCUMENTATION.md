@@ -509,6 +509,22 @@ The brief conflated two mechanisms; the decomp source separates them, and this p
 
 **Original-game bugs documented, not reproduced** (decomp-annotated): `RegistDecalCircle` clears `sizeof(whole array)` instead of one record (clobbering into the decal-circle data) and doesn't stop after the first free slot; `InitDecalCircle` clears 3× too much memory. The Rust port implements the intended behavior.
 
+### Runtime Port Progress: Endpoint-Circle Intersection Math
+
+### Source findings
+
+The brief's correction was verified verbatim against `src/game/m_collision_bg.c` and `src/game/m_collision_bg_math.c_inc`:
+
+- **Verified the key correction** (`m_collision_bg.c:908`): the endpoint solver intersects a line through the wall ENDPOINT parallel to the wall NORMAL with the actor's circle — `point = unit_vec->start`, `vec = unit_vec->normal`. The wall segment tangent (`end − start`) is never passed. The segment-based sibling `mCoBG_GetCrossCircleAndLine2D` is decomp-marked @unused/@fabricated.
+- **Verified quadratic** (`m_collision_bg_math.c_inc:295`): `A = vx²+vz²` (no normalization), `B = 2(v·point − v·center)`, `C = |point−center|² − r²`, `R = B²−4AC` accepted when `R >= 0` (tangent counts), `root = ABS(sqrtf(R))` (verbatim redundancy), `A != 0` guard, `t = (−B ± root)/2A`.
+- **Verified selection** (`m_collision_bg.c:858`): `mCoBG_GetSpecialDistanceReverse` picks the first intersection on the NON-front side; `reverse = edge − cross` — exactly parallel to the wall normal (`−tN`).
+- **Verified gate sequence** (`m_collision_bg.c:894`): front(end) && front(start) → normal distance `dist < range` → start-in-circle else end-in-circle → `CheckDistSPCheck` suppression → intersection → height gate `(old_ground_y − 5) + 3 ≤ height.top` → reverse + wall-info registration.
+- **Verified helpers:** `GetDistPointAndLine2D_Norm` = `|n·p − n·start|` with no division; `JudgePointInCircle` is squared, no sqrt; the XYZ wrapper extracts X/Z, runs 2-D math, writes X/Z back.
+
+### Rust rewrite implementation
+
+`rust/src/endpoint_circle.rs`: `judge_point_in_circle`, `dist_point_and_line_2d_norm`, `cross_circle_and_line_2dvector` (verbatim quadratic), `get_special_distance_reverse`, and `endpoint_circle_collision` implementing the full gate sequence (reusing `segment_map::point_info_front_line` and the `CheckDistSPCheck` test from `wall_priority.rs`). C ABI: `pc_cross_circle_line`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. This closes the endpoint-circle gap flagged since the wall-solver work. No C callers are rewired; full Windows game link unverified.
+
 ### Rust rewrite implementation
 
 `rust/src/decal_circles.rs`: `DEFENCE_WALL_INFO[8]` verbatim, `circle_defence_wall_idx`, `make_circle_defence_walls` (ordered-pair scan, 128 cap, gate), `RegistCircleInfo`, `DecalCircleSystem` (`regist`/`calc_timer`/`init`/`active_circles`, `calc_adjust` interpolation). Reuses `columns::Column` for the live records and `segment_map::UNIT_SIZE` for unit coords. No C ABI added (registration is gameplay-driven, no stable external caller yet). `cargo check --lib` clean. Unit tests: 188/188 pass in the authorized `cargo test --lib` run on 2026-10-07. Gaps: `mCoBG_CrossOffDecalCircle` is decomp-marked @unused/@fabricated and intentionally not ported. No C callers are rewired; full Windows game link unverified.
