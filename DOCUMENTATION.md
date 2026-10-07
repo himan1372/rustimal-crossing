@@ -353,7 +353,7 @@ The brief's three-domain model was verified against `m_npc.h`/`m_npc.c`/`m_quest
 
 ### Rust rewrite implementation
 
-`rust/src/house_scene.rs` ports the verified structures: `NpcListEntry` (full `mNpc_NpcList_c` layout; conversation/quest fields opaque), `NpcActorLinks` + `resolve_npc_links` (normal and island branches), `HouseSceneKind`, `resolve_house_owner` (owner → NPC index + (4,7) placement, with the reserved/empty/joint-event guards), `renewal_npc_room` (wall/floor from owner house data), `scan_house_furniture` (verbatim two-pass strided scan), `request_proc_id` (`0x0D8B + looks`), and `force_call_req_proc` modeled as a caller-supplied callback since the implementation is untraced. C ABI: `pc_request_proc_id`, `pc_house_wall_floor`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/house_scene.rs` ports the verified structures: `NpcListEntry` (full `mNpc_NpcList_c` layout; conversation/quest fields opaque), `NpcActorLinks` + `resolve_npc_links` (normal and island branches), `HouseSceneKind`, `resolve_house_owner` (owner → NPC index + (4,7) placement, with the reserved/empty/joint-event guards), `renewal_npc_room` (wall/floor from owner house data), `scan_house_furniture` (verbatim two-pass strided scan), `request_proc_id` (`0x0D8B + looks`), and `force_call_req_proc` modeled as a caller-supplied callback since the implementation is untraced. C ABI: `pc_request_proc_id`, `pc_house_wall_floor`. `cargo check --lib` clean. Unit tests: 165/165 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Per-Scene State Layouts (Scene Description Language)
 
@@ -374,7 +374,7 @@ The brief's scene-description model was verified against `m_scene.h`/`m_scene_ta
 
 ### Rust rewrite implementation
 
-`rust/src/scene_layout.rs` ports the verified system: `SceneWordType` (verbatim tags), `SceneWord` (decoded records), `RoomType`, `DoorData`, `interpret_scene` (walk-until-END dispatcher), `FieldInit` (FIELD_CT output with the verbatim flag values), `goto_other_scene`/`SceneTransition` (the +1 scene rule and wipe substitution), and the little-endian FIELD_CT caveat documented. C ABI: `pc_scene_word_type`, `pc_door_next_scene`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/scene_layout.rs` ports the verified system: `SceneWordType` (verbatim tags), `SceneWord` (decoded records), `RoomType`, `DoorData`, `interpret_scene` (walk-until-END dispatcher), `FieldInit` (FIELD_CT output with the verbatim flag values), `goto_other_scene`/`SceneTransition` (the +1 scene rule and wipe substitution), and the little-endian FIELD_CT caveat documented. C ABI: `pc_scene_word_type`, `pc_door_next_scene`. `cargo check --lib` clean. Unit tests: 165/165 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Full Background-Check Sequence
 
@@ -405,7 +405,7 @@ Verified formulas and limits:
 
 ### Rust rewrite implementation
 
-`rust/src/bg_check.rs` ports the verified sequence: `BgStage` (recovered call order), `BgCheckType` (player vs actor wall ordering), `BgActorInfo` (old/new ground state, speeds), `neighborhood_size`, `distance_reverse`, `adjust_actor_y` (both the snap-up and descending-snap branches), `water_y_river`/`water_y_sea`, `wave_rate`, `RoomSizeClass`/`room_scope_extent`, `carry_out_reverse`, and the source limits as constants. C ABI: `pc_bg_neighborhood`, `pc_bg_distance_reverse`, `pc_bg_room_scope`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. The inner wall solver's geometric internals (crossing tests, player prioritization, attribute tables) remain future work. No C callers are rewired; full Windows game link unverified.
+`rust/src/bg_check.rs` ports the verified sequence: `BgStage` (recovered call order), `BgCheckType` (player vs actor wall ordering), `BgActorInfo` (old/new ground state, speeds), `neighborhood_size`, `distance_reverse`, `adjust_actor_y` (both the snap-up and descending-snap branches), `water_y_river`/`water_y_sea`, `wave_rate`, `RoomSizeClass`/`room_scope_extent`, `carry_out_reverse`, and the source limits as constants. C ABI: `pc_bg_neighborhood`, `pc_bg_distance_reverse`, `pc_bg_room_scope`. `cargo check --lib` clean. Unit tests: 165/165 pass in the authorized `cargo test --lib` run on 2026-10-07. The inner wall solver's geometric internals (crossing tests, player prioritization, attribute tables) remain future work. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Inner Wall Solver Geometry
 
@@ -426,7 +426,7 @@ The brief's solver model was verified against `src/game/m_collision_bg.c`:
 
 ### Rust rewrite implementation
 
-`rust/src/wall_solver.rs` ports the verified dispatch: `WallSeg2` (full record), `WallKind2`, `judge_wall_from_vector` (89.5° gate with the convention caveat), `rough_check_wall_height`, `wall_height_at` (interpolation), `cross_reverse_normal` / `cross_reverse_attribute`, `distance_dispatch` (push/contact/ignore with the 2.7 tolerance), `distance_push`, `wall_priority` (midpoint sort), and `solve_walls` implementing the exact player vs normal-actor orderings with iterative `actor_end` correction and `rev_pos` reconstruction. C ABI: `pc_judge_wall_from_vector`, `pc_distance_dispatch`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Endpoint-circle geometry and the 0.1f neighbor-suppression test remain future work. No C callers are rewired; full Windows game link unverified.
+`rust/src/wall_solver.rs` ports the verified dispatch: `WallSeg2` (full record), `WallKind2`, `judge_wall_from_vector` (89.5° gate with the convention caveat), `rough_check_wall_height`, `wall_height_at` (interpolation), `cross_reverse_normal` / `cross_reverse_attribute`, `distance_dispatch` (push/contact/ignore with the 2.7 tolerance), `distance_push`, `wall_priority` (midpoint sort), and `solve_walls` implementing the exact player vs normal-actor orderings with iterative `actor_end` correction and `rev_pos` reconstruction. C ABI: `pc_judge_wall_from_vector`, `pc_distance_dispatch`. `cargo check --lib` clean. Unit tests: 165/165 pass in the authorized `cargo test --lib` run on 2026-10-07. Endpoint-circle geometry and the 0.1f neighbor-suppression test remain future work. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Player Wall-Priority Sort
 
@@ -443,7 +443,7 @@ The brief's three-pass model was verified against `src/game/m_collision_bg.c`, w
 
 ### Rust rewrite implementation
 
-`rust/src/wall_priority.rs` ports the faithful pipeline: `make_tab_2_move_tail` (verbatim), `merge_sort_float` (recursive, `<=` merge), `reconstruct_priority` (u64-mask, first-unused tie-break), `midpoint_dist2` + `priority_order` (full construction), `dist_routine` (both dispatch tables), `check_dist_sp_suppress`, `player_special_front_gate`, `point_in_circle`. `wall_solver.rs`'s player path now uses this faithful priority instead of a plain sort. C ABI: `pc_make_tab_2_move_tail`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/wall_priority.rs` ports the faithful pipeline: `make_tab_2_move_tail` (verbatim), `merge_sort_float` (recursive, `<=` merge), `reconstruct_priority` (u64-mask, first-unused tie-break), `midpoint_dist2` + `priority_order` (full construction), `dist_routine` (both dispatch tables), `check_dist_sp_suppress`, `player_special_front_gate`, `point_in_circle`. `wall_solver.rs`'s player path now uses this faithful priority instead of a plain sort. C ABI: `pc_make_tab_2_move_tail`. `cargo check --lib` clean. Unit tests: 165/165 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Dialogue Topic Tables
 
@@ -462,7 +462,7 @@ The brief's layered model was verified against `ac_npc_talk.c_inc`/`m_npc.c`/`m_
 
 ### Rust rewrite implementation
 
-`rust/src/dialogue_topics.rs` ports the verified mechanisms: `MSG_MAX`, `msg_body_param` (offset-table resolution), `talk_check_msg` (both pool bases), `force_talk_gate`/`TalkGate` (verbatim thresholds), `TalkInfo` (talk_end, quest-request off), `NPC_TEMPER` (verbatim), `ConversationFlags` (bitfield pack), and a rewrite-owned `TopicCategory` taxonomy. C ABI: `pc_topic_talk_check`, `pc_msg_max`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. No C callers are rewired; full Windows game link unverified.
+`rust/src/dialogue_topics.rs` ports the verified mechanisms: `MSG_MAX`, `msg_body_param` (offset-table resolution), `talk_check_msg` (both pool bases), `force_talk_gate`/`TalkGate` (verbatim thresholds), `TalkInfo` (talk_end, quest-request off), `NPC_TEMPER` (verbatim), `ConversationFlags` (bitfield pack), and a rewrite-owned `TopicCategory` taxonomy. C ABI: `pc_topic_talk_check`, `pc_msg_max`. `cargo check --lib` clean. Unit tests: 165/165 pass in the authorized `cargo test --lib` run on 2026-10-07. No C callers are rewired; full Windows game link unverified.
 
 ### Runtime Port Progress: Villager Behavior Engine
 
