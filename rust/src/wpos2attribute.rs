@@ -282,7 +282,179 @@ pub fn wpos2attribute_step(inp: &Wpos2AttributeInputs) -> Wpos2AttributeOut {
     out(a, false)
 }
 
+// ---- Attribute-63 neighbor resolution (`mCoBG_SearchAttribute`) ----
+
+/// `mCoBG_unit_offset[8]` verbatim (m_collision_bg.c:103): (x, z) unit
+/// offsets for the 8 direct values. Unit size = 40 (`mFI_UNIT_BASE_SIZE`).
+/// Order: N, W, S, E, NW, NE, SE, SW. NOTE the source quirk: with north =
+/// -z, the table's index-5 ("NE") entry points to (-40, +40) and index-7
+/// ("SW") to (+40, -40) — the two are transposed vs geometric intuition.
+/// Preserved verbatim; behavior, not names, is what matters.
+pub const UNIT_OFFSETS: [(f32, f32); 8] = [
+    (0.0, -40.0),   // N
+    (-40.0, 0.0),   // W
+    (0.0, 40.0),    // S
+    (40.0, 0.0),    // E
+    (-40.0, -40.0), // NW
+    (-40.0, 40.0),  // "NE" (source table; geometrically SW)
+    (40.0, 40.0),   // SE
+    (40.0, -40.0),  // "SW" (source table; geometrically NE)
+];
+
+/// `mCoBG_PlussDirectOffset` verbatim (XZ part): adds the unit offset
+/// for `direct`. Returns `None` (no write, per the source guard) when
+/// `direct` is out of range.
+pub fn pluss_direct_offset(x: f32, z: f32, direct: u8) -> Option<(f32, f32)> {
+    UNIT_OFFSETS
+        .get(direct as usize)
+        .map(|(ox, oz)| (x + ox, z + oz))
+}
+
+/// `mCoBG_SearchAttribute` core: resolve the attr-63 redirect.
+/// `wpos.y` is forced to 0 (source does this redundantly — Wpos2Attribute
+/// does it again), then the position moves exactly one unit in the
+/// cardinal `area` direction (0=N..3=E). Local position within the unit
+/// is PRESERVED (no snapping to the neighbor center); only the four
+/// cardinal areas are valid redirect sources — never diagonal.
+/// Returns the neighbor query position, or `None` for an invalid area.
+pub fn search_attribute_redirect(x: f32, z: f32, area: u8) -> Option<(f32, f32)> {
+    if area > 3 {
+        return None;
+    }
+    pluss_direct_offset(x, z, area)
+}
+
+// ---- Slate ground height (`mCoBG_GetBGHeight_Normal_SlateGround`) ----
+
+/// Slate orientation from corner samples, verbatim:
+/// `top_left != bot_right` -> SLATE_UP, else SLATE_DOWN.
+/// (This is a different, single-comparison test from the wall-building
+/// slate-detail search.)
+pub fn slate_ground_orientation(top_left: u32, bot_right: u32) -> u8 {
+    if top_left != bot_right {
+        0 // WALL_SLATE_UP
+    } else {
+        1 // WALL_SLATE_DOWN
+    }
+}
+
+/// Area -> corner-sample mapping of `mCoBG_GetAreaYSlatingUnit`, verbatim,
+/// including the fallthrough: an invalid area under SLATE_UP falls into
+/// the SLATE_DOWN area switch (source `// fallthrough`).
+/// Returns the raw corner value (caller multiplies by 10 and adds base height).
+pub fn area_y_slating_unit(
+    top_left: u32,
+    bot_left: u32,
+    bot_right: u32,
+    top_right: u32,
+    slate_up: bool,
+    area: u8,
+) -> u32 {
+    let up = |a: u8| match a {
+        2 | 3 => bot_right, // AREA_S | AREA_E
+        0 | 1 => top_left,  // AREA_N | AREA_W
+        _ => 0,             // invalid -> fallthrough to DOWN switch
+    };
+    let down = |a: u8| match a {
+        0 | 3 => top_right, // AREA_N | AREA_E
+        1 | 2 => bot_left,  // AREA_W | AREA_S
+        _ => 0,
+    };
+    if slate_up {
+        let v = up(area);
+        if area > 3 {
+            down(area) // the source fallthrough
+        } else {
+            v
+        }
+    } else {
+        down(area)
+    }
+}
+
+/// `mCoBG_GetBGHeight_Normal_SlateGround` verbatim (minus the angle
+/// zeroing, which the source performs on the caller's `s_xyz*`):
+/// orientation from `top_left != bot_right`, area from the caller,
+/// `corner * 10 + base_height`.
+pub fn slate_ground_height(
+    top_left: u32,
+    bot_left: u32,
+    bot_right: u32,
+    top_right: u32,
+    area: u8,
+    base_height: f32,
+) -> f32 {
+    let up = slate_ground_orientation(top_left, bot_right) == 0;
+    area_y_slating_unit(top_left, bot_left, bot_right, top_right, up, area) as f32 * 10.0
+        + base_height
+}
+
 // ---- C ABI ----
+
+/// C ABI: `mCoBG_PlussDirectOffset` XZ part. Returns 1 and writes the
+/// offset position via out_x/out_z; returns 0 for an invalid direction
+/// (source writes nothing in that case).
+#[no_mangle]
+pub unsafe extern "C" fn pc_pluss_direct_offset(
+    x: f32,
+    z: f32,
+    direct: u8,
+    out_x: *mut f32,
+    out_z: *mut f32,
+) -> u8 {
+    match pluss_direct_offset(x, z, direct) {
+        Some((nx, nz)) => {
+            if !out_x.is_null() {
+                unsafe { *out_x = nx };
+            }
+            if !out_z.is_null() {
+                unsafe { *out_z = nz };
+            }
+            1
+        }
+        None => 0,
+    }
+}
+
+/// C ABI: attr-63 redirect target. Returns 1 and writes the neighbor
+/// query position; 0 for an invalid area (> 3).
+#[no_mangle]
+pub unsafe extern "C" fn pc_search_attribute_redirect(
+    x: f32,
+    z: f32,
+    area: u8,
+    out_x: *mut f32,
+    out_z: *mut f32,
+) -> u8 {
+    match search_attribute_redirect(x, z, area) {
+        Some((nx, nz)) => {
+            if !out_x.is_null() {
+                unsafe { *out_x = nx };
+            }
+            if !out_z.is_null() {
+                unsafe { *out_z = nz };
+            }
+            1
+        }
+        None => 0,
+    }
+}
+
+/// C ABI: `mCoBG_GetBGHeight_Normal_SlateGround` (minus angle zeroing):
+/// corner samples + area + base height -> ground Y.
+#[no_mangle]
+pub extern "C" fn pc_slate_ground_height(
+    top_left: u32,
+    bot_left: u32,
+    bot_right: u32,
+    top_right: u32,
+    area: u8,
+    base_height: f32,
+) -> f32 {
+    slate_ground_height(top_left, bot_left, bot_right, top_right, area, base_height)
+}
+
+/// C ABI: one Wpos2Attribute step.
 
 /// C ABI: one Wpos2Attribute step.
 /// Returns the effective attribute in the low byte and cant_dig in bit 8;
@@ -414,5 +586,50 @@ mod tests {
         assert_eq!((pc_wpos2attribute_step(63, 2, 0.0, 0.0, 1, 1, 0.0) >> 8) & 0xFF, 2);
         // C ABI: attr + cant_dig bit.
         assert_eq!(pc_wpos2attribute_step(33, 0, 0.0, 0.0, 1, 1, 0.0), 7 | (1 << 8));
+    }
+
+    #[test]
+    fn search_attribute_and_slate_ground() {
+        // PlussDirectOffset: cardinal + verbatim diagonal quirk.
+        assert_eq!(pluss_direct_offset(100.0, 100.0, 0), Some((100.0, 60.0))); // N
+        assert_eq!(pluss_direct_offset(100.0, 100.0, 1), Some((60.0, 100.0))); // W
+        assert_eq!(pluss_direct_offset(100.0, 100.0, 2), Some((100.0, 140.0))); // S
+        assert_eq!(pluss_direct_offset(100.0, 100.0, 3), Some((140.0, 100.0))); // E
+        assert_eq!(pluss_direct_offset(100.0, 100.0, 5), Some((60.0, 140.0))); // "NE" per source table
+        assert_eq!(pluss_direct_offset(100.0, 100.0, 8), None); // out of range: no write
+        // SearchAttribute redirect: cardinal only, local offset preserved.
+        assert_eq!(search_attribute_redirect(12.0, 5.0, area::W), Some((-28.0, 5.0)));
+        assert_eq!(search_attribute_redirect(12.0, 5.0, area::N), Some((12.0, -35.0)));
+        assert_eq!(search_attribute_redirect(12.0, 5.0, 4), None);
+        // SlateGround: top_left != bot_right -> SLATE_UP.
+        // UP: S/E -> bot_right, N/W -> top_left.
+        let h = slate_ground_height(10, 11, 20, 12, area::S, 100.0);
+        assert_eq!(h, 20.0 * 10.0 + 100.0);
+        let h = slate_ground_height(10, 11, 20, 12, area::N, 100.0);
+        assert_eq!(h, 10.0 * 10.0 + 100.0);
+        // top_left == bot_right -> SLATE_DOWN: N/E -> top_right, W/S -> bot_left.
+        let h = slate_ground_height(10, 11, 10, 12, area::E, 50.0);
+        assert_eq!(h, 12.0 * 10.0 + 50.0);
+        let h = slate_ground_height(10, 11, 10, 12, area::W, 50.0);
+        assert_eq!(h, 11.0 * 10.0 + 50.0);
+        // Invalid area under SLATE_UP falls through to the DOWN switch.
+        assert_eq!(area_y_slating_unit(10, 11, 20, 12, true, 9), 0);
+        // C ABI.
+        let (mut ox, mut oz) = (0.0f32, 0.0f32);
+        assert_eq!(
+            unsafe { pc_pluss_direct_offset(100.0, 100.0, 2, &mut ox, &mut oz) },
+            1
+        );
+        assert_eq!((ox, oz), (100.0, 140.0));
+        assert_eq!(
+            unsafe { pc_pluss_direct_offset(100.0, 100.0, 9, &mut ox, &mut oz) },
+            0
+        );
+        assert_eq!(
+            unsafe { pc_search_attribute_redirect(12.0, 5.0, 1, &mut ox, &mut oz) },
+            1
+        );
+        assert_eq!((ox, oz), (-28.0, 5.0));
+        assert_eq!(pc_slate_ground_height(10, 11, 20, 12, area::S, 100.0), 300.0);
     }
 }

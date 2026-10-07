@@ -611,6 +611,23 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: SearchAttribute + Slate Ground Height
+
+### Source findings (all verified against the local decomp)
+
+- `mCoBG_SearchAttribute` (m_collision_bg.c:495): three lines — `wpos.y = 0`, `PlussDirectOffset(next, wpos, direct)`, `return Wpos2Attribute(next, cant_dig)`. No tables, no slope math; the "search" is one cardinal neighbor step. Already modeled as `redirect: Some(area)` in `wpos2attribute_step`; now also ported as an explicit kernel.
+- `mCoBG_PlussDirectOffset` (m_collision_bg.c:114): adds `mCoBG_unit_offset[direct]`; guard `direct in 0..8` else no write. Offset table verbatim: N=(0,-40), W=(-40,0), S=(0,+40), E=(+40,0), then the diagonals. SOURCE QUIRK: with north = -z, the index-5 ("NE") entry points to (-40,+40) and index-7 ("SW") to (+40,-40) — transposed vs geometric intuition. Preserved verbatim (the earlier `direct_offset` port in terrain_walls.rs already had it right). The attr-63 path only uses indices 0-3 (cardinal), so the quirk never affects slope resolution.
+- `mCoBG_GetBGHeight_Normal_SlateGround` (m_collision_bg.c:~1347): orientation from the SINGLE comparison `top_left != bot_right` -> SLATE_UP else SLATE_DOWN (different from the wall-building slate-detail search); `GetAreaYSlatingUnit` area->corner mapping with the SLATE_UP-invalid-area fallthrough into the DOWN switch; `corner * 10 + base_height`; zeroes the caller's angle. Dispatch: `get_bg_y_normal_proc[slate_flag]` selects slate vs normal ground (m_collision_bg.c:1375).
+- Confirmed the brief's key separations: `slate_flag` (physical collision shape) vs `unit_attribute == 63` (semantic topology proxy) are independent bitfields; GroundCheck's bridge-water branch requires attr 27-35, so raw 63 never enters it; the redirect preserves local position (no center snapping), so a 63->bridge->river/wood composition resolves at the same relative point.
+
+### Rust rewrite implementation
+
+Added to `rust/src/wpos2attribute.rs`: `UNIT_OFFSETS` (verbatim, quirk documented), `pluss_direct_offset`, `search_attribute_redirect` (cardinal-only, `None` for area > 3), `slate_ground_orientation`, `area_y_slating_unit` (with the UP fallthrough), `slate_ground_height`. C ABI: `pc_pluss_direct_offset`, `pc_search_attribute_redirect`, `pc_slate_ground_height`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Full `GroundCheck` orchestration (water_y selection, `AdjustActorY`, `MakeJumpFlag`) not yet ported; no C callers rewired.
+
 ### Runtime Port Progress: Wpos2Attribute Effective-Terrain Interpreter
 
 ### Source findings (all verified against the local decomp)
