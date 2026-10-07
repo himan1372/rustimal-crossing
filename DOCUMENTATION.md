@@ -468,6 +468,22 @@ The brief's column-system model was verified against `src/game/m_collision_bg.c`
 
 `rust/src/columns.rs` ports the system: `Column` record, `ColumnItemKind` with the exact hard-coded recipes, `make_one_column`, `make_column_collision_data` (16-slot examined-count quirk and own-unit exclusion faithfully modeled, failed slots as `None`), `column_check_normal` / `column_check_attr` (height gate, radial push, 2.7 contact band, old-on-ground gate), and the C ABI `pc_column_recipe`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: the decal-circle register/clear machinery, the separate line-vs-column sweep routine, and column-derived ground height — all marked future work. No C callers are rewired; full Windows game link unverified.
 
+### Runtime Port Progress: Segment-Orientation Mapping
+
+### Source findings
+
+The brief's two-orientation model was verified against `src/game/m_collision_bg_wall.c_inc`, `src/game/m_collision_bg_math.c_inc`, `src/game/m_collision_bg.c`, and the headers:
+
+- **Verified segment placement** (`m_collision_bg_wall.c_inc:1`): `mCoBG_UnitNoName2StartEnd` — UP: `(ux*U−t0, uz*V)` → `+X` extended by `t1`; DOWN: same line with reversed endpoint order; LEFT/RIGHT: vertical `+Z` segments; SLATE_UP: `+X/−Z` diagonal; SLATE_DOWN: `+X/+Z` diagonal. All verbatim.
+- **Verified padding table** (`m_collision_bg.c:58`): `mCoBG_tab_data = {{5.0, 10.0}, {0.000001, 0.000002}}` — NORMAL walls extend ~5/10 units past the tile; PLAYER walls get essentially exact boundaries. Unit world size 40 (`mFI_UNIT_BASE_SIZE`).
+- **Verified normal selection** (`mCoBG_SearchWallFlag`): axis walls pick normals from neighboring corner-height comparisons, normal toward the higher side — UP → (0,±1)/0°/180°, DOWN → (0,∓1)/180°/0°, LEFT → (±1,0)/±90°, RIGHT → (∓1,0)/∓90°, all four branches read directly. Slate walls: SLATE_UP compares leftUp vs rightDown → (±√½,±√½)/45°/−135°; SLATE_DOWN compares leftDown vs rightUp → (±√½,∓√½)/135°/−45°.
+- **Verified front test** (`m_collision_bg_math.c_inc:251`): `mCoBG_GetPointInfoFrontLine` = `n·point − n·start ≥ 0` — front/back comes from the stored normal, never segment direction.
+- `wall_name` drives height interpolation (X for UP/DOWN, Z for LEFT/RIGHT, projected for slate), already modeled in `wall_solver.rs`.
+
+### Rust rewrite implementation
+
+`rust/src/segment_map.rs` ports the mapping: `WallName`, `CheckType`, `TAB_DATA`, `unit_no_name_2_start_end` (verbatim), `point_info_front_line`, `search_wall_flag` (all four cardinal branches), `slate_normal`, `interp_axis`. `attr_walls.rs` gained `forbid_wall_segments`, closing the previously flagged gap — attribute walls now get real segments through the actual mapping. C ABI: `pc_unit_no_name_2_start_end`. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction. Gaps: Nintendo's original terminology for the wall_name/normal distinction (not in the decomp); `mCoBG_Check45Angle` front/left/right/back classification not yet ported. No C callers are rewired; full Windows game link unverified.
+
 ### Source findings
 
 The brief's three-pass model was verified against `src/game/m_collision_bg.c`, with exact implementation details:

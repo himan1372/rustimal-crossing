@@ -184,6 +184,36 @@ pub fn wall_registrar_variant(attr_wall: bool) -> &'static str {
     }
 }
 
+use crate::segment_map::{unit_no_name_2_start_end, CheckType, WallName};
+
+const WALL_NAME_FOR_VECTOR: [WallName; 8] = [
+    WallName::Up,
+    WallName::Right,
+    WallName::Left,
+    WallName::Down,
+    WallName::SlateUp,
+    WallName::SlateDown,
+    WallName::SlateUp,
+    WallName::SlateDown,
+];
+
+/// Full forbidden-wall segment (`mCoBG_MakeForbidVectorData`):
+/// vector ID -> wall_name -> segment via `mCoBG_UnitNoName2StartEnd`.
+/// Returns (start, end) X/Z pairs in vector order for `attr`.
+pub fn forbid_wall_segments(
+    attr: u8,
+    ux: f32,
+    uz: f32,
+    check_type: CheckType,
+) -> Vec<([f32; 2], [f32; 2])> {
+    forbid_vectors(attr)
+        .into_iter()
+        .map(|vid| {
+            let (s, e) = unit_no_name_2_start_end(ux, uz, WALL_NAME_FOR_VECTOR[vid], check_type);
+            (s, e)
+        })
+        .collect()
+}
 /// C ABI: write the vector IDs for `attr` into `out` (capacity ≥ 2);
 /// returns the number of vectors (0–2).
 #[no_mangle]
@@ -279,5 +309,19 @@ mod tests {
         assert_eq!(s.wall_name, wall_name::SLATE_UP);
         assert_eq!(wall_registrar_variant(true), "AttributeOn");
         assert_eq!(wall_registrar_variant(false), "AttributeOff");
+    }
+
+    #[test]
+    fn forbid_segments_use_real_mapping() {
+        use crate::segment_map::CheckType;
+        // Attr 32 (stone bridge n) -> vector 0 (UP) at unit (1,1).
+        let segs = forbid_wall_segments(32, 1.0, 1.0, CheckType::Normal);
+        assert_eq!(segs.len(), 1);
+        let (s, e) = segs[0];
+        assert!((s[0] - 35.0).abs() < 1e-4 && (s[1] - 40.0).abs() < 1e-4);
+        assert!((e[0] - 85.0).abs() < 1e-4 && (e[1] - 40.0).abs() < 1e-4);
+        // Attr 51 (tunnel) -> two segments.
+        assert_eq!(forbid_wall_segments(51, 0.0, 0.0, CheckType::Normal).len(), 2);
+        assert!(forbid_wall_segments(31, 0.0, 0.0, CheckType::Normal).is_empty());
     }
 }
