@@ -42,6 +42,7 @@ mod player_move;
 mod scene;
 mod scene_layout;
 mod gbi_runtime;
+pub mod graphics;
 mod house_scene;
 mod letter_score;
 mod mtx;

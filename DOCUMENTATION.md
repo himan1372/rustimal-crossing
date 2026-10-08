@@ -2312,6 +2312,86 @@ Wildcard palette support: `tex1_WxH_DATAHASH_$_FMT.dds` matches any palette vari
 
 Anti-aliasing via multisampled framebuffer. Configurable in `settings.ini` (0/2/4/8 samples).
 
+## Graphics Pipeline (GBI / emu64)
+
+Retail Animal Crossing's renderer is a hybrid: the game keeps an
+N64/libultra-derived `Gfx` command representation and interprets it at
+runtime through the `emu64` taskstart loop, translating state into
+GameCube GX/TEV/texture operations. It is closer to a runtime
+compiler for an N64-derived graphics language targeting Flipper GX
+than to a conventional GameCube renderer.
+
+New module: `rust/src/graphics/` (registered as `pub mod graphics`).
+
+### Architecture
+
+- `command.rs`: `Gfx` word layout, retail F3DEX_GBI opcode values,
+  `G_FIRST_CMD = 0xCE`, `NUM_COMMANDS = 64`, `G_DL` params
+  (PUSH=0/NOPUSH=1/GXDL=2), Dolphin texture-command vocabulary.
+- `interpreter.rs`: the `emu64_taskstart` loop — fetch, decode,
+  dispatch through the handler table, mutate state, next command.
+  Real DL call stack (18 levels, overflow counted like retail),
+  segmented-address resolution, `G_DL` with a native-GX-display-list
+  target handed to the backend (`GXCallDisplayList`), `G_ENDDL`
+  pop-or-terminate semantics.
+- `segments.rs`: 16-entry segment table (`gSPSegment`), `seg2k0`
+  resolver, DL stack.
+- `state.rs`: canonical N64-era GBI state (geometry mode, othermode
+  hi/lo, combiner, tiles, TLUTs, colors, fog) with `emu64`-style
+  dirty flags; GX translation happens behind them.
+- `texture.rs`: verbatim `fmtxtbl[8][4]`, `cvtN64ToDol` (0xFFFF ->
+  GX_TF_I4 fallback), verbatim `rgba5551_to_rgb5a3`, block sizes
+  (4b: 8x8, 8b: 8x4, 16b/32b: 4x4), the TMEM bank/word swizzle
+  `ofs ^ ((block >> 1) & 4)`, IA8 nibble rearrange, tile conversion,
+  source-address-keyed conversion cache (with invalidation for
+  dynamic textures), TLUT conversion, and the 32x32 4-bit
+  player-design texture (512 bytes).
+- `combine.rs`: N64 combiner -> TEV translation with the Auto/Tev/
+  Manual/NotEv/Preconverted paths; TEXEL1 mentions fall back to
+  NOTEV; 1-cycle vs 2-cycle stage counts.
+- `vertex.rs`: `Vtx` decode (s16 -> f32, packed normals), normal
+  normalization under `G_TEXTURE_GEN`, shared/nonshared matrix flag
+  (texture-gen forces shared), TRI1 index/2.
+- `frame.rs`: the nine display-list streams (POLY_OPA, POLY_XLU,
+  OVERLAY, WORK, FONT, SHADOW, LIGHT, BG_OPA, BG_XLU), material
+  presets modeled on `z_gsCPModeSet_Data`, and the customized NTSC
+  render modes (640x480, XFB 660, viXOrigin 30, interlaced DF filter
+  8/8/10/12/10/8/8, progressive SF filter 0/0/21/22/21/0/0).
+- `gx_backend.rs`: GX display-list 32-byte alignment, `GXTexObj`
+  model, tiled-storage tile sizes, projection compression (6 values
+  to XF 32-37 + type at 38), XF register bases, EFB->XFB copy,
+  EFB->texture capture (wipe path).
+
+### Packed geometry
+
+`G_TRIN`/`G_TRIN_INDEPEND` use the verbatim `POLY_GET_V*_5b/7b`
+extraction macros; 5-bit mode packs 3 faces first then 4 per word,
+7-bit mode packs 3 per word; face count is `((w0 >> 17) & 0x7F) + 1`.
+`G_TEXRECT` consumes an extra Gfx word.
+
+### Preserved retail behavior
+
+- DL stack overflow is counted, not fatal; the jump still happens
+  with the return address lost.
+- Dolphin texture commands are the same opcodes with the
+  `isDolphin` bit set; Dolphin image dims are `wd+1 x (ht+1)*4`.
+- Texture identity is the source RAM address, not the texel hash.
+
+### Engine boundary
+
+Actual GX FIFO emission, EFB/RAM emulation, the Dolphin GX library,
+and ROM model/texture assets stay engine-side. The interpreter
+emits triangles/quads/texrects/GXDL calls through the `GxBackend`
+trait and reads display-list/vertex bytes through `GfxMemory`.
+
+C ABI: `pc_gbi_emu64_create/destroy`, `pc_gbi_set_segment`,
+`pc_gbi_rgba5551_to_rgb5a3`, `pc_gbi_n64_to_gx_format`,
+`pc_gbi_block_dims`, `pc_gbi_tmem_swizzle`, `pc_gbi_gx_dl_valid`,
+`pc_gbi_cmds_processed`.
+
+`cargo check --lib` clean. Tests written but NOT run (standing rule).
+Second verification pass dispatched at implementation time.
+
 ## Input
 
 Keyboard mapping:
