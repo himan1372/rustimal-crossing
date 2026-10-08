@@ -2046,11 +2046,15 @@ Ported:
   ECHO 0x4000, SINGLETON 0x8000), low byte index, 0x0F00 bank byte.
 - Trigger SEs: 6 stateful slots, MONO subtrack-14 bypass, singleton
   rejection, free-slot preference, oldest-frames replacement gated by
-  `TRGPRIO` priority, per-frame parameter pushes (`Sou_TrgMake`).
+  `TRGPRIO` priority (128 entries: 97x50, 8x60 at 97-104, 23x70 at
+  105-127), per-frame parameter pushes (`Sou_TrgMake`).
 - Positional math: quadratic `distance2vol` (540-unit radius, 1.15
   base), `angle2pan` + `pan_kochou` with output-mode scaling (x1.6 /
   x1 / x0.75), MD curve clamped [0.2, 0.8].
-- Level SEs: 6 slots x 8-entry history with FIFO push/shift removal.
+- Level SEs: 6 slots, each with a 4-deep `sou_ls_stack` push FIFO and an
+  8-byte `_00.._07` dedup/pending list (the list is never populated with
+  nonzero bytes in the decomp snapshot, so its dedup/promote paths are
+  dormant; both are modeled).
 - Ongen: 50-entry source cache with aging, 4 active continuous slots,
   retail foundIndex-stays-0 quirk.
 - Room insects: 50 entries with randomized variance and the j=0

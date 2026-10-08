@@ -133,24 +133,24 @@ pub mod se_flag {
     pub const SINGLETON: u16 = 0x8000;
 }
 
-/// Trigger-SE replacement priorities (`TRGPRIO`, 120 entries: mostly 50,
-/// then 60s and 70s). Indexed by the low byte of the sound ID with no
-/// retail bounds check.
-pub const TRGPRIO: [u8; 120] = {
-    let mut t = [50u8; 120];
-    let mut i = 104;
-    while i < 112 {
+/// Trigger-SE replacement priorities (`TRGPRIO`, 128 entries: 97x 50,
+/// 8x 60 at 97-104, 23x 70 at 105-127). Indexed by the low byte of the
+/// sound ID with no retail bounds check.
+pub const TRGPRIO: [u8; 128] = {
+    let mut t = [50u8; 128];
+    let mut i = 97;
+    while i < 105 {
         t[i] = 60;
         i += 1;
     }
-    while i < 120 {
+    while i < 128 {
         t[i] = 70;
         i += 1;
     }
     t
 };
 
-/// Priority lookup. Returns `None` for indices >= 120: retail reads
+/// Priority lookup. Returns `None` for indices >= 128: retail reads
 /// linker-adjacent memory there (no bounds check), which is unknowable
 /// from source, so this port declines instead of inventing bytes.
 pub fn trg_priority(se_idx_lo: u8) -> Option<u8> {
@@ -375,24 +375,25 @@ pub fn distance2vol_md(distance: f32, area2: f32) -> f32 {
     v2
 }
 
-/// Room entry updates the audible areas. Retail bug preserved: entering
-/// `ROOM_TYPE_OTHER` resets `ONGEN_AREA1` but does NOT restore
-/// `ONGEN_AREA2` (it keeps whatever value it had).
-pub fn room_areas(room_small: f32, room_medium: f32, room_large: f32, room: RoomType, cur_area2: f32) -> (f32, f32) {
+/// `Na_RoomType`, verbatim: case 0 (other) sets AREA1 = 540 and does NOT
+/// touch AREA2 (the retail bug); cases 1/2/3 set both areas.
+pub fn na_room_type(room: u8, cur: (f32, f32)) -> (f32, f32) {
     match room {
-        RoomType::Small => (room_small, room_small),
-        RoomType::Medium => (room_medium, room_medium),
-        RoomType::Large => (room_large, room_large),
-        RoomType::Other => (area::ONGEN_AREA1, cur_area2), // bug: area2 not restored
+        1 => (540.0, 545.0),
+        2 => (470.0, 520.0),
+        3 => (510.0, 545.0),
+        0 => (540.0, cur.1), // BUG: AREA2 not restored
+        _ => cur,
     }
 }
 
+/// Room kinds mapped to `Na_RoomType` cases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RoomType {
-    Small,
-    Medium,
-    Large,
-    Other,
+    Other = 0,
+    Small = 1,
+    Medium = 2,
+    Large = 3,
 }
 
 // ---------------------------------------------------------------------------
@@ -582,20 +583,35 @@ impl Default for TrgSeManager {
 }
 
 // ---------------------------------------------------------------------------
-// Level (continuous) SEs: 6 slots x 8-entry history
+// Level (continuous) SEs: 6 slots, 4-deep push stack + 8-byte dedup list
 // ---------------------------------------------------------------------------
 
-/// `SOU_LEV_SE`: one level-SE slot with an 8-deep pending-ID history.
+/// `SOU_LEV_SE` (game-relevant fields) plus the `SOU_LS_STACK` push FIFO.
+///
+/// Retail shape, verified: `Sou_LevStart` dedups `b` against the slot's
+/// 8-byte `_00.._07` list, then pushes onto the first free of the 4-deep
+/// `sou_ls_stack` (`_0.._3`; fuller stacks drop the request).
+/// `Sou_LevStop` removes `b` from the stack with sequential-if shifts and
+/// does the same shift dance on the 8-byte list, promoting the next
+/// pending id when the head is removed.
+///
+/// Observed in the decomp snapshot: nothing ever *writes* a nonzero byte
+/// into the `_00.._07` list (only init-zeroing and stop-shifts), so the
+/// dedup/promote paths are dormant in practice — reproduced here anyway
+/// so the code shape matches retail.
 #[derive(Clone, Copy, Debug)]
 pub struct LevSe {
-    pub history: [u16; slots::LEV_HISTORY],
+    /// The 8-byte `_00.._07` dedup/pending list (dormant: stays zero).
+    pub pending: [u8; slots::LEV_HISTORY],
+    /// The 4-deep `sou_ls_stack` push FIFO.
+    pub stack: [u8; 4],
     pub pan: u8,
     pub volume: f32,
 }
 
 impl Default for LevSe {
     fn default() -> LevSe {
-        LevSe { history: [0; slots::LEV_HISTORY], pan: 0x40, volume: 1.0 }
+        LevSe { pending: [0; slots::LEV_HISTORY], stack: [0; 4], pan: 0x40, volume: 1.0 }
     }
 }
 
@@ -608,31 +624,61 @@ impl LevSeManager {
         LevSeManager { slots: [LevSe::default(); slots::LEV_SE] }
     }
 
-    /// `Sou_LevStart`: push an ID onto the slot's history (FIFO; the
-    /// 8 entries act as a small stack of layered requests).
-    pub fn start(&mut self, slot: usize, id: u16) {
-        if slot >= slots::LEV_SE {
+    /// `Sou_LevStart`: dedup, then push onto the first free stack entry.
+    pub fn start(&mut self, slot: usize, id: u8) {
+        if slot >= slots::LEV_SE || id == 0 {
             return;
         }
-        let h = &mut self.slots[slot].history;
-        h.copy_within(1.., 0);
-        h[slots::LEV_HISTORY - 1] = id;
-    }
-
-    /// `Sou_LevStop`: remove the ID and shift later entries forward.
-    pub fn stop(&mut self, slot: usize, id: u16) {
-        if slot >= slots::LEV_SE {
+        let s = &mut self.slots[slot];
+        if s.pending.contains(&id) {
             return;
         }
-        let h = &mut self.slots[slot].history;
-        if let Some(pos) = h.iter().position(|&x| x == id) {
-            h.copy_within(pos + 1.., pos);
-            h[slots::LEV_HISTORY - 1] = 0;
+        if let Some(free) = s.stack.iter().position(|&x| x == 0) {
+            s.stack[free] = id;
         }
+        // else: stack full, request dropped (retail nested-if shape)
     }
 
-    pub fn top(&self, slot: usize) -> u16 {
-        self.slots.get(slot).map(|s| s.history[slots::LEV_HISTORY - 1]).unwrap_or(0)
+    /// `Sou_LevStop`: sequential-if removal from the stack with forward
+    /// shifts, plus the pending-list shift/promote dance. Returns the id
+    /// promoted to the subtrack port, if any (retail sends
+    /// `SET_PORT(..., 5, -1)` then re-pushes it).
+    pub fn stop(&mut self, slot: usize, id: u8) -> Option<u8> {
+        if slot >= slots::LEV_SE {
+            return None;
+        }
+        let s = &mut self.slots[slot];
+        // Stack removal, verbatim sequential-if shape.
+        for k in 0..4 {
+            if s.stack[k] == id {
+                s.stack[k] = 0;
+                // Shift later entries forward if the next one is live.
+                let mut j = k;
+                while j + 1 < 4 && s.stack[j + 1] != 0 {
+                    s.stack[j] = s.stack[j + 1];
+                    j += 1;
+                }
+                if j < 4 {
+                    s.stack[j] = 0;
+                }
+            }
+        }
+        // Pending-list removal with forward shifts.
+        let mut promoted = None;
+        if let Some(pos) = s.pending.iter().position(|&x| x == id) {
+            s.pending.copy_within(pos + 1.., pos);
+            s.pending[slots::LEV_HISTORY - 1] = 0;
+            if pos == 0 && s.pending[0] != 0 {
+                promoted = Some(s.pending[0]);
+                s.pending[0] = 0;
+            }
+        }
+        promoted
+    }
+
+    /// Bottom of the push stack: the id currently associated with the slot.
+    pub fn current(&self, slot: usize) -> u8 {
+        self.slots.get(slot).map(|s| s.stack[0]).unwrap_or(0)
     }
 }
 
@@ -1230,12 +1276,15 @@ mod tests {
     }
 
     #[test]
-    fn trgprio_oob_is_none() {
+    fn trgprio_layout() {
+        // 128 entries: 97x50, 8x60 at 97-104, 23x70 at 105-127.
         assert_eq!(trg_priority(0), Some(50));
+        assert_eq!(trg_priority(96), Some(50));
+        assert_eq!(trg_priority(97), Some(60));
         assert_eq!(trg_priority(104), Some(60));
-        assert_eq!(trg_priority(112), Some(70));
-        assert_eq!(trg_priority(119), Some(70));
-        assert_eq!(trg_priority(120), None); // retail reads OOB here
+        assert_eq!(trg_priority(105), Some(70));
+        assert_eq!(trg_priority(127), Some(70));
+        assert_eq!(trg_priority(128), None); // retail reads OOB here
         assert_eq!(trg_priority(200), None);
     }
 
@@ -1264,22 +1313,28 @@ mod tests {
     }
 
     #[test]
-    fn room_area_bug() {
-        let (a1, a2) = room_areas(545.0, 520.0, 545.0, RoomType::Other, 999.0);
-        assert_eq!(a1, area::ONGEN_AREA1);
-        assert_eq!(a2, 999.0); // NOT restored: the retail bug
+    fn room_type_verbatim() {
+        // Na_RoomType: case 0 resets AREA1 but not AREA2 (the bug).
+        assert_eq!(na_room_type(0, (1.0, 999.0)), (540.0, 999.0));
+        assert_eq!(na_room_type(1, (1.0, 2.0)), (540.0, 545.0));
+        assert_eq!(na_room_type(2, (1.0, 2.0)), (470.0, 520.0));
+        assert_eq!(na_room_type(3, (1.0, 2.0)), (510.0, 545.0));
     }
 
     #[test]
-    fn level_se_history_fifo() {
+    fn level_se_stack_is_4_deep() {
         let mut lev = LevSeManager::new();
-        lev.start(0, 11);
-        lev.start(0, 22);
-        assert_eq!(lev.top(0), 22);
-        lev.stop(0, 22);
-        assert_eq!(lev.top(0), 11);
+        // Push 5 ids; the 4-deep stack drops the 5th.
+        for id in 11..=15u8 {
+            lev.start(0, id);
+        }
+        assert_eq!(lev.slots[0].stack, [11, 12, 13, 14]);
+        assert_eq!(lev.current(0), 11);
+        // Stop removes with forward shift.
         lev.stop(0, 11);
-        assert_eq!(lev.top(0), 0);
+        assert_eq!(lev.slots[0].stack, [12, 13, 14, 0]);
+        // The 8-byte pending list stays zero (dormant in the decomp).
+        assert_eq!(lev.slots[0].pending, [0; 8]);
     }
 
     #[test]
