@@ -86,6 +86,7 @@ mod leaflet;
 mod mother_mail;
 mod mck_key_tables;
 mod npc_reply;
+mod save_format;
 mod fish_tables;
 mod insect_tables;
 mod step3_data;

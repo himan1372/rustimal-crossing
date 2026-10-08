@@ -1964,6 +1964,51 @@ Three pieces, kept separate:
 are modeled; engine-owned pieces (ROM text, article strings, random-item
 presents, NPC names) stay behind traits/inputs. 5 C ABI exports.
 
+### Runtime Port Progress: Save Land-File Format & Integrity
+
+New `rust/src/save_format.rs`, verified against `src/game/m_card.c`,
+`src/game/m_flashrom.c`, `include/m_card.h`, `include/m_flashrom.h`,
+`include/m_common_data.h`, `include/m_land.h`, `src/game/m_lib.c`, and
+`src/game/m_time.c` (GAFE01_00 Rev. 0). It builds on the checksum
+primitives already in `save.rs` (`checksum_sum` /
+`checksum_fixup` / `checksum_valid`) and models the full 0x72000-byte
+town file as pure buffer logic (GameCube CARD I/O stays engine-side):
+
+- Layout: 0x26000 misc region, primary `Save` slot at 0x26000, backup at
+  0x4C000 (`mCD_get_offset` sums prior file-table entries; each of the
+  first three entries is `sizeof(Save)` = 0x26000). `Save` = `Save_t`
+  (0x242A0) padded to 0x26000; the checksum covers the whole slot,
+  padding included.
+- Save-check header: version s32 @0x00, code u32 @0x04 (`'GAFE'`),
+  land_id u16 @0x08 (valid iff `(id & 0xFF00) == 0x3000`), RTC time @0x0A,
+  checksum u16 @0x12. Writer emits version 6; loader accepts 5 or 6.
+- `build_save_slot` mirrors `mCD_SaveHome_bg_set_data`: zero the slot,
+  copy the live `Save_t`, stamp version/code/land_id/time, write
+  copy_protect at `Save_t+0x1A`, then the flat checksum.
+- Candidate validation in retail order: identity, then checksum, then
+  version. `select_slot` prefers main and flags backup loads as outdated
+  (`mCD_ERROR_OUTDATED`).
+- `check_broken_land` / `repair_land`: repair only when exactly one copy
+  is good; the good copy is written over the broken one.
+- `sector_write_plan`: 0x2000-sector compare-before-write (`mem_cmp`
+  returns TRUE when equal, so `== 0` means "different, rewrite").
+- Aux keep blocks (mail 0xBAC0 @0x1440, original 0xCCA0 @0xCF00, diary
+  0xBA20 @0x19BA0, checksum = first u16 of each block): forgiving
+  per-block validation, writer order mail/original/diary, diary gets no
+  landid stamp. `build_others` takes header bytes from a provider (ROM
+  resources are excluded from the decomp).
+- Copy protection (`RANDOM(0xFFF0)+1`, range 1..=0xFFF0) is a
+  card-association check, separate from the checksum. Correction vs the
+  brief's sources: `m_common_data.h` names a second `copy_protect` at
+  0x028596 (a decomp artifact - duplicate member names can't compile);
+  the operative field is the 0x1A one because `mCD_check_copyProtect`
+  only reads the first 0x200 bytes of each copy.
+- GCI: 0x40 directory-entry prefix + 0x72000 = 0x72040; exact retail
+  dir-entry bytes remain unverified (needs a real USA GCI).
+
+5 C ABI exports (`pc_savef_*`). cargo check --lib clean; tests written
+but not run per the standing rule. Second verification pass pending.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
