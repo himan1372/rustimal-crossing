@@ -721,7 +721,7 @@ mod tests {
     fn dl_push_nopush_enddl() {
         let mut emu = Emu64::new();
         let mut be = TestBackend { tris: 0, gxdl: 0, texrects: 0 };
-        emu.segments.set(1, 0x1000);
+        emu.segments.set(1, 0x0000);
         // list at 0x1000: color, DL_PUSH to 0x2000, end
         // list at 0x2000: color, ENDDL
         let mut lists = HashMap::new();
@@ -747,16 +747,16 @@ mod tests {
     fn gxdl_passthrough() {
         let mut emu = Emu64::new();
         let mut be = TestBackend { tris: 0, gxdl: 0, texrects: 0 };
-        emu.segments.set(1, 0x5000);
+        emu.segments.set(1, 0x0000);
         let mut lists = HashMap::new();
         lists.insert(
-            0x5000,
+            0x6000,
             vec![
                 gfx(op::G_DL, dl_param::G_DL_GXDL, 64, (1 << 24) | 0x6000),
                 gfx(op::G_ENDDL, 0, 0, 0),
             ],
         );
-        emu.taskstart(&TestMem, &mut be, &lists, 0x5000);
+        emu.taskstart(&TestMem, &mut be, &lists, 0x6000);
         assert_eq!(be.gxdl, 1);
     }
 

@@ -331,14 +331,15 @@ pub fn check_broken_land(
 
 /// `mCD_repair_land`: rewrite the broken copy from the surviving good one.
 /// Returns the repaired image, or `None` when there is nothing to repair.
-pub fn repair_land(image: &[u8; LAND_FILE_SIZE], land_id: u16) -> Option<[u8; LAND_FILE_SIZE]> {
+pub fn repair_land(image: &[u8; LAND_FILE_SIZE], land_id: u16) -> Option<Box<[u8; LAND_FILE_SIZE]>> {
     let main: &[u8; SAVE_SLOT_SIZE] = image[MAIN_OFS..MAIN_OFS + SAVE_SLOT_SIZE].try_into().ok()?;
     let backup: &[u8; SAVE_SLOT_SIZE] = image[BACKUP_OFS..BACKUP_OFS + SAVE_SLOT_SIZE].try_into().ok()?;
     let st = check_broken_land(main, backup, land_id);
     if !st.needs_repair() {
         return None;
     }
-    let mut out = *image;
+    // Boxed: a 0x72000-byte image does not belong on the caller's stack.
+    let mut out = Box::new(*image);
     match (st.ok, st.broken) {
         (Some(SaveSlot::Main), Some(SaveSlot::Backup)) => {
             out[BACKUP_OFS..BACKUP_OFS + SAVE_SLOT_SIZE].copy_from_slice(main)
@@ -443,8 +444,9 @@ pub fn build_land_image(
     misc: &[u8; SAVE_SLOT_SIZE],
     main: &[u8; SAVE_SLOT_SIZE],
     backup: &[u8; SAVE_SLOT_SIZE],
-) -> [u8; LAND_FILE_SIZE] {
-    let mut out = [0u8; LAND_FILE_SIZE];
+) -> Box<[u8; LAND_FILE_SIZE]> {
+    // Boxed: a 0x72000-byte image does not belong on the caller's stack.
+    let mut out = Box::new([0u8; LAND_FILE_SIZE]);
     out[MISC_OFS..MISC_OFS + SAVE_SLOT_SIZE].copy_from_slice(misc);
     out[MAIN_OFS..MAIN_OFS + SAVE_SLOT_SIZE].copy_from_slice(main);
     out[BACKUP_OFS..BACKUP_OFS + SAVE_SLOT_SIZE].copy_from_slice(backup);
@@ -646,18 +648,18 @@ mod tests {
 
     #[test]
     fn repair_copies_good_over_broken() {
-        let good = good_slot();
-        let mut bad = good;
+        let good = Box::new(good_slot());
+        let mut bad = good.clone();
         bad[0x300] ^= 0x04;
-        let misc = [0u8; SAVE_SLOT_SIZE];
+        let misc = Box::new([0u8; SAVE_SLOT_SIZE]);
         let image = build_land_image(&misc, &good, &bad);
         let repaired = repair_land(&image, land_id()).expect("should repair");
         let back: &[u8; SAVE_SLOT_SIZE] = repaired[BACKUP_OFS..BACKUP_OFS + SAVE_SLOT_SIZE]
             .try_into()
             .unwrap();
-        assert_eq!(back, &good);
+        assert_eq!(back, &good[..]);
         // Misc region untouched.
-        assert_eq!(&repaired[..SAVE_SLOT_SIZE], &misc);
+        assert_eq!(&repaired[..SAVE_SLOT_SIZE], &misc[..]);
     }
 
     #[test]
@@ -730,13 +732,13 @@ mod tests {
 
     #[test]
     fn build_land_image_layout() {
-        let misc = [0x11u8; SAVE_SLOT_SIZE];
-        let main = good_slot();
-        let backup = good_slot();
+        let misc = Box::new([0x11u8; SAVE_SLOT_SIZE]);
+        let main = Box::new(good_slot());
+        let backup = Box::new(good_slot());
         let image = build_land_image(&misc, &main, &backup);
         assert_eq!(image.len(), LAND_FILE_SIZE);
-        assert_eq!(&image[MISC_OFS..MISC_OFS + SAVE_SLOT_SIZE], &misc);
-        assert_eq!(&image[MAIN_OFS..MAIN_OFS + SAVE_SLOT_SIZE], &main);
-        assert_eq!(&image[BACKUP_OFS..BACKUP_OFS + SAVE_SLOT_SIZE], &backup);
+        assert_eq!(&image[MISC_OFS..MISC_OFS + SAVE_SLOT_SIZE], &misc[..]);
+        assert_eq!(&image[MAIN_OFS..MAIN_OFS + SAVE_SLOT_SIZE], &main[..]);
+        assert_eq!(&image[BACKUP_OFS..BACKUP_OFS + SAVE_SLOT_SIZE], &backup[..]);
     }
 }

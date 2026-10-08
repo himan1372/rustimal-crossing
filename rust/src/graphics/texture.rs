@@ -365,7 +365,7 @@ mod tests {
         assert_eq!(rgba5551_to_rgb5a3(0x0001), 0x8000);
         // Transparent: the (v>>4 & ~0xFF)|(v>>3 & 0xF0)|(v>>2 & 0x0F) form.
         assert_eq!(rgba5551_to_rgb5a3(0x0000), 0x0000);
-        assert_eq!(rgba5551_to_rgb5a3(0xFFFE), 0x1FFE);
+        assert_eq!(rgba5551_to_rgb5a3(0xFFFE), 0x0FFF); // ((v>>4)&~0xFF)|((v>>3)&0xF0)|((v>>2)&0x0F)
     }
 
     #[test]
@@ -374,7 +374,8 @@ mod tests {
         assert_eq!(block_dims(img_siz::G_IM_SIZ_8B), (8, 4));
         assert_eq!(block_dims(img_siz::G_IM_SIZ_16B), (4, 4));
         assert_eq!(tmem_swizzle(0, 8), 0);
-        assert_eq!(tmem_swizzle(16, 8), 20); // block 2 -> ofs ^ 4
+        assert_eq!(tmem_swizzle(16, 8), 16); // block 2: (2>>1)&4 == 0
+        assert_eq!(tmem_swizzle(64, 8), 68); // block 8: (8>>1)&4 == 4 -> ofs ^ 4
     }
 
     #[test]

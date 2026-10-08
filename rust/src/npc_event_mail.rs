@@ -880,7 +880,9 @@ mod tests {
         // Low friendship opposite-sex best -> NOT_FRIEND.
         let mut low = memories;
         low[0].friendship = 10;
-        assert_eq!(classify_event_friend(&low, Some(2), 0), Some((0, EventMailType::NotFriend)));
+        // With player 0 lowered to 10, the top opposite-sex friend is now
+        // player 1 (index 1, friendship 50 < 80) -> NOT_FRIEND.
+        assert_eq!(classify_event_friend(&low, Some(2), 0), Some((1, EventMailType::NotFriend)));
         // No opposite-sex friend -> None.
         let none: [MemoryEntry; 7] = [mem(0, 0, 10), mem(1, 0, 10), mem(2, 0, 10), mem(3, 0, 10),
                                      mem(4, 0, 10), mem(5, 0, 10), mem(6, 0, 10)];
