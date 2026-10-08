@@ -52,8 +52,15 @@ pub enum Patience {
     Normal = 2,
 }
 
-/// Per-feel temper: (unlock_timer, over_impatient_num, talk_num_max),
-/// verbatim from `l_npc_temper` in `m_npc.c`.
+/// Temper table, verbatim from `l_npc_temper` in `m_npc.c`.
+///
+/// Retail quirk (preserved): the table is *declared* per-feeling
+/// (`[mNpc_FEEL_NUM]`), but every user — `mNpc_GetOverImpatient`,
+/// `mNpc_CountTalkNum`, `mNpc_SetUnlockTimer`, `mNpc_TalkEndMove` —
+/// indexes it by `looks` (personality, bounds-checked against
+/// `mNpc_LOOKS_NUM`). So a peppy villager (looks 1) gets the Happy row,
+/// a jock (looks 3) gets the Sad row, etc. Index by personality, not
+/// by feeling.
 pub const TEMPER_TABLE: [(u16, u8, u8); FEEL_NUM] = [
     (4000, 12, 15), // Normal
     (3000, 10, 13), // Happy
@@ -80,8 +87,8 @@ impl TalkInfo {
 
     /// Count one conversation (`mNpc_CountTalkNum`). Returns false when
     /// the villager has hit the talk cap.
-    pub fn count_talk(&mut self, feel: Feel) -> bool {
-        let (_, _, talk_num_max) = TEMPER_TABLE[feel as usize % FEEL_NUM];
+    pub fn count_talk(&mut self, looks: usize) -> bool {
+        let (_, _, talk_num_max) = TEMPER_TABLE[looks.min(FEEL_NUM - 1)];
         if self.talk_num < talk_num_max && self.timer > 0 {
             self.talk_num += 1;
             true
@@ -90,9 +97,9 @@ impl TalkInfo {
         }
     }
 
-    /// Patience level (`mNpc_GetOverImpatient`).
-    pub fn patience(&self, feel: Feel) -> Patience {
-        let (_, over_impatient, talk_num_max) = TEMPER_TABLE[feel as usize % FEEL_NUM];
+    /// Patience level (`mNpc_GetOverImpatient(animal_idx, looks)`).
+    pub fn patience(&self, looks: usize) -> Patience {
+        let (_, over_impatient, talk_num_max) = TEMPER_TABLE[looks.min(FEEL_NUM - 1)];
         if self.talk_num >= talk_num_max {
             Patience::Annoyed // refuse to talk
         } else if self.talk_num >= over_impatient {
@@ -102,8 +109,8 @@ impl TalkInfo {
         }
     }
 
-    pub fn over_impatient(&self, feel: Feel) -> bool {
-        let (_, over_impatient, _) = TEMPER_TABLE[feel as usize % FEEL_NUM];
+    pub fn over_impatient(&self, looks: usize) -> bool {
+        let (_, over_impatient, _) = TEMPER_TABLE[looks.min(FEEL_NUM - 1)];
         self.talk_num >= over_impatient
     }
 }
@@ -213,18 +220,17 @@ impl InteractionContext {
 
 /// C ABI: patience level for a villager (0 = mildly annoyed,
 /// 1 = annoyed/refuse, 2 = normal).
+///
+/// Mirrors `mNpc_GetOverImpatient(animal_idx, looks)`: `talk_num` is the
+/// already-current `l_npc_talk_info[animal_idx].talk_num` (C owns the
+/// `mNpc_CountTalkNum` mutation and its timer gate), and `looks` is the
+/// personality — retail indexes the temper table by personality, not by
+/// feeling (see `TEMPER_TABLE`). Do not use this to replace
+/// `mNpc_CountTalkNum`.
 #[no_mangle]
-pub extern "C" fn pc_npc_patience(talk_num: u8, feel: u8) -> u8 {
+pub extern "C" fn pc_npc_patience(talk_num: u8, looks: u8) -> u8 {
     let info = TalkInfo { talk_num, ..TalkInfo::default() };
-    let feel = match feel {
-        0 => Feel::Normal,
-        1 => Feel::Happy,
-        2 => Feel::Angry,
-        3 => Feel::Sad,
-        4 => Feel::Sleepy,
-        _ => Feel::Pitfall,
-    };
-    info.patience(feel) as u8
+    info.patience(looks as usize) as u8
 }
 
 #[cfg(test)]
@@ -242,35 +248,38 @@ mod tests {
     fn talk_frequency_drives_patience() {
         let mut info = TalkInfo::new();
         info.timer = 100;
-        // Normal villager: impatient at 12, refuses at 15.
+        // looks 0 (normal personality) -> table row 0: impatient at 12,
+        // refuses at 15.
         for _ in 0..12 {
-            assert!(info.count_talk(Feel::Normal));
+            assert!(info.count_talk(0));
         }
-        assert_eq!(info.patience(Feel::Normal), Patience::MildlyAnnoyed);
-        assert!(info.over_impatient(Feel::Normal));
+        assert_eq!(info.patience(0), Patience::MildlyAnnoyed);
+        assert!(info.over_impatient(0));
         for _ in 0..3 {
-            assert!(info.count_talk(Feel::Normal));
+            assert!(info.count_talk(0));
         }
-        assert_eq!(info.patience(Feel::Normal), Patience::Annoyed);
+        assert_eq!(info.patience(0), Patience::Annoyed);
         // Cap reached: further talks rejected.
-        assert!(!info.count_talk(Feel::Normal));
+        assert!(!info.count_talk(0));
     }
 
     #[test]
-    fn happy_villagers_lose_patience_faster() {
+    fn peppy_villagers_lose_patience_faster() {
+        // Retail quirk: looks 1 (peppy) indexes the Happy temper row
+        // {3000, 10, 13}, so peppy villagers lose patience faster.
         let mut info = TalkInfo::new();
         info.timer = 100;
         for _ in 0..10 {
-            info.count_talk(Feel::Happy);
+            info.count_talk(1);
         }
-        assert_eq!(info.patience(Feel::Happy), Patience::MildlyAnnoyed);
-        // Same count would still be normal for a normal-feel villager.
+        assert_eq!(info.patience(1), Patience::MildlyAnnoyed);
+        // Same count would still be normal for looks 0 (row {4000,12,15}).
         let mut other = TalkInfo::new();
         other.timer = 100;
         for _ in 0..10 {
-            other.count_talk(Feel::Normal);
+            other.count_talk(0);
         }
-        assert_eq!(other.patience(Feel::Normal), Patience::Normal);
+        assert_eq!(other.patience(0), Patience::Normal);
     }
 
     #[test]

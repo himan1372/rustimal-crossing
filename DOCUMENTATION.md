@@ -2555,3 +2555,67 @@ Linux support uses POSIX equivalents: `mmap()` instead of `VirtualAlloc()`, `mkd
 - **`#included .c` files**: emu64_utility.c, emu64_print.cpp, jsyswrapper_ext.cpp, jsyswrapper_main.cpp, ac_animal_logo_misc.c, m_item_debug.c, ac_npc_shop_common.c — these are compiled as part of their parent file, not standalone.
 - **Title demo OOB**: `demo_npc_list` has 14 valid entries but `mNpc_SetAnimalTitleDemo` loops 15 times. On GC, the garbage 15th read was benign; on PC it produced invalid NPC `looks` → OOB crash in wander logic. Fixed with sentinel entry, slot clearing, and looks clamp.
 - **EFB-copied textures are LE**: ROM textures are BE, but EFB copies are generated in LE on PC. Texture decoder endianness fixes must not break EFB copies.
+
+## Wave 2: C-struct boundary corrections (2026-10-08)
+
+Research brief + independent verification against the USA Rev. 0 decomp
+(`acgc-upstream`). Rule established: **Rust almost never owns the retail
+RNG call** — C does `r = RANDOM(n)` and passes the bounded value (or a
+callback) into the Rust kernel. Verified verbatim against decomp sources:
+
+- `aQMgr_decide_idx_prob_table` (`ac_quest_talk_normal_init.c:176`):
+  100-entry table, 30x `RANDOM(100)` swap pairs, final `RANDOM(100)`
+  pick — 61 RNG calls, not a weighted selector.
+- Mail-receive friendship (`m_npc.c`): `+3`, `-5` if BAD rank, `+3` if
+  present → good/+3, good+present/+6, bad/-2, bad+present/+1.
+- `mQst_GetGoods_common` (`m_quest.c:926`): `RANDOM(10)` furniture
+  branch, exactly as the brief described.
+- `mFI_LineDepositON/OFF`, `mFI_GetLineDeposit` (`m_field_info.c`):
+  operate on a `u16*` row pointer + `ut_x` bit ops.
+- `game_get_next_game_dlftbl` (`graph.c:81`): init-function-pointer
+  comparison chain, not a scene-ID lookup.
+- Shop thresholds (`m_shop.h`): 25000 / 90000 / 240000.
+- Wander borders (`ac_npc_think_wander.c_inc:80-86`): girl {3,6},
+  ko-girl {6,8}, boy {5,7}, sport-man {2,4}, grim-man {3,6},
+  naniwa {4,8} — match the Rust tables.
+- `aNPC_chk_avoid_and_search` (`ac_npc_move.c_inc:505`): same-block
+  gate, `*friendship + over_friendship`, `< 0` avoid, `> 128` search.
+- `mNpc_GetOverImpatient` / `mNpc_TalkEndMove` (`m_npc.c`): the
+  `l_npc_temper` table is declared per-feeling but indexed by `looks`
+  (personality) — a genuine retail quirk, now preserved.
+
+Corrections applied to the Rust code:
+
+- `request_selector.rs`: `pick_random_eligible` takes `&[u8]`
+  (nonzero = eligible) — no `Vec<bool>` allocation across the FFI
+  boundary. `decide_idx_prob_table` now runs the verbatim retail
+  shuffle, delegating to `talk_topics`'s shared implementation; the
+  RNG arrives as a C callback (`Option<extern "C" fn(u32) -> u32>`,
+  61 calls in retail order) because retail `RANDOM` is a macro — C
+  passes a 3-line wrapper. **ABI change** on `pc_request_dispatch`
+  (was `(probs, n, roll)`); nothing is wired yet.
+- `behavior.rs`: `letter_friendship_delta(good, present)` implements
+  the retail `+3 / -5 / +3` formula; the `m_quest.h`
+  `LETTER_SCORE_BONUS`/`LETTER_PRESENT_BONUS` constants belong to the
+  quest-*rank* path (`m_quest.c:660`), not friendship — the old code
+  conflated the two systems.
+- `player_move.rs`: `0.01f32` is already bit-identical to retail's
+  `0.01f` (0x3C23D70A); the brief's `0.0099999998f` is the same float
+  printed in exact decimal — no change, documented so nobody
+  "fixes" it. `pc_locomotion_core` documented as a classification
+  helper, not a movement replacement.
+- `buried_items.rs`: added `pc_buried_line_get/set/clear` — the exact
+  retail row-pointer boundary; the whole-array variants are marked as
+  rewrite-side convenience, not the retail boundary.
+- `interaction.rs`: temper table now indexed by `looks` (personality)
+  per the retail quirk; `pc_npc_patience(talk_num, looks)`.
+- `item_prefs.rs`: `select_reward_furniture` takes an already-bounded
+  `selected_index` (`RANDOM(n)` from C), not an unbounded RNG word.
+- `scene.rs`, `npc.rs`, `collision.rs`, `town_gen.rs`: boundary
+  documentation — pointer scan stays in C, `saved_type` bridge,
+  sub-operation scope, and `TownPlan` not replacing
+  `mRF_MakeRandomField`.
+
+Not changed (brief items for Philip's C tree, not this repo):
+CMake Rust-dependency list, the actual `#ifdef USE_RUST` C rewires,
+`PcPlayerMoveState` struct bridge (Wave 2D).

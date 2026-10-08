@@ -319,7 +319,49 @@ pub fn can_bury_item(item: u16) -> bool {
     true
 }
 
+/// C ABI: read the buried bit for tile `ut_x` of a deposit *row*.
+///
+/// This is the exact retail boundary (`mFI_GetLineDeposit(u16*
+/// deposit, int ut_x)`): C passes `mFI_GetDepositP(bx, bz) + ut_z`
+/// directly, so no block/line arithmetic happens here. Returns 1 when
+/// buried, else 0.
+#[no_mangle]
+pub extern "C" fn pc_buried_line_get(line: *const u16, ut_x: u8) -> i32 {
+    if line.is_null() || (ut_x as usize) >= UT_X_NUM {
+        return 0;
+    }
+    i32::from(line_deposit_get(unsafe { *line }, ut_x))
+}
+
+/// C ABI: set the buried bit for tile `ut_x` of a deposit *row*
+/// (mirrors `mFI_LineDepositON`).
+#[no_mangle]
+pub extern "C" fn pc_buried_line_set(line: *mut u16, ut_x: u8) {
+    if line.is_null() || (ut_x as usize) >= UT_X_NUM {
+        return;
+    }
+    unsafe {
+        line_deposit_on(&mut *line, ut_x);
+    }
+}
+
+/// C ABI: clear the buried bit for tile `ut_x` of a deposit *row*
+/// (mirrors `mFI_LineDepositOFF`).
+#[no_mangle]
+pub extern "C" fn pc_buried_line_clear(line: *mut u16, ut_x: u8) {
+    if line.is_null() || (ut_x as usize) >= UT_X_NUM {
+        return;
+    }
+    unsafe {
+        line_deposit_off(&mut *line, ut_x);
+    }
+}
+
 /// C ABI: read the buried bit for a tile. Returns 1 when buried, else 0.
+///
+/// Rewrite-side convenience: takes the whole deposit array and does
+/// the block/line indexing itself. This is NOT the retail boundary —
+/// wire `pc_buried_line_get` instead (see above).
 #[no_mangle]
 pub extern "C" fn pc_buried_get(bx: u8, bz: u8, ut_x: u8, ut_z: u8, deposit: *const u16) -> i32 {
     if deposit.is_null() {

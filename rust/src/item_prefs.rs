@@ -70,15 +70,17 @@ pub const HOUSE_SCAN_W: usize = 10;
 pub const HOUSE_SCAN_H: usize = 10;
 
 /// Select the NPC-associated furniture: count eligible furniture in
-/// the 10x10 region, then pick the one at `rng_index % eligible_count`
+/// the 10x10 region, then pick the one at `selected_index`
 /// (`num = RANDOM(num)` in `mNpc_DecideNpcFurniture`).
 ///
 /// `is_furniture` / `excluded` classify each grid cell; cells with
-/// `EMPTY_NO` are skipped.
+/// `EMPTY_NO` are skipped. `selected_index` is the already-bounded
+/// `RANDOM(n)` value from C — never pass an unbounded RNG word and
+/// rely on `% n` here.
 pub fn select_reward_furniture(
     items: &[[u16; HOUSE_SCAN_W]; HOUSE_SCAN_H],
     classify: &dyn Fn(u16) -> (bool, Option<ExcludedFurniture>),
-    rng_index: u32,
+    selected_index: u32,
 ) -> u16 {
     let mut eligible = [0u16; HOUSE_SCAN_W * HOUSE_SCAN_H];
     let mut n = 0usize;
@@ -97,7 +99,10 @@ pub fn select_reward_furniture(
     if n == 0 {
         return 0;
     }
-    eligible[(rng_index as usize) % n]
+    // `selected_index` must already be bounded: C passes `RANDOM(n)`
+    // (retail `num = RANDOM(num)`), not an unbounded RNG word, so no
+    // modulo is applied here.
+    eligible[(selected_index as usize) % n]
 }
 
 /// Where a furniture "good" comes from (`mQst_GetGoods_common`).

@@ -30,8 +30,11 @@
 //! catchphrase, memories), which is why moved villagers remember their
 //! former town.
 //!
-//! Letter consequences (`m_quest.h`): `mQst_LETTER_SCORE_BONUS` (3) for a
-//! good score, `mQst_LETTER_PRESENT_BONUS` (6) for an attached present.
+//! Letter friendship consequences (`m_npc.c`, mail-receive path): every
+//! letter starts at +3; a BAD rank applies -5; an attached present adds
+//! +3. (The `m_quest.h` `mQst_LETTER_SCORE_BONUS` (3) /
+//! `mQst_LETTER_PRESENT_BONUS` (6) constants belong to the quest *rank*
+//! calculation in `m_quest.c`, not to this friendship delta.)
 //!
 //! Rewrite-owned: the visible mood names (Normal/Happy/Angry/Sad) come
 //! from contemporary player documentation; the decomp tracks mood as an
@@ -339,16 +342,9 @@ impl VillagerBehavior {
         action
     }
 
-    /// Apply letter consequences: score bonus and present bonus from
-    /// `m_quest.h`, clamped to the 0..=127 friendship range.
+    /// Apply letter consequences, clamped to the 0..=127 friendship range.
     pub fn apply_letter(&mut self, good_score: bool, present: bool) {
-        let mut delta: i16 = 0;
-        if good_score {
-            delta += super::LETTER_SCORE_BONUS as i16;
-        }
-        if present {
-            delta += super::LETTER_PRESENT_BONUS as i16;
-        }
+        let delta = letter_friendship_delta(good_score, present) as i16;
         self.friendship = (self.friendship + delta).clamp(0, 127);
     }
 
@@ -417,17 +413,33 @@ pub struct TransferRecord {
     pub former_town_name: [u8; 8],
 }
 
-/// C ABI: friendship delta for a letter (score bonus + present bonus).
+/// Friendship delta for a received letter, verbatim from the retail
+/// mail-receive path (`m_npc.c`):
+/// ```text
+/// friendship += 3;
+/// if (letter_rank == mNpc_LETTER_RANK_BAD) { friendship += -5; }
+/// if (mail->present != EMPTY_NO) { friendship += 3; }
+/// ```
+/// So good/no-present = +3, good/present = +6, bad/no-present = -2,
+/// bad/present = +1. C passes `memory->letter_info.cond ==
+/// mNpc_LETTER_RANK_OK` as `good` and `mail->present != EMPTY_NO` as
+/// `present`; the `mNpc_AddFriendship` call itself stays C-side.
+pub fn letter_friendship_delta(good: bool, present: bool) -> i32 {
+    let mut delta = 3;
+    if !good {
+        delta -= 5;
+    }
+    if present {
+        delta += 3;
+    }
+    delta
+}
+
+/// C ABI: friendship delta for a received letter (see
+/// [`letter_friendship_delta`]).
 #[no_mangle]
-pub extern "C" fn pc_letter_friendship_delta(good_score: u8, present: u8) -> i32 {
-    let mut d = 0;
-    if good_score != 0 {
-        d += super::LETTER_SCORE_BONUS as i32;
-    }
-    if present != 0 {
-        d += super::LETTER_PRESENT_BONUS as i32;
-    }
-    d
+pub extern "C" fn pc_letter_friendship_delta(good: u8, present: u8) -> i32 {
+    letter_friendship_delta(good != 0, present != 0)
 }
 
 #[cfg(test)]

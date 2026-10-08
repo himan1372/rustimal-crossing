@@ -56,6 +56,9 @@ pub struct ControllerMove {
 /// Turn coefficient from stick magnitude, mirroring
 /// `Player_actor_Movement_Walk`'s `mod` computation.
 pub fn turn_mod(move_pr: f32) -> f32 {
+    // NOTE: retail writes `0.01f`; some decompilers print the exact
+    // decimal expansion `0.0099999998f`. Both are the same f32
+    // (0x3C23D70A) — `0.01f32` here is already bit-identical.
     if move_pr >= 1.0 {
         0.5
     } else if move_pr <= 0.05 {
@@ -193,7 +196,15 @@ pub extern "C" fn pc_turn_mod(move_pr: f32) -> f32 {
     turn_mod(move_pr)
 }
 
-/// C ABI: locomotion movement core (0 = wait, 1 = walk, 2 = run, 3 = dash).
+/// C ABI: locomotion *state classification* helper (0 = wait, 1 = walk,
+/// 2 = run, 3 = dash).
+///
+/// This is NOT a replacement for `Player_actor_Movement_Walk` (or any
+/// retail movement routine): retail's walk frame also does reinput
+/// force-position/angle, animation calc + search, lean angle, object
+/// check, BG check, item handling, and the proc-index request. Do not
+/// wire this as the movement core; the real Wave 2 bridge will be a
+/// `#[repr(C)]` player-move state struct passed to a fuller kernel.
 #[no_mangle]
 pub extern "C" fn pc_locomotion_core(state: u8) -> u8 {
     let s = match state {

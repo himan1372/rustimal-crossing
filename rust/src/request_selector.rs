@@ -76,19 +76,19 @@ pub struct CarriedItem {
 /// sel-th eligible one. Returns the pocket index and the item.
 pub fn pick_random_eligible(
     pockets: &[u16],
-    eligible: &[bool],
+    eligible: &[u8],
     rng_value: u32,
 ) -> Option<CarriedItem> {
     if pockets.len() != eligible.len() || pockets.is_empty() {
         return None;
     }
-    let count = eligible.iter().filter(|&&e| e).count();
+    let count = eligible.iter().filter(|&&e| e != 0).count();
     if count == 0 || count > pockets.len() {
         return None;
     }
     let mut sel = (rng_value % count as u32) as usize;
     for (i, (&item, &e)) in pockets.iter().zip(eligible.iter()).enumerate() {
-        if e {
+        if e != 0 {
             if sel == 0 {
                 return Some(CarriedItem { pocket_idx: i, item });
             }
@@ -100,12 +100,12 @@ pub fn pick_random_eligible(
 
 /// First-match possession check (`aQMgr_get_possession_ftr_cpt_wl` and
 /// friends): the first eligible pocket, or `None`.
-pub fn pick_first_eligible(pockets: &[u16], eligible: &[bool]) -> Option<CarriedItem> {
+pub fn pick_first_eligible(pockets: &[u16], eligible: &[u8]) -> Option<CarriedItem> {
     pockets
         .iter()
         .zip(eligible.iter())
         .enumerate()
-        .find(|(_, (&_, &e))| e)
+        .find(|(_, (&_, &e))| e != 0)
         .map(|(i, (&item, _))| CarriedItem { pocket_idx: i, item })
 }
 
@@ -124,22 +124,24 @@ pub fn decide_msg_check_possession(
     Some((msg, c.pocket_idx))
 }
 
-/// Weighted message dispatch (`aQMgr_decide_idx_prob_table`): pick the
-/// first table entry whose cumulative weight exceeds the roll.
-pub fn decide_idx_prob_table(probs: &[u8], roll: u32) -> Option<usize> {
-    let total: u32 = probs.iter().map(|&p| p as u32).sum();
-    if total == 0 {
+/// Probability-table dispatch (`aQMgr_decide_idx_prob_table`), verbatim
+/// retail algorithm: build the 100-entry table from the weights, swap
+/// two `rng(100)` entries 30 times, then return `table[rng(100)]`.
+///
+/// The RNG stays on the C side: retail's `RANDOM(n)` is
+/// `((int)(fqrand() * (f32)(n)))`, a macro, so C passes a tiny wrapper
+/// (`static u32 pc_rng(u32 n) { return (u32)RANDOM(n); }`) as the
+/// callback. The 61-call RNG stream (`30*2 + 1`) is then exactly
+/// retail's. Delegates to the shared implementation in `talk_topics`
+/// so the two call sites cannot diverge.
+pub fn decide_idx_prob_table(
+    probs: &[u8],
+    rng: &mut dyn FnMut(u32) -> u32,
+) -> Option<usize> {
+    if probs.is_empty() {
         return None;
     }
-    let mut r = roll % total;
-    for (i, &p) in probs.iter().enumerate() {
-        let w = p as u32;
-        if r < w {
-            return Some(i);
-        }
-        r -= w;
-    }
-    None
+    Some(crate::talk_topics::decide_idx_prob_table(probs, rng))
 }
 
 /// The trade message set's verbatim weights (`l_trade_prob`).
@@ -198,6 +200,8 @@ pub fn build_trade_offer(
 
 /// C ABI: uniform-random pick among eligible carried items; returns
 /// the pocket index or -1. `eligible[i]` nonzero = pocket i eligible.
+/// `rng_value` must already be `RANDOM(eligible_count)` from C; this
+/// kernel never calls the RNG itself and never allocates.
 #[no_mangle]
 pub extern "C" fn pc_request_pick_carried(
     pockets: *const u16,
@@ -210,20 +214,30 @@ pub extern "C" fn pc_request_pick_carried(
     }
     let p = unsafe { core::slice::from_raw_parts(pockets, count) };
     let e = unsafe { core::slice::from_raw_parts(eligible, count) };
-    let elig: Vec<bool> = e.iter().map(|&b| b != 0).collect();
-    pick_random_eligible(p, &elig, rng_value)
+    pick_random_eligible(p, e, rng_value)
         .map(|c| c.pocket_idx as i32)
         .unwrap_or(-1)
 }
 
-/// C ABI: weighted message dispatch; returns the chosen index or -1.
+/// C ABI: probability-table message dispatch; returns the chosen index
+/// or -1. `rng` is C's RNG callback (retail `RANDOM` is a macro, so C
+/// passes e.g. `static u32 pc_rng(u32 n) { return (u32)RANDOM(n); }`);
+/// the kernel consumes exactly 61 `rng(100)` calls in retail order.
 #[no_mangle]
-pub extern "C" fn pc_request_dispatch(probs: *const u8, n: usize, roll: u32) -> i32 {
+pub extern "C" fn pc_request_dispatch(
+    probs: *const u8,
+    n: usize,
+    rng: Option<extern "C" fn(u32) -> u32>,
+) -> i32 {
     if probs.is_null() || n == 0 {
         return -1;
     }
+    let Some(rng_cb) = rng else {
+        return -1;
+    };
     let p = unsafe { core::slice::from_raw_parts(probs, n) };
-    decide_idx_prob_table(p, roll).map(|i| i as i32).unwrap_or(-1)
+    let mut cb = move |bound: u32| rng_cb(bound);
+    decide_idx_prob_table(p, &mut cb).map(|i| i as i32).unwrap_or(-1)
 }
 
 #[cfg(test)]
@@ -233,7 +247,7 @@ mod tests {
     #[test]
     fn uniform_pick_over_eligible_items() {
         let pockets = [10u16, 20, 30, 40, 50];
-        let eligible = [false, true, false, true, true];
+        let eligible = [0u8, 1, 0, 1, 1];
         // 3 eligible; rng 0 -> first eligible (pocket 1).
         assert_eq!(
             pick_random_eligible(&pockets, &eligible, 0),
@@ -251,7 +265,7 @@ mod tests {
         );
         // No eligible -> None.
         assert_eq!(
-            pick_random_eligible(&pockets, &[false; 5], 0),
+            pick_random_eligible(&pockets, &[0u8; 5], 0),
             None
         );
     }
@@ -277,14 +291,43 @@ mod tests {
 
     #[test]
     fn prob_table_dispatch() {
-        // {49,17,17,17}: roll 0 -> 0; roll 49 -> 1; roll 99 -> 3.
-        assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, 0), Some(0));
-        assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, 48), Some(0));
-        assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, 49), Some(1));
-        assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, 99), Some(3));
-        // Equal 25s: roll 75 -> 3.
-        assert_eq!(decide_idx_prob_table(&TRADE_PROBS, 75), Some(3));
-        assert_eq!(decide_idx_prob_table(&[], 0), None);
+        // Scripted RNG: exactly the 61 values retail consumes.
+        fn scripted(mut seq: Vec<u32>) -> impl FnMut(u32) -> u32 {
+            seq.reverse();
+            move |bound| seq.pop().unwrap_or(0) % bound.max(1)
+        }
+        // All identity swaps, final pick 0 -> table[0] = entry 0.
+        let mut rng = scripted(vec![0; 61]);
+        assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, &mut rng), Some(0));
+        // Identity swaps, final pick 49 -> still entry 0
+        // (weights {49,17,17,17} fill table[0..49] with 0).
+        let mut seq = vec![0; 60];
+        seq.push(49);
+        let mut rng = scripted(seq);
+        assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, &mut rng), Some(0));
+        // Identity swaps, final pick 50 -> entry 1.
+        let mut seq = vec![0; 60];
+        seq.push(50);
+        let mut rng = scripted(seq);
+        assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, &mut rng), Some(1));
+        // One real swap: exchange positions 0 and 50 (table[50] = 1),
+        // then pick 0 -> entry 1.
+        let mut seq = vec![0, 50];
+        seq.extend(vec![0; 58]);
+        seq.push(0);
+        let mut rng = scripted(seq);
+        assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, &mut rng), Some(1));
+        // Empty table -> None (no RNG consumed).
+        let mut rng = scripted(vec![0; 61]);
+        assert_eq!(decide_idx_prob_table(&[], &mut rng), None);
+        // Exactly 61 RNG calls for a non-empty table.
+        let mut calls = 0u32;
+        let mut rng = |bound: u32| {
+            calls += 1;
+            0 % bound
+        };
+        let _ = decide_idx_prob_table(&TRADE_PROBS, &mut rng);
+        assert_eq!(calls, 61);
     }
 
     #[test]

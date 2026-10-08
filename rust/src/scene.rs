@@ -247,11 +247,19 @@ pub static BOOT_CHAIN: [(BootStage, bool); 11] = [
     (BootStage::GraphProc, false),
 ];
 
-/// C ABI: table index for a scene id, or -1 for the removed slot/unknown.
-/// Mirrors `game_get_next_game_dlftbl`'s index mapping.
+/// C ABI: validate a `game_dlftbls` table index; returns the index, or
+/// -1 for the removed/NULL slot (4) or anything out of range.
+///
+/// This is the table's *static index mapping* only. It is NOT a
+/// replacement for `game_get_next_game_dlftbl`: retail resolves the
+/// index by comparing the next scene's *init function pointer*
+/// against the table (`ARE_INIT_PROCS_EQUAL(next_game_init_proc,
+/// *_init)`), and that pointer scan must stay in C — Rust cannot name
+/// the C init symbols. C does the pointer chain, then uses this to
+/// validate/classify the resulting index.
 #[no_mangle]
-pub extern "C" fn pc_scene_table_index(scene_id: u8) -> i32 {
-    match SceneId::from_table_index(scene_id as usize) {
+pub extern "C" fn pc_scene_table_index(table_index: u8) -> i32 {
+    match SceneId::from_table_index(table_index as usize) {
         Some(id) => id.table_index() as i32,
         None => -1,
     }

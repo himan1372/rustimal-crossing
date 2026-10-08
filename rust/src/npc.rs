@@ -473,8 +473,15 @@ impl NpcActor {
     }
 }
 
-/// C ABI: schedule state for a personality (`mNpc_LOOKS_*` index) at
-/// `seconds` past midnight. Returns 255 for an unknown personality.
+/// C ABI: base schedule state for a personality (`mNpc_LOOKS_*` index)
+/// at `seconds` past midnight. Returns 255 for an unknown personality.
+///
+/// This computes only the *base personality schedule* (the
+/// `SCHEDULE_TABLES` lookup). It is the correct value for
+/// `schedule->saved_type`, but it is NOT `mNPS_schedule_manager()`:
+/// C must retain `forced_timer`/`forced_type`/`current_type` and the
+/// global overrides (`mEv_CheckFirstJob`, Halloween), which can force
+/// every animal to FIELD.
 #[no_mangle]
 pub extern "C" fn pc_npc_schedule_state(looks: u8, seconds: u32) -> u8 {
     match Personality::from_looks(looks) {
@@ -483,7 +490,14 @@ pub extern "C" fn pc_npc_schedule_state(looks: u8, seconds: u32) -> u8 {
     }
 }
 
-/// C ABI: 1 when the personality is asleep at `seconds`, else 0.
+/// C ABI: 1 when the personality's *base schedule* is asleep at
+/// `seconds`, else 0.
+///
+/// Answers "is this personality's base schedule currently sleep" —
+/// it is NOT the actor's sleep state, which also depends on
+/// `current_type`/`forced_type`/`saved_type` imposed by the scheduler.
+/// Do not use this as a replacement for actor schedule state; prefer
+/// `pc_npc_schedule_state` for the `saved_type` bridge.
 #[no_mangle]
 pub extern "C" fn pc_npc_is_asleep(looks: u8, seconds: u32) -> i32 {
     match Personality::from_looks(looks) {

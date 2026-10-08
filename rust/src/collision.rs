@@ -300,13 +300,25 @@ pub fn sphere_overlap(
     }
 }
 
-/// C ABI: neighborhood size for an actor range.
+/// C ABI: neighborhood size for an actor range (<= 40 -> 3x3,
+/// <= 80 -> 5x5, else 7x7).
+///
+/// This is a sub-operation of the background-collision machinery, not
+/// a replacement for `mCoBG_MakeSizeUnitInfo`, which additionally
+/// builds unit coordinates, bounds, UnitInfo records, collision data,
+/// foreground items, and geometry.
 #[no_mangle]
 pub extern "C" fn pc_collision_neighborhood(range: f32) -> u32 {
     neighborhood_size(range) as u32
 }
 
-/// C ABI: pack a unit collision record.
+/// C ABI: pack a unit collision record into the 32-bit
+/// `mCoBG_CollisionData_c` layout (bit 0 slate, bits 1-5 center,
+/// 6-10 top-left, 11-15 bottom-left, 16-20 bottom-right, 21-25
+/// top-right, 26-31 attribute).
+///
+/// Replaces only the packing operation, not `mCoBG_MakeUnitInfo` or
+/// the collision solver.
 #[no_mangle]
 pub extern "C" fn pc_collision_pack(
     slate: u8,

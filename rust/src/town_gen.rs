@@ -1277,6 +1277,16 @@ pub fn assess(plan: &TownPlan, trash_outside_dump: &[u16; ACRE_COUNT]) -> TownAs
 /// `candidate_ids` must point to `candidate_count` identifiers and `out_plan`
 /// must point to one writable `TownPlan`. IDs should already satisfy the
 /// caller's version-specific resident eligibility rules.
+///
+/// This is a Rust-side town-generation API over the rewrite-owned
+/// `TownPlan` format. It is NOT a replacement for retail
+/// `mRF_MakeRandomField` / `mRF_MakeRandomField_ovl`, which operate on
+/// `mFM_combination_c`, `mFM_combo_info_c`, block data, and live
+/// Common/Save field state with authored block/river/cliff tables.
+/// Wiring this into `mRF_MakeRandomField` would replace the retail
+/// generator with the Rust town model — a Wave 2/3 architectural
+/// migration, not a function-level shim. Do not wire until the
+/// `mFM_*` structures are translated or a C adapter reconstructs them.
 #[no_mangle]
 pub unsafe extern "C" fn pc_town_generate(
     seed: u32,
@@ -1307,6 +1317,13 @@ pub unsafe extern "C" fn pc_town_generate(
 
 /// Select one eligible candidate for each of the six initial look classes.
 /// Returns 0 if a class has no eligible candidate or an input pointer is null.
+///
+/// Do not wire into new-town initialization yet: the retail candidate
+/// pool derives from live NPC data and random-field init state, and the
+/// exact pipeline (candidate construction and ordering, exclusions,
+/// RNG source, draw count, duplicate rejection, personality
+/// restrictions, six-villager ordering) must be pinned down first or
+/// the RNG stream will diverge from retail.
 #[no_mangle]
 pub unsafe extern "C" fn pc_town_select_initial_villagers(
     seed: u32,
