@@ -1871,6 +1871,46 @@ The brief's claim-20 reading ("all four considered pending") is inverted.
 `HouseInfo`/`LeafletMailbox` carry the engine-owned save reads; 7 C ABI
 exports (`pc_leaflet_*`).
 
+### Runtime Port Progress: Mother-Mail Scheduler
+
+New `rust/src/mother_mail.rs`, verified against `src/game/m_private.c`,
+`include/m_private.h`, `include/m_common_data.h`,
+`src/game/m_start_data_init.c`, `include/m_mail.h`, and
+`src/game/m_event_schedule.c_inc` (GAFE01_00 Rev. 0).
+
+Per-player persistent scheduler in Save_t (`mother_mail[4]`, 14 bytes each:
+date Y/M/D + `normal[7]` + `monthly[2]` + `august`), not in Private_c.
+- Startup gates: local player only, valid Private_c and player ID; first
+  ever run stamps today's date and sends nothing; otherwise a single
+  `date != today` check — no missed-day catch-up.
+- Pool A (fixed dates, checked first): birthday (0x184 + RANDOM(2), cake),
+  month == day (0x164 + (month-1)*2 + RANDOM(2); Jan 1 = 10,000 Bells,
+  letter 18 = mushroom), April Fools (0x180), Mother's Day (0x17C),
+  Father's Day (0x17E), Toy Day Dec 24 (0x182 + random furniture). Birthday
+  beats month == day. Mother's/Father's Day delegate to the event system.
+- Pool B (56 normal letters 0x12C-0x163): `RANDOM(100) < 20` per processed
+  day, uniform selection among unsent via 56-bit field; exhausting the pool
+  zeroes the whole data block and sends one Pool C letter for the current
+  month instead.
+- Pool C (seasonal): 2 per month, 8 in August (own byte);
+  `mail_start_no_table` = {0x18C, 0x192, 0x186, 0x19E} reproduced literally
+  (0x18A-0x1A3 range); May event 1 = fortune shirt via `RANDOM(1)` (kept),
+  November = mushroom, December event 0 = apple / others = RANDOM(6) shirts.
+- Normal presents: 1/16 random clothing, 3/21/22/47 other fruit, 12 =
+  1,000 Bells, 37 doll, 38 dracaena, 40 random umbrella; else EMPTY_NO.
+- Delivery: house mailbox first, post-office storage fallback
+  (`mPO_SENDTYPE_MAIL`), mail_type = 4 (`mMl_TYPE_MOTHER`), text from ROM
+  handbill by mail number. Normal failure still consumes the day (no
+  same-letter retry); special-date failure leaves the date, retrying the
+  same letter next boot while skipping the normal path.
+- Paper: `paper_table[month-1] - 1` with overrides (birthday 0, Jan 1 62,
+  Aug 8 47, Dec 24 22).
+- Engine-resolved presents (random clothing/umbrella/furniture,
+  other-fruit, furniture ids) stay symbolic `PresentSpec` variants; RNG is
+  an injected `&mut dyn FnMut(u32) -> u32` so call order is preserved.
+
+4 C ABI exports (`pc_mother_mail_*`).
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
