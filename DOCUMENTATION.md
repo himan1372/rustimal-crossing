@@ -1764,6 +1764,46 @@ and a 24.0 table radius (the brief listed only 24.0); the bee does no
 catch/attack logic until its rotation.x eases to <= 22.5 deg; the ant
 force-catch path uses one-block proximity rather than a fixed radius.
 
+### Runtime Port Progress: Catalog Orders / Lottery Special Delivery
+
+New `rust/src/special_delivery.rs`, verified against `include/m_private.h`,
+`src/actor/npc/ac_npc_shop_common.c`,
+`src/actor/npc/ac_npc_shop_mastersp_talk.c_inc`, `src/game/m_shop.c`, and
+`src/game/m_post_office.c` (GAFE01_00 Rev. 0).
+
+Three separate persistent mechanisms, not one queue:
+- `CatalogOrders`: 5 pending furniture orders per player, each storing
+  the item plus the shop level captured at order time (delivery letter
+  uses `0x049 + shop_level`, so a later upgrade doesn't change the
+  letter). Free-slot scan in ascending index order; full queue is
+  ORDER_FULL. Orders are paid immediately (price removed, added to
+  Nook's sales via `mSP_PlusSales`).
+- Lottery: `lottery_items[3]` per shop (already in `shop.rs`), monthly
+  lineup biased to an uncollected item in slot 0, 5 valid same-month
+  tickets per play, slot-order consumption (with retail's unclamped
+  `req -= count`), odds 5/10/20/65 on RANDOM(100), consumed prizes become
+  `RSV_SHOP_SOLD_FTR` with no reroll.
+- `TicketOverflow`: `lotto_ticket_expiry_month` + `mail_storage` (u8,
+  cap 255, month change resets). Buying a ticket with no inventory room
+  routes to `aNSC_setup_ticket_remain()` (the overflow counter), not to a
+  sixth pocket. Ticket item encoding
+  (`TICKET_MONTH`/`TICKET_COUNT`/`TICKET_GET_ITEM`, 0x2C00 range, stacks
+  of 1-5).
+
+`deliver_special_mail` ports `mPO_delivery_one_address_special_mail`:
+pending tickets first in stacks of at most five
+(`ticket_id = base + minus - 1`, template 0x057), then catalog orders in
+ascending slot order (template `0x049 + shop_level`, paper ITM_PAPER55,
+mail_type 7, present attached). Each mail is transactional: the slot /
+count clears only after a free mailbox slot accepts it; on failure the
+remainder stays pending and delivery stops.
+
+New finding beyond the brief: the special-delivery trigger IS in the
+decomp. `mPO_first_work()` (game start) ->
+`mPO_first_delivery_proc()` calls the special-mail helper for the
+current player's house whenever the player is a local (non-foreigner)
+player — modeled as `first_delivery_special_mail_house`. 7 C ABI exports.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
