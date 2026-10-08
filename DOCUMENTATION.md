@@ -636,6 +636,24 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Runtime Port Progress: Step-3 Template Bodies
+
+### Source findings (all verified against the local decomp)
+
+- Exactly ten l_mRF_step3_blocks* arrays (3, 7, 7R, 8, B, BR, E, ER, F, FR), each 70 entries, gathered in l_mRF_step3_blockss[10]. Selection = one mRF_GetRandom(10); body copied into BOTH cliff_blocks and river_blocks. No weighting, rotation, reflection, or anti-reuse between bodies; bodies are immutable source data.
+- Bodies are complete 7x10 semantic layouts (borders, railroad, station, player house, cliffs, waterfalls, rivers, flats, ocean, sea-exceptional, islands), not just cliff templates.
+- R variants are separate literal arrays, not runtime mirrors (brief's claim confirmed by array comparison).
+- Body selection re-runs on every perfect-bit retry; stepmode (RANDOM(100) < 15) is chosen once before the loop.
+- CORRECTION (own work): mFM_BLOCK_TYPE_NONE = 255 (explicit in header), not 109. My earlier positional enum extraction hit the wrong enum block; all other values (15/40/22/63/100/...) were correct. Fixed NONE in albumin.rs and placement.rs. step3_data.rs was extracted with the correct map.
+
+### Rust rewrite implementation
+
+`rust/src/step3_data.rs`: all ten bodies as numeric [u8; 70] (extracted programmatically, spot-checked), STEP3_BLOCKS selection table, make_base_landform_step3 (single-RNG-call, dual copy), C ABI pc_step3_select. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- None on the bodies themselves.
+
 ### Runtime Port Progress: Template Anti-Reuse (SelectBlock)
 
 ### Source findings (all verified against the local decomp)

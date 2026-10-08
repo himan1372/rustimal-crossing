@@ -38,7 +38,7 @@ pub mod bt {
     pub const NEEDLEWORK: u8 = 85;
     pub const PORT: u8 = 100;
     pub const TRACKS_DUMP: u8 = 12;
-    pub const NONE: u8 = 109;
+    pub const NONE: u8 = 255;
 }
 
 /// Bridge type offset: RIVER_SOUTH_BRIDGE - RIVER_SOUTH = 7.

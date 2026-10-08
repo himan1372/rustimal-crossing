@@ -18,7 +18,7 @@
 pub mod bt {
     pub const CLIFF_HORIZONTAL: u8 = 15;
     pub const RIVER_SOUTH: u8 = 40;
-    pub const NONE: u8 = 109;
+    pub const NONE: u8 = 255;
 }
 
 /// Block group ranges (mRF_BLOCK_GROUP_*, blockGroup table):
@@ -84,7 +84,7 @@ pub fn albumin_valid_count() -> usize {
 
 // ---- C ABI ----
 
-/// C ABI: albumin lookup. Returns the combined block type or 109 (NONE).
+/// C ABI: albumin lookup. Returns the combined block type or 255 (NONE).
 #[no_mangle]
 pub extern "C" fn pc_river_albumin_cliff(cliff_type: u8, river_type: u8) -> u8 {
     river_albumin_cliff(cliff_type, river_type)
