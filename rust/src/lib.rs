@@ -48,6 +48,7 @@ mod mtx;
 mod npc;
 mod profiler;
 mod request_selector;
+mod quest;
 mod save;
 mod town_gen;
 mod vi;

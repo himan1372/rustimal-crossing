@@ -691,6 +691,29 @@ Extended `rust/src/albumin_geometry.rs`: keep_h_init, pack_col_unit/unpack_col_u
 
 - None. The physical pipeline is fully modeled.
 
+### Runtime Port Progress: Quest System (Request Flow, Completion, Rewards)
+
+### Source findings (all verified against the local decomp)
+
+- Architecture: m_quest.c owns persistent quest state + helpers; ac_quest_manager.c owns quest definitions (aQMgr_set_data_c), the 35-slot runtime registration table (rebuilt every check cycle from persistent records in Private_c/Animal_c), and periodic checks; ac_quest_talk_init.c owns the request/completion/reward transaction.
+- mQst_base_c is 12 bytes: quest_type:2, quest_kind:6, time_limit_enabled:1, progress:4, give_reward:1, unused:2, + 10-byte RTC time_limit. Delivery 0x28, errand 0x58, contest 0x28 bytes.
+- Generic completion: progress == 0 (delivery/ordinary errands). Contest kinds use dedicated checks; fish/insect are CATEGORY-based (ITEM1_CAT_FISH/INSECT), not exact requested-item matches.
+- Reward tables (source-verbatim): delivery NORMAL 40/0/0/0/0/30/30 (pay 200), FOREIGN 40/0/0/10/10/40 (1000), REMOVE 20/0/0/20/20/40 (1000), LOST 40/0/40/10/10 (0); contest fruit 0/0/0/30/30/40 (500), soccer 40/0/0/30/30, snowman/flower 60/0/0/20/20, fish/insect/letter 80/0/0/10/10. Selection via 100-slot prob_tbl, RANDOM(100).
+- Errand rewards use aQMgr_actor_get_errand_reward (NOT l_set_errand_data): tiers by (used_num-1) clamped 0..3, pays {0,500,750,1000}. CORRECTION vs brief: used_num=1 pays 0, not 500.
+- Timeout: mQst_CheckLimitOver -- absolute RTC deadline, 28-day hard cap, then kind tables (delivery 2/2/2/2, errand 2/2/2 then 0, contest 1/1/1/3/3/3/2) plus +3 (letter +2) for contests at progress 0.
+- give_reward=TRUE when the reward can't be delivered (full pockets); quest persists and the next conversation retries the same reward.
+- Money scaling: base * (scale*(100+rate))/10000, scale = 100 +/- up to 10, rate = money_power/100 clamped 700.
+- Friendship: reject -3, normal reward +3, failure paths -5/-2/-1 by message id.
+- New-quest attempt roll: 75% (mQst_GetRandom(4) != 0).
+
+### Rust rewrite implementation
+
+New `rust/src/quest.rs`: QuestBase, type/kind/reward enums, REGIST_NUM=35, all reward tables, prob_table_select, timeout tables + limit_days, contest_complete, scaled_pay, friendship constants, quest_attempt_roll. C ABI: pc_quest_complete, pc_quest_free, pc_reward_select, pc_quest_base_pay, pc_quest_limit_days, pc_contest_complete, pc_scaled_pay. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Request-generation tables (first-job vs normal type/kind selection), recipient-selection modes, entrusted-item pocket handling, and letter-quest specifics are traced in the brief but not yet ported -- natural next steps.
+
 ### Authorized Test Run (2026-10-07, commit e742d2a)
 
 Philip said "Run the tests." `cargo test --lib`: **296/296 passed**, 0 failed. (294 prior + 2 new: template_select, step3_data; plus the audit-fix assertions in the albumin test.) This also runtime-verifies the audit fix. Authorization consumed.
