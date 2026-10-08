@@ -74,17 +74,20 @@ game inputs. `wall_priority.rs` already contains the template
 | `pc_msg_max` | message capacity constant | `m_msg_main.c_inc` |
 | `make_tab_2_move_tail` → `pc_make_tab_2_move_tail` | `mCoBG_MakeTab2MoveTail` | `m_collision_bg.c` |
 | `segment_for_wall` → `pc_unit_no_name_2_start_end` | `mCoBG_UnitNoName2StartEnd` | `m_collision_bg_wall.c_inc` |
-| `pc_inventory_find`, `pc_inventory_count` | pocket scan | `m_private.c` |
-| `pc_judge_wall_from_vector` | `mCoBG_JudgeWallFromVector` | `m_collision_bg.c` — note: depends on the atan backend; port `mCoBG_Get2VectorAngleF` faithfully, don't swap in `atan2f` |
+| `pc_inventory_find` → `mPr_GetPossessionItemIdx`, `pc_inventory_count` → `mPr_GetPossessionItemSum` | pocket scan/count (15 slots) | `m_private.c` — verified 2026-10-08 |
+| `pc_judge_wall_from_vector` | `mCoBG_JudgeWallFromVector` threshold (`|angle| > 89.5`) | `m_collision_bg.c` — angle stays in C (`mCoBG_Get2VectorAngleF`); verified 2026-10-08 |
+| `pc_distance_dispatch` | push/contact/ignore classification (`dist < range`, `|dist-range| < 2.7`) | `m_collision_bg.c` normal + attribute wall — height checks and side effects stay in C; verified 2026-10-08 |
+| `pc_bg_neighborhood` | `mCoBG_ActorFearture2CheckRange` (3/5/7) | `m_collision_bg.c` — verified 2026-10-08 |
+| `pc_bg_distance_reverse` | `(range - dist) + 0.00001` | `m_collision_bg.c` — bit-exact, not epsilon; verified 2026-10-08 |
 
 ### Wave 1B — pure lookup / mapping kernels ★★★★☆
 
 | Rust kernel | C function | C call site |
 |---|---|---|
-| `forbid_vector_kernel` → `pc_forbid_vectors`, `forbid_proc` → `pc_forbid_proc` | `mCoBG_MakeForbidVectorData` + gate | `m_collision_bg_wall.c_inc`, `mCoBG_MakeUnitVector` |
+| `pc_forbid_vectors` (vector IDs only — C keeps `mCoBG_make_vector_table`), `pc_forbid_gate` | `mCoBG_MakeForbidVectorData` + gate | `m_collision_bg_wall.c_inc`, `mCoBG_MakeUnitVector` — verified 2026-10-08. `forbid_vector_kernel`/`PcForbidVector` NOT wireable (`normal_angle` is degrees, retail stores `DEG2SHORT_ANGLE2`) |
 | `priority_order` (+ `pc_wall_priority` fixed-buffer ABI — to add) | `mCoBG_GetWallPriority` | `m_collision_bg.c` — preserve the `<=` merge and tie reconstruction |
 | `pc_scene_word_type` | scene-word tag decode | `m_scene.c` — decode only, not `Scene_Proc` execution |
-| `pc_column_recipe` | item → radius/height recipe | `mCoBG_MakeOneColumnCollisionData` — C keeps ground-height lookup and the `check_proc` callback |
+| `pc_column_recipe_item` (retail item-ID classification; NEW 2026-10-08) | item → radius/height recipe | `mCoBG_MakeOneColumnCollisionData` — C keeps ground-height lookup and the `check_proc` callback. `pc_column_recipe` (kind-id) is internal-only, NOT retail-wireable |
 
 ### Wave 1C — simple data operations ★★★★☆
 
@@ -102,17 +105,29 @@ game inputs. `wall_priority.rs` already contains the template
 | Rust kernel | C function | C call site |
 |---|---|---|
 | `talk_count_allowed` → `pc_talk_count_allowed`, `talk_patience` → `pc_talk_patience` | talk-gate comparisons | `m_npc.c` — C keeps `l_npc_talk_info` state |
-| `pc_bg_distance_reverse` | distance formula only | split further before plugging: point-line distance → penetration → height gate → dispatch |
+| `pc_topic_force_gate` (NEW 2026-10-08) | `aNPC_force_talk_request` gate (0 none / 1 forced / 2 spontaneous) | `ac_npc_talk.c_inc` — verified 2026-10-08 |
 
 ### Postponed (not Wave 1)
 
-- `pc_distance_dispatch` — port the individual kernels first (point-line
-  distance, penetration, height gate), then the dispatch.
-- `pc_request_proc_id` — exact request-procedure table/caller not yet pinned.
-- `pc_topic_talk_check` — full talk selection is stateful; the gates above
-  are the Wave 1 piece.
 - Full `mCoBG_GetWallReverse` solver — much later; Wave 1 builds its pieces.
 - Full scene interpreter / house-scene setup — C keeps the mutations.
+- `pc_msg_max` — technically safe constant bridge, low priority; wire only
+  where the Rust constant should be authoritative.
+
+Promoted to Wave 1 on 2026-10-08 (verified against the decomp):
+- `pc_distance_dispatch` — pure classification only; side effects stay in C.
+- `pc_request_proc_id` — exact (`0x0D8B + looks`, m_quest.c:980).
+- `pc_topic_talk_check` — `base + looks*3 + RANDOM(3)` with RNG kept in C
+  (`aNPC_set_talk_info_talk_request_check`, ac_npc_talk.c_inc).
+- `pc_scene_word_type`, `pc_door_next_scene` — decode/`+1` only (m_scene.c).
+
+### Wave 1 wiring architecture (2026-10-08)
+
+Do NOT exclude any C file for Wave 1 (unlike Wave 3). The retail functions
+are `static` inside large TUs — keep the C function and substitute the pure
+calculation internally with a `pc_*` call. Central ABI header:
+`include/pc_rust.h`. RNG stays in C (`RANDOM(n)` passed in); Rust never
+owns the retail RNG stream.
 
 ## Full inventory — everything still on the shelf
 

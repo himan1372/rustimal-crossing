@@ -234,6 +234,138 @@ pub fn column_check_attr(
 /// C ABI: radius/height recipe for an item kind id (0-11 as in
 /// `ColumnItemKind` order); writes radius, height, atr_wall flag.
 /// Returns 1 when recognized.
+///
+/// NOTE: this is an *internal* lookup helper, NOT a retail boundary.
+/// Retail `mCoBG_MakeOneColumnCollisionData` classifies by actual item ID,
+/// which this ABI cannot represent -- use `pc_column_recipe_item` for
+/// wiring. Do not call this from C expecting retail behavior.
+/// Retail item-ID sets for column collision (`mCoBG_MakeOneColumnCollisionData`,
+/// m_collision_bg_column.c_inc). Values resolved from m_name_table.h; the
+/// IS_ITEM_*_TREE predicates are verbatim membership lists (the S0/S1/S2 macros
+/// even repeat three entries, deduped here).
+fn is_small_tree(item: u16) -> bool {
+    matches!(item, 0x0801 | 0x0806 | 0x080E | 0x0816 | 0x081E | 0x0826 | 0x082E | 0x0833 | 0x0838 | 0x0850 | 0x0855 | 0x085E | 0x0864)
+}
+fn is_med_tree(item: u16) -> bool {
+    matches!(item, 0x0802 | 0x0807 | 0x080F | 0x0817 | 0x081F | 0x0827 | 0x082F | 0x0834 | 0x0839 | 0x0851 | 0x0856 | 0x085F | 0x0865)
+}
+fn is_large_tree(item: u16) -> bool {
+    matches!(item, 0x0803 | 0x0808 | 0x0810 | 0x0818 | 0x0820 | 0x0828 | 0x0830 | 0x0835 | 0x083A | 0x0852 | 0x0857 | 0x0860 | 0x0866)
+}
+fn is_full_tree(item: u16) -> bool {
+    // Retail: IS_ITEM_FULL_TREE(item) || item == RSV_TREE.
+    item == 0xFE1A || matches!(item, 0x005E | 0x005F | 0x0060 | 0x0061 | 0x0069 | 0x0078 | 0x0079 | 0x007A | 0x007F | 0x0080 | 0x0081 | 0x0082 | 0x0804 | 0x0809 | 0x080A | 0x080B | 0x080C | 0x0811 | 0x0812 | 0x0813 | 0x0814 | 0x0819 | 0x081A | 0x081B | 0x081C | 0x0821 | 0x0822 | 0x0823 | 0x0824 | 0x0829 | 0x082A | 0x082B | 0x082C | 0x0831 | 0x0836 | 0x083B | 0x0853 | 0x0858 | 0x0859 | 0x085A | 0x085B | 0x0861 | 0x0867 | 0x0868)
+}
+fn is_tree_stump(item: u16) -> bool {
+    // Retail: four inclusive ranges (the macro has a missing-parens quirk
+    // but && binds tighter than ||, so the ranges are as written).
+    (0x0001..=0x0004).contains(&item)
+        || (0x0070..=0x0073).contains(&item)
+        || (0x0074..=0x0077).contains(&item)
+        || (0x007B..=0x007E).contains(&item)
+}
+fn is_narrow_stump(item: u16) -> bool {
+    // Retail: radius 10 only for the *001 of each stump family.
+    matches!(item, 0x0001 | 0x0070 | 0x0074 | 0x007B)
+}
+fn is_rock(item: u16) -> bool {
+    (0x0063..=0x0067).contains(&item)
+        || (0x006A..=0x006E).contains(&item)
+        || item == 0x006F
+}
+fn is_hole(item: u16) -> bool {
+    (0x0011..=0x0029).contains(&item) || item == 0x005D || item == 0xFE19
+}
+fn is_mailbox(item: u16) -> bool {
+    (0xF001..=0xF004).contains(&item)
+}
+fn is_sign(item: u16) -> bool {
+    // Retail: item == DUMMY_RESERVE || ITEM_IS_SIGNBOARD(item).
+    item == 0xF102 || (0x0900..=0x0920).contains(&item)
+}
+
+/// Classify a retail item ID into a `ColumnItemKind`, in the exact branch
+/// order of `mCoBG_MakeOneColumnCollisionData`. The hole branch is gated on
+/// `old_on_ground` exactly as in retail; every other branch is item-only.
+/// Returns `None` for items that produce no column.
+pub fn column_kind_for_item(item: u16, old_on_ground: bool) -> Option<ColumnItemKind> {
+    if old_on_ground && is_hole(item) {
+        return Some(ColumnItemKind::Hole);
+    }
+    if is_small_tree(item) {
+        return Some(ColumnItemKind::SmallTree);
+    }
+    if is_med_tree(item) {
+        return Some(ColumnItemKind::MedTree);
+    }
+    if is_large_tree(item) {
+        return Some(ColumnItemKind::LargeTree);
+    }
+    if is_full_tree(item) {
+        return Some(ColumnItemKind::FullTree);
+    }
+    if is_tree_stump(item) {
+        return Some(if is_narrow_stump(item) {
+            ColumnItemKind::StumpNarrow
+        } else {
+            ColumnItemKind::StumpWide
+        });
+    }
+    if is_rock(item) {
+        return Some(ColumnItemKind::Rock);
+    }
+    if is_mailbox(item) {
+        return Some(ColumnItemKind::Mailbox);
+    }
+    if is_sign(item) {
+        return Some(ColumnItemKind::Sign);
+    }
+    if item == 0xFE30 {
+        // RSV_SIGNBOARD (m_name_table.h).
+        return Some(ColumnItemKind::SpecialSignboard);
+    }
+    if item == 0xF114 || item == 0xF122 {
+        // DUMMY_KOINOBORI / DUMMY_FLAG (m_name_table.h).
+        return Some(ColumnItemKind::Koinobori);
+    }
+    None
+}
+
+/// C ABI: retail-compatible column recipe. Takes the actual
+/// `mActor_name_t` item ID (not a Rust kind id), classifies it exactly as
+/// `mCoBG_MakeOneColumnCollisionData` does, and writes radius, height
+/// (`ground_y` + retail offset), and the atr_wall flag. Returns 1 when the
+/// item produces a column, 0 otherwise. This is the Wave 1 wireable
+/// boundary for `mCoBG_MakeOneColumnCollisionData`.
+#[no_mangle]
+pub extern "C" fn pc_column_recipe_item(
+    item: u16,
+    ground_y: f32,
+    old_on_ground: u8,
+    out_radius: *mut f32,
+    out_height: *mut f32,
+    out_atr: *mut u8,
+) -> u8 {
+    let kind = match column_kind_for_item(item, old_on_ground != 0) {
+        Some(k) => k,
+        None => return 0,
+    };
+    let col = match make_one_column(kind, 0, 0, ground_y, old_on_ground != 0) {
+        Some(c) => c,
+        None => return 0,
+    };
+    if !out_radius.is_null() {
+        unsafe { *out_radius = col.radius };
+    }
+    if !out_height.is_null() {
+        unsafe { *out_height = col.height };
+    }
+    if !out_atr.is_null() {
+        unsafe { *out_atr = col.atr_wall as u8 };
+    }
+    1
+}
+
 #[no_mangle]
 pub extern "C" fn pc_column_recipe(
     kind_id: u8,
@@ -280,6 +412,33 @@ pub extern "C" fn pc_column_recipe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn item_id_classification() {
+        // Spot checks against m_name_table.h values.
+        assert_eq!(column_kind_for_item(0x0801, true), Some(ColumnItemKind::SmallTree)); // TREE_S0
+        assert_eq!(column_kind_for_item(0x0807, true), Some(ColumnItemKind::MedTree)); // TREE_APPLE_S1
+        assert_eq!(column_kind_for_item(0x0803, true), Some(ColumnItemKind::LargeTree)); // TREE_S2
+        assert_eq!(column_kind_for_item(0x0804, true), Some(ColumnItemKind::FullTree)); // TREE
+        assert_eq!(column_kind_for_item(0xFE1A, true), Some(ColumnItemKind::FullTree)); // RSV_TREE
+        assert_eq!(column_kind_for_item(0x0001, true), Some(ColumnItemKind::StumpNarrow)); // TREE_STUMP001
+        assert_eq!(column_kind_for_item(0x0070, true), Some(ColumnItemKind::StumpNarrow)); // TREE_PALM_STUMP001
+        assert_eq!(column_kind_for_item(0x0002, true), Some(ColumnItemKind::StumpWide)); // TREE_STUMP002
+        assert_eq!(column_kind_for_item(0x0063, true), Some(ColumnItemKind::Rock)); // ROCK_A
+        assert_eq!(column_kind_for_item(0x006F, true), Some(ColumnItemKind::Rock)); // MONEY_FLOWER_SEED
+        assert_eq!(column_kind_for_item(0x0011, true), Some(ColumnItemKind::Hole)); // HOLE_START
+        assert_eq!(column_kind_for_item(0x005D, true), Some(ColumnItemKind::Hole)); // HOLE_SHINE
+        assert_eq!(column_kind_for_item(0xFE19, true), Some(ColumnItemKind::Hole)); // RSV_HOLE
+        assert!(column_kind_for_item(0x0011, false).is_none()); // hole needs old_on_ground
+        assert_eq!(column_kind_for_item(0xF001, true), Some(ColumnItemKind::Mailbox)); // DUMMY_MAILBOX0
+        assert_eq!(column_kind_for_item(0xF102, true), Some(ColumnItemKind::Sign)); // DUMMY_RESERVE
+        assert_eq!(column_kind_for_item(0x0900, true), Some(ColumnItemKind::Sign)); // SIGNBOARD_START
+        assert_eq!(column_kind_for_item(0xFE30, true), Some(ColumnItemKind::SpecialSignboard)); // RSV_SIGNBOARD
+        assert_eq!(column_kind_for_item(0xF114, true), Some(ColumnItemKind::Koinobori)); // DUMMY_KOINOBORI
+        assert_eq!(column_kind_for_item(0xF122, true), Some(ColumnItemKind::Koinobori)); // DUMMY_FLAG
+        assert!(column_kind_for_item(0x0000, true).is_none()); // EMPTY_NO: no column
+        assert!(column_kind_for_item(0xFFFF, true).is_none());
+    }
 
     #[test]
     fn item_recipes() {

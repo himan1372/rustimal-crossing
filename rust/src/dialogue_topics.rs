@@ -194,6 +194,35 @@ pub extern "C" fn pc_msg_max() -> u32 {
     MSG_MAX
 }
 
+/// C ABI: spontaneous/forced talk gate (`aNPC_force_talk_request`).
+/// Returns 0 = no talk, 1 = forced message pending, 2 = spontaneous
+/// talk-check may proceed. All state stays in C; this is the pure
+/// predicate.
+#[no_mangle]
+pub extern "C" fn pc_topic_force_gate(
+    force_call_msg_no: i32,
+    friendship: i32,
+    over_friendship: i32,
+    search_for_player: i32,
+    force_call_timer: f32,
+    dist_xz: f32,
+    dist_y: f32,
+) -> i32 {
+    match force_talk_gate(
+        force_call_msg_no,
+        friendship,
+        over_friendship,
+        search_for_player != 0,
+        force_call_timer,
+        dist_xz,
+        dist_y,
+    ) {
+        TalkGate::None => 0,
+        TalkGate::Forced => 1,
+        TalkGate::Spontaneous => 2,
+    }
+}
+
 /// Patience classification derived from talk counts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TalkPatience {
@@ -318,5 +347,15 @@ mod tests {
         assert_eq!(talk_patience_for_feeling(0, 14), TalkPatience::Impatient);
         assert_eq!(pc_talk_count_allowed(3, 15, 0), 1);
         assert_eq!(pc_talk_patience_raw(15, 12, 15), 2);
+    }
+
+    #[test]
+    fn force_gate_abi_mapping() {
+        assert_eq!(pc_topic_force_gate(5, 0, 0, 0, 0.0, 0.0, 0.0), 1); // forced
+        assert_eq!(pc_topic_force_gate(-1, 0x81, 0, 1, 0.0, 79.0, 59.0), 2); // spontaneous
+        assert_eq!(pc_topic_force_gate(-1, 0x80, 0, 1, 0.0, 79.0, 59.0), 0); // 0x80 not > 0x80
+        assert_eq!(pc_topic_force_gate(-1, 200, 0, 0, 0.0, 79.0, 59.0), 0); // not searching
+        assert_eq!(pc_topic_force_gate(-1, 200, 0, 1, 1.0, 79.0, 59.0), 0); // timer running
+        assert_eq!(pc_topic_force_gate(-1, 200, 0, 1, 0.0, 80.0, 59.0), 0); // too far
     }
 }

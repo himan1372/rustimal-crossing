@@ -246,13 +246,16 @@ pub unsafe extern "C" fn pc_unit_no_name_2_start_end(
     out_start: *mut f32,
     out_end: *mut f32,
 ) {
+    // Retail has no default case: wall_name >= 6 leaves the outputs
+    // unassigned. Reject it here instead of inventing SLATE_DOWN.
     let name = match wall_name {
         0 => WallName::Up,
         1 => WallName::Left,
         2 => WallName::Down,
         3 => WallName::Right,
         4 => WallName::SlateUp,
-        _ => WallName::SlateDown,
+        5 => WallName::SlateDown,
+        _ => return,
     };
     let ct = if check_type == 1 { CheckType::Player } else { CheckType::Normal };
     let seg = segment_for_wall(ux, uz, name, ct);
@@ -300,6 +303,24 @@ mod tests {
         let (s, e) = unit_no_name_2_start_end(2.0, 3.0, WallName::SlateDown, CheckType::Normal);
         approx(s, [75.0, 115.0]);
         approx(e, [125.0, 165.0]);
+    }
+
+    #[test]
+    fn invalid_wall_name_leaves_output_unassigned() {
+        // Retail has no default case: wall_name >= 6 must not write.
+        let mut start = [123.0f32, 456.0];
+        let mut end = [789.0f32, 101.0];
+        unsafe {
+            pc_unit_no_name_2_start_end(0.0, 0.0, 6, 0, start.as_mut_ptr(), end.as_mut_ptr());
+            pc_unit_no_name_2_start_end(0.0, 0.0, 255, 0, start.as_mut_ptr(), end.as_mut_ptr());
+        }
+        assert_eq!(start, [123.0, 456.0]);
+        assert_eq!(end, [789.0, 101.0]);
+        // Sanity: valid names still write.
+        unsafe {
+            pc_unit_no_name_2_start_end(0.0, 0.0, 5, 0, start.as_mut_ptr(), end.as_mut_ptr());
+        }
+        assert_ne!(start, [123.0, 456.0]);
     }
 
     #[test]

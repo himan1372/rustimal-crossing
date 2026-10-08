@@ -228,7 +228,13 @@ pub extern "C" fn pc_forbid_vectors(attr: u8, out: *mut u8) -> u8 {
     v.len() as u8
 }
 
-/// C-compatible forbidden-vector record for the ABI boundary.
+/// C-compatible forbidden-vector record.
+///
+/// DO NOT WIRE TO RETAIL: `normal_angle` stores rounded degrees, but
+/// retail's `mCoBG_forbid_vector` table stores `DEG2SHORT_ANGLE2()` short
+/// angles. The safe Wave 1 boundary is the vector-ID export
+/// `pc_forbid_vectors` (C keeps its own vector table); this struct is an
+/// internal/testing helper only.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PcForbidVector {
@@ -242,6 +248,8 @@ pub struct PcForbidVector {
 /// vector records (`mCoBG_MakeForbidVectorData` core).
 /// Angles are kept as degrees here; the engine's short-angle
 /// conversion (`DEG2SHORT_ANGLE2`) happens at the C boundary.
+///
+/// DO NOT WIRE TO RETAIL (see `PcForbidVector`): use `pc_forbid_vectors`.
 pub fn forbid_vector_kernel(attr: u8) -> [Option<PcForbidVector>; 2] {
     let mut out = [None, None];
     for (slot, vid) in forbid_vectors(attr).into_iter().enumerate() {

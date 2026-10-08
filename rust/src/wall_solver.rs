@@ -46,6 +46,7 @@
 //! suppression) are modeled with standard equivalents; the
 //! dispatch order and formulas above are the verified port.
 
+use crate::bg_check::REVERSE_EPS;
 use crate::wall_priority::priority_order;
 
 /// Wall kind discriminator.
@@ -184,8 +185,9 @@ pub fn distance_dispatch(dist: f32, range: f32) -> DistOutcome {
 }
 
 /// Distance push correction: `(range - dist) + 0.00001` along normal.
+/// Uses the canonical `bg_check::REVERSE_EPS` (same retail epsilon).
 pub fn distance_push(range: f32, dist: f32, normal: [f32; 2]) -> [f32; 2] {
-    let rev_dist = (range - dist) + 0.00001;
+    let rev_dist = (range - dist) + REVERSE_EPS;
     [normal[0] * rev_dist, normal[1] * rev_dist]
 }
 
