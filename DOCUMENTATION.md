@@ -636,6 +636,26 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Runtime Port Progress: Albumin Outputs to BG Geometry/Collision/Height
+
+### Source findings (all verified against the local decomp)
+
+- All 17 albumin block types have entries in data_combi_table (src/data/combi/data_combi.c), extracted programmatically. Primary BG assets: south row GRD_S_C1..C7_R1_1, east row GRD_S_C1..C5_R2_1, west row GRD_S_C1/C4/C5/C6/C7_R3_1. Variant counts: mostly 2-3 (WATERFALL_STRAIGHT_CLIFF_HORIZONTAL and both C1_R2/C1_R3 have 3; WATERFALL_WEST_CLIFF_VERTICAL_LEFT has only 1).
+- The brief's BG/FG table matched the extraction exactly.
+- Chain: albumin type -> mRF_SelectBlock (random pick among type's variants) -> combination_type -> data_combi_table -> bg_id -> sorted data_bgd -> mFM_SetBG -> mFM_BgUtDataSet copies collision[16][16] and keep_h into bg_info.
+- Per-unit geometry (mCoBG): 4-corner heights + center + attribute + slate_flag; mCoBG_GetUnitArea partitions each unit into 4 triangles; world Y = corner * 10.0 + acre base height. Flat units use center*10+base.
+- Acre base height is separate: mFM_combination_c = combination_type:14 + height:2, from mRF_GetBlockBase (cliff types increment per-column height); copied into save data.
+- Waterfall family: 7 of 17 outputs (22,23,26,30,31,37,38); the rest are RIVER_* non-waterfall hybrids.
+- RESOLVED LIMIT: the exact numeric 16x16 collision values live in the disc resource data_bgd, not in the decomp source. The architecture is fully traced; the per-unit numbers require game-disc extraction and are NOT reconstructed here.
+
+### Rust rewrite implementation
+
+`rust/src/albumin_geometry.rs`: ALBUMIN_ASSETS (17 entries with primary BG/FG + variant counts), albumin_asset lookup, is_waterfall_output, 16x16 grid constants, COLLISION_HEIGHT_SCALE=10.0, combi bit layout (14+2), world_y(corner, base_height). C ABI: pc_albumin_asset_idx, pc_is_waterfall_output, pc_albumin_variants. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Numeric collision arrays for the 17 GRD_S_C*_R* assets require game-disc data extraction (out of scope for the decomp source).
+
 ### Runtime Port Progress: River-Cliff Albumin Tables
 
 ### Source findings (all verified against the local decomp)
