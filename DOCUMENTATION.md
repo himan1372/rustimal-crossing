@@ -611,6 +611,31 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Placement Passes (Beach/Bridge/Slope/Buildings/Pond)
+
+### Source findings (all verified against the local decomp)
+
+- The generator is a constraint-satisfaction loop: 9 acceptance bits (SLOPE_LEFT, SLOPE_RIGHT, BRIDGE_UPPER, BRIDGE_LOWER, SHRINE, POLICE, MUSEUM, POOL, NEEDLEWORK), regenerated until all set. "Placement" is monotonic acre-type replacement, not coordinate placement.
+- 7x10 grid, 5x6 playable interior. Player house at (3,2) in l_base_blocks is a hard obstacle during cliff/river tracing.
+- Beach (mRF_SetMarinBlock): z=6, x=1..5: FLAT->BEACH, RIVER_SOUTH->BEACH_RIVER; (0,6)/(6,6) -> BORDER_CLIFF_OCEAN_LEFT/RIGHT.
+- Bridges (mRF_SetBridgeBlock): 7 waterfall crossing types anchor the split; upper bridge mandatory (random river before crossing), lower bridge only if after_cross != 0 && stepmode==TWO && (RANDOM(10)&1); offset RIVER_SOUTH_BRIDGE - RIVER_SOUTH = 7 preserves direction. Beach-mouth fallback: BEACH_RIVER -> BEACH_RIVER_BRIDGE if BRIDGE_LOWER unset.
+- Slopes (mRF_SetSlopeBlock): scan for BORDER_CLIFF_LEFT_TRANSITION, follow cliff contour, split LEFT/RIGHT at RIVER_CLIFF_ANY crossings; one random slope per side; replacement SLOPE_HORIZONTAL + cliff idx.
+- Shrine/Police/Museum (mRF_SetUniqueFlatBlock): shrine prefers random side below cliff, police prefers opposite side first, museum takes either side; sequential and destructive.
+- Shop/Post (mRF_SetUniqueRailBlock): TRACKS_SHOP/TRACKS_POST_OFFICE at z=1, bx = 1+RANDOM(2) and 4+RANDOM(2), requiring TRACKS_DUMP cells; left/right assignment randomized.
+- Needlework/wharf: (5,6) must be BEACH -> PORT else fail; needlework picks the RANDOM(3)-th BEACH cell scanning x=1..5.
+- Pond (mRF_SetPoolBlock): pure river types only (40..46, excludes composites/bridges), random one -> POOL_SOUTH + offset (29) preserves direction.
+- Full pass order from mRF_MakeRandomField_ovl: base landform -> flat info -> beach -> bridges+slopes -> needlework/wharf -> unique flat -> unique rail -> pool -> beach fallback -> heights -> SelectBlock -> copy heights.
+- Step-mode selection: mRF_GetRandom(100) < 15 (15% three-step).
+- Correction vs brief: pass order matched source exactly; brief's "34..36" group bound was corrected in the albumin module.
+
+### Rust rewrite implementation
+
+`rust/src/placement.rs`: grid dims, block ids (script-extracted), bridge/pool offsets, acceptance bits, marin_cell, bridge_variant, lower_bridge_ok, slope_variant, pool_variant, is_pure_river, wharf/rail constants, is_step_three. C ABI: pc_marin_cell, pc_bridge_variant, pc_lower_bridge_ok, pc_slope_variant, pc_pool_variant. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
+
 ### Runtime Port Progress: River-Cliff Albumin Tables
 
 ### Source findings (all verified against the local decomp)
