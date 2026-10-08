@@ -54,6 +54,7 @@ mod save;
 mod town_gen;
 mod vi;
 mod villager_mail;
+mod mail;
 mod wpos2attribute;
 mod slate_classify;
 mod talk_request;

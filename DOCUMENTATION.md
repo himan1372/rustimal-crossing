@@ -758,6 +758,28 @@ Rewrote `rust/src/house.rs` (three-phase API: order_expansion/order_basement/che
 
 - The Nook dialogue/choice functions selecting LARGE vs BASEMENT vs UPPER still need a full trace for a complete Rust-ready progression function.
 
+### Runtime Port Progress: Mail System (Beyond Letter Scoring)
+
+### Source findings (all verified against the local decomp)
+
+- Mail_c is a fixed 298-byte (0x12A) struct: header (recipient/sender PersonalID + name type), present (EMPTY_NO = none), content (font/state, mail_type, paper_type, 24-byte header, 192-byte body, 32-byte footer). Not a high-level Letter struct.
+- Three stores: house mailbox 10 slots, player inventory mail 10 slots, Post Office transit queue 5 slots. Memory-card archive: 8 pages x 20 = 160 letters.
+- Font byte is the lifecycle state: RECV/SEND/RECV_READ/RECV_PLAYER_PRESENT/RECV_PLAYER_PRESENT_READ; 0xFF = unused (mMl_clear_mail sets -1).
+- Routing: player mail -> Post Office queue; automatic mail -> try recipient mailbox, fall back to PO queue. Queue full at 5 (players + NPCs).
+- Delivery twice daily: <09:00 -> 09:00, <17:00 -> 17:00, else 09:00 next day. Delivery is atomic with mailbox capacity: full mailbox -> mail REMAINS queued. Queue slot cleared only after successful copy.
+- PO keeps mail_recipient_flags (house bitmask) and keep_mail_sum_players/npcs.
+- Reading transitions RECV -> RECV_READ (present variants likewise); present attach allowed for SEND/already-present mail; deletion rejects mail with presents.
+- Name types: PLAYER/NPC/MUSEUM/CLEAR. 12 mail types (MAIL/XMAS/leaflets/MOTHER/OMIKUJI/HRA/SHOP/SNOWMAN/FISHING_CONTEST/POSTOFFICE/SPNPC_PASSWORD).
+- NPC mail -> friendship (+3 sent, -5 bad rank, +3 with present); hooks first-job letter quests and the letter contest.
+
+### Rust rewrite implementation
+
+New `rust/src/mail.rs`: fixed-size Mail model, font state machine, slot ops (clear/unused/copy/find_free/count), Mailbox/InventoryMail/PostOfficeQueue types, PostOffice (receipt/delivery/recipient flags), delivery scheduler, auto routing, mailbox->inventory transfer, NPC friendship constants. C ABI: pc_mail_unused, pc_mail_mark_read, pc_next_delivery, pc_po_full. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Catalog-order/lottery special delivery, leaflet broadcast, mother-mail scheduler, and NPC reply generation are traced in the brief but not yet ported.
+
 ### Authorized Test Run (2026-10-07, commit e742d2a)
 
 Philip said "Run the tests." `cargo test --lib`: **296/296 passed**, 0 failed. (294 prior + 2 new: template_select, step3_data; plus the audit-fix assertions in the albumin test.) This also runtime-verifies the audit fix. Authorization consumed.
