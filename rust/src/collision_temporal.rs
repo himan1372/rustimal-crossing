@@ -55,8 +55,9 @@ pub fn oc_clear_elem_flags(flags: u32) -> u32 {
 
 /// What setOCC's clear family (OCCClear, TRIS-only) resets on
 /// registration: collided_actor = NULL;
-/// flags1 &= ~DONT_UPDATE_POS (note: flags0 bit); element
-/// attribute.t zeroed. TRIS_HIT is NOT cleared.
+/// flags0 &= ~DONT_UPDATE_POS; element attribute.t zeroed.
+/// TRIS_HIT is NOT cleared. (Note: this is ClObj_OCCClear, distinct
+/// from ClObj_OCClear used by setOC's family.)
 pub fn occ_clear_flags0(flags0: u32) -> u32 {
     flags0 & !flag0::DONT_UPDATE_POS
 }
@@ -91,6 +92,44 @@ pub fn setocc_after_hit(flags0: u32, flags1: u32) -> (u32, u32, bool) {
     (occ_clear_flags0(flags0), flags1, false) // collided_actor cleared
 }
 
+/// Registration pools: OC objects go to collider_table (capacity
+/// Cl_COLLIDER_NUM); OCC objects go to the separate mco_work table
+/// (capacity 10). Both are emptied by CollisionCheck_clear; neither
+/// pool's entries' object state is touched.
+pub mod pool {
+    pub const OC: u8 = 0;
+    pub const OCC: u8 = 1;
+    pub const OCC_CAP: usize = 10;
+}
+
+/// Collision dispatch: which type pairs interact.
+/// Types: 0 = JntSph, 1 = Pipe, 2 = Tris.
+/// Ordinary OC: JntSph/Pipe x JntSph/Pipe (Tris never participates).
+/// OCC: Tris x JntSph, Tris x Pipe.
+pub fn oc_dispatch(a: u8, b: u8) -> bool {
+    a < 2 && b < 2
+}
+pub fn occ_dispatch(a: u8, b: u8) -> bool {
+    a == 2 && b < 2
+}
+
+/// ClObj_set4 wholesale overwrite: owner_actor, collision_flags0,
+/// collision_flags1, collision_type are all replaced from ClObjData.
+/// This is one of the few paths that can clear a sticky TRIS_HIT.
+pub fn set4_flags(data_flags0: u32, data_flags1: u32) -> (u32, u32) {
+    (data_flags0, data_flags1)
+}
+
+/// Frame pipeline order (m_play.c): CollisionCheck_OC (which ends with
+/// the OCC pass) -> CollisionCheck_clear (registrations only) ->
+/// Actor_info_call_actor (actors consume results, then re-register).
+/// Gameplay_Scene_Read/Init perform no collision registration.
+pub mod frame_order {
+    pub const COLLISION_OC: u8 = 0;
+    pub const CLEAR: u8 = 1;
+    pub const ACTOR: u8 = 2;
+}
+
 // ---- C ABI ----
 
 /// C ABI: apply setOC clear semantics. Returns packed
@@ -117,6 +156,18 @@ pub extern "C" fn pc_occ_clear_flags0(flags0: u32) -> u32 {
 #[no_mangle]
 pub extern "C" fn pc_tris_hit(flags1: u32) -> u8 {
     (flags1 & flag1::TRIS_HIT != 0) as u8
+}
+
+/// C ABI: OC dispatch - 1 if the type pair collides in ordinary OC.
+#[no_mangle]
+pub extern "C" fn pc_oc_dispatch(a: u8, b: u8) -> u8 {
+    oc_dispatch(a, b) as u8
+}
+
+/// C ABI: OCC dispatch - 1 if the type pair collides in OCC.
+#[no_mangle]
+pub extern "C" fn pc_occ_dispatch(a: u8, b: u8) -> u8 {
+    occ_dispatch(a, b) as u8
 }
 
 #[cfg(test)]
@@ -153,5 +204,19 @@ mod tests {
         assert_eq!(pc_occ_clear_flags0(0xFF), 0xFF & !0x04);
         assert_eq!(pc_tris_hit(0x04), 1);
         assert_eq!(pc_tris_hit(0x00), 0);
+        // Dispatch tables.
+        assert!(oc_dispatch(0, 0) && oc_dispatch(0, 1) && oc_dispatch(1, 0) && oc_dispatch(1, 1));
+        assert!(!oc_dispatch(2, 0) && !oc_dispatch(0, 2) && !oc_dispatch(2, 2));
+        assert!(occ_dispatch(2, 0) && occ_dispatch(2, 1));
+        assert!(!occ_dispatch(0, 2) && !occ_dispatch(2, 2) && !occ_dispatch(0, 0));
+        assert_eq!(pc_oc_dispatch(2, 0), 0);
+        assert_eq!(pc_occ_dispatch(2, 1), 1);
+        // set4 wholesale overwrite (clears sticky TRIS_HIT).
+        assert_eq!(set4_flags(0xAA, 0xBB), (0xAA, 0xBB));
+        // Pools and frame order.
+        assert_eq!(pool::OCC_CAP, 10);
+        assert_eq!(frame_order::COLLISION_OC, 0);
+        assert_eq!(frame_order::CLEAR, 1);
+        assert_eq!(frame_order::ACTOR, 2);
     }
 }

@@ -636,6 +636,28 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Runtime Port Progress: Collision Registration Internals (Scene_Read, Pools, Dispatch)
+
+### Source findings (all verified against the local decomp)
+
+- Gameplay_Scene_Read/Init perform no collision registration; CollisionCheck_ct runs once in play_init; CollisionCheck_dt is empty.
+- Two registration pools: collider_table (OC) and mco_work.colliders[10] (OCC). CollisionCheck_clear empties both; object state untouched.
+- Frame order (m_play.c): CollisionCheck_OC (OCC pass at its end) -> CollisionCheck_clear -> Actor_info_call_actor.
+- TWO similarly-named clear tables (easy trap): OCClearFunctionTable (setOC: JntSph/Pipe/Tris OCClear) vs OCCClearFunctionTable (setOCC: NULL/NULL/Tris OCCClear; setOCC rejects non-Tris first).
+- ClObj_OCClear (OC family): clears COLLIDED, collided_actor, PLAYER_WAS_HIT. ClObj_OCCClear (OCC family): clears collided_actor, DONT_UPDATE_POS. Neither clears TRIS_HIT or OCC_CHECK.
+- ClObjTrisElem_OCClear clears element FLAG_HIT; ClObjTrisElem_OCCClear zeroes attribute.t. (Brief conflated these names.)
+- Dispatch: OC = JntSph/Pipe x JntSph/Pipe; OCC = Tris x JntSph/Pipe. setOCC_HitInfo sets TRIS_HIT + collided_actor + hit position (no COLLIDED).
+- ClObj_set4 overwrites flags0/flags1/type wholesale - the path that clears sticky TRIS_HIT.
+- CORRECTIONS vs brief: (1) DONT_UPDATE_POS is cleared by ClObj_OCCClear, NOT ClObj_OCClear; (2) attribute.t zeroing is ClObjTrisElem_OCCClear, not OCClear.
+
+### Rust rewrite implementation
+
+Extended `rust/src/collision_temporal.rs`: pool constants, oc_dispatch/occ_dispatch tables, set4_flags, frame_order, clarified the two-table trap in docs. C ABI: pc_oc_dispatch, pc_occ_dispatch. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- None on the registration internals. Retail assembly check of the TRIS_HIT anomaly still needs static.dol.
+
 ### Authorized Test Run (2026-10-07, commit e742d2a)
 
 Philip said "Run the tests." `cargo test --lib`: **296/296 passed**, 0 failed. (294 prior + 2 new: template_select, step3_data; plus the audit-fix assertions in the albumin test.) This also runtime-verifies the audit fix. Authorization consumed.
