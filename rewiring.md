@@ -137,6 +137,9 @@ Every claim below was re-verified against the USA Rev. 0 decomp; the
 Rust-side corrections are in (commit `848b39c`, workbook row 249).
 Standing rule established: **Rust never owns the retail RNG call** — C
 does `r = RANDOM(n)` and passes the bounded value (or a callback) in.
+Central ABI header: `include/pc_rust.h` (Wave 1 + Wave 2 sections;
+`pc_locomotion_core`, `pc_town_generate`, `pc_town_select_initial_villagers`
+deliberately excluded).
 
 **Wave 2A — safe to wire now** (clean scalar boundaries, verified verbatim):
 
@@ -157,7 +160,7 @@ collects the state):
 | Rust kernel | Notes |
 |---|---|
 | `pc_eligible_furniture_count` | replaces only the counting pass of `mNpc_DecideNpcFurniture`; C builds the 100-byte flag array, keeps the second scan |
-| `pc_request_pick_carried` | now takes `&[u8]`, no allocation across FFI |
+| `pc_request_pick_carried` | takes `&[u8]`, no allocation across FFI; `rng_value` must satisfy `0 <= rng < eligible_count` (rejected, not wrapped — retail passes `RANDOM(item_cnt)` directly) |
 | `pc_npc_schedule_state` | correct value for `schedule->saved_type` only; C keeps forced/current/event overrides |
 | `pc_npc_is_asleep` | answers the base schedule, not the actor's sleep state |
 | `pc_npc_patience(talk_num, looks)` | takes personality — retail indexes `l_npc_temper` by looks (quirk preserved) |
@@ -168,9 +171,8 @@ collects the state):
 
 | Rust kernel | What was fixed |
 |---|---|
-| `pc_request_dispatch` | was a conventional weighted selector; now the verbatim 61-RNG-call shuffle (shared impl with `talk_topics`). **ABI changed** to `(probs, n, rng callback)` — C passes a 3-line `RANDOM` wrapper |
+| `pc_request_dispatch` | was a conventional weighted selector; now the verbatim 61-RNG-call shuffle (shared impl with `talk_topics`). **ABI** is `(probs, n, rng callback)` — C passes a 3-line `RANDOM` wrapper; rated exact, wireable |
 | `pc_letter_friendship_delta` | was `+3/+6/0/+3`; now the retail `+3 / -5-if-BAD / +3-if-present` |
-| `pc_locomotion_core` | documented as a classification helper only, not a movement replacement |
 
 **Wave 2D — do not wire yet** (boundary redesign needed):
 
@@ -179,8 +181,11 @@ collects the state):
   the retail generator rather than shim a function.
 - `pc_scene_table_index` — retail resolves via init-function-pointer
   comparison; the pointer scan stays in C.
-- Full player-movement core — needs the `#[repr(C)]`
-  `PcPlayerMoveState` bridge designed first.
+- `pc_locomotion_core` — wrong abstraction (only a WAIT/WALK/RUN/DASH
+  classifier, not `Player_actor_Movement_Walk`); the real bridge is a
+  future `#[repr(C)]` `PcPlayerMoveState` kernel.
+- `pc_buried_get/set/clear` (whole-array convenience) — wrong boundary;
+  wire the `pc_buried_line_*` row-pointer ops instead.
 
 ### Wave 3 — engine plumbing (status 2026-10-08, commit `aeb52a7`)
 

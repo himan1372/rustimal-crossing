@@ -72,8 +72,12 @@ pub struct CarriedItem {
 
 /// Uniform-random selection among eligible carried items
 /// (`aQMgr_get_possession_ftr_cpt_wl_rnd`):
-/// count eligible, `sel = rng % count`, walk pockets and take the
-/// sel-th eligible one. Returns the pocket index and the item.
+/// count eligible, walk pockets and take the sel-th eligible one.
+/// Returns the pocket index and the item.
+///
+/// `rng_value` must already satisfy `0 <= rng_value < eligible_count`
+/// (retail calls `RANDOM(item_cnt)`); out-of-range values return `None`
+/// instead of being silently wrapped, so ABI misuse is visible.
 pub fn pick_random_eligible(
     pockets: &[u16],
     eligible: &[u8],
@@ -86,7 +90,10 @@ pub fn pick_random_eligible(
     if count == 0 || count > pockets.len() {
         return None;
     }
-    let mut sel = (rng_value % count as u32) as usize;
+    if rng_value as usize >= count {
+        return None;
+    }
+    let mut sel = rng_value as usize;
     for (i, (&item, &e)) in pockets.iter().zip(eligible.iter()).enumerate() {
         if e != 0 {
             if sel == 0 {
@@ -258,11 +265,10 @@ mod tests {
             pick_random_eligible(&pockets, &eligible, 2),
             Some(CarriedItem { pocket_idx: 4, item: 50 })
         );
-        // rng 5 % 3 = 2 -> pocket 4 again.
-        assert_eq!(
-            pick_random_eligible(&pockets, &eligible, 5),
-            Some(CarriedItem { pocket_idx: 4, item: 50 })
-        );
+        // Out-of-range rng is rejected, not wrapped (retail passes
+        // RANDOM(item_cnt) directly).
+        assert_eq!(pick_random_eligible(&pockets, &eligible, 3), None);
+        assert_eq!(pick_random_eligible(&pockets, &eligible, 5), None);
         // No eligible -> None.
         assert_eq!(
             pick_random_eligible(&pockets, &[0u8; 5], 0),

@@ -18,6 +18,7 @@
 #define PC_RUST_H
 
 #include "pc_types.h"
+#include <stddef.h> /* size_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -100,6 +101,121 @@ u32 pc_request_proc_id(u8 looks);
  * or -1 when they don't apply. */
 int pc_house_wall_floor(int is_npc_room_field, u16 wall_id, u16 floor_id,
                         int has_owner);
+
+/* ================= Wave 2 — struct-boundary kernels =================
+ *
+ * These take values extracted from C structs, never the structs
+ * themselves. C owns all retail state, tables, and RNG; Rust returns a
+ * pure result and C applies it. Deliberately NOT declared here:
+ * pc_locomotion_core (wrong abstraction), pc_town_generate and
+ * pc_town_select_initial_villagers (different town representation). */
+
+/* ---- Item / quest: m_quest.c, m_npc.c ---- */
+
+/* mQst_GetGoods_common furniture branch: nonzero when the RANDOM(10)
+ * roll means "use the villager's own furniture". C generates RANDOM(10). */
+u8 pc_npc_house_goods(u32 roll_0_9);
+
+/* mNpc_DecideNpcFurniture eligible count. C classifies each of the 100
+ * house-grid items with the retail predicates into flags (bit 0 =
+ * furniture, bits 1..3 = excluded kind, 7 = no exclusion); C keeps
+ * RANDOM(num) and the selection/storage. */
+u32 pc_eligible_furniture_count(const u8* flags);
+
+/* ---- Quest request selection: ac_quest_talk_normal_init.c ---- */
+
+/* aQMgr_get_possession_ftr_cpt_wl_rnd: pocket index of the sel-th
+ * eligible carried item, or -1. eligible[i] nonzero = pocket i eligible.
+ * rng_value must already satisfy 0 <= rng_value < eligible_count
+ * (C passes RANDOM(item_cnt) directly); out-of-range returns -1. */
+int pc_request_pick_carried(const u16* pockets, const u8* eligible,
+                            size_t count, u32 rng_value);
+
+/* aQMgr_decide_idx_prob_table: 100-entry shuffle + pick with exactly 61
+ * rng(100) calls in retail order. rng is C's callback, e.g.
+ * `static u32 pc_rng(u32 n) { return (u32)RANDOM(n); }`. */
+int pc_request_dispatch(const u8* probs, size_t count, u32 (*rng)(u32));
+
+/* ---- Player: m_player*.c_inc ---- */
+
+/* Turn coefficient from the controller movement percentage. */
+f32 pc_turn_mod(f32 move_pr);
+
+/* ---- NPC movement: m_npc.c ---- */
+
+/* Wander thinker action choice. C passes looks/personality and a
+ * bounded RANDOM(10) roll; C keeps the actor/schedule/destination. */
+u8 pc_wander_choice(u8 personality, int roll);
+
+/* aNPC_chk_avoid_and_search decision from extracted values. */
+u8 pc_friendship_mode(int friendship, u8 player_same_block);
+
+/* ---- NPC schedule: m_npc.c ---- */
+
+/* Base/saved schedule state for a personality at a time. C assigns the
+ * result to sched->saved_type; the live scheduler (forced type/timer,
+ * current type, events) stays in C. */
+u8 pc_npc_schedule_state(u8 looks, u32 seconds);
+
+/* Base-schedule sleep predicate (helper only — not an actor sleep check). */
+int pc_npc_is_asleep(u8 looks, u32 seconds);
+
+/* ---- NPC interaction: m_npc.c ---- */
+
+/* mNpc_GetOverImpatient: patience class from talk count + looks
+ * (temper table indexed by looks). C keeps mNpc_CountTalkNum. */
+u8 pc_npc_patience(u8 talk_num, u8 looks);
+
+/* ---- Mail: m_npc.c ---- */
+
+/* mNpc_Remail friendship delta: good/present -> +3/+6/-2/+1.
+ * C owns Mail_c/Anmmem_c and applies mNpc_AddFriendship. */
+int pc_letter_friendship_delta(u8 good, u8 present);
+
+/* ---- Collision setup ---- */
+
+/* Neighborhood dimension from range (3/5/7). */
+u32 pc_collision_neighborhood(f32 range);
+
+/* mCoBG_CollisionData_c 32-bit pack: bit0 slate, 1..5 center, 6..10
+ * top_left, 11..15 bot_left, 16..20 bot_right, 21..25 top_right,
+ * 26..31 unit_attribute. */
+u32 pc_collision_pack(u8 slate, u8 center, u8 top_left, u8 bot_left,
+                      u8 bot_right, u8 top_right, u8 attribute);
+
+/* ---- Field deposit: m_field_info.c ---- */
+
+/* mFI_GetLineDeposit / mFI_LineDepositON / mFI_LineDepositOFF.
+ * C passes mFI_GetDepositP(bx, bz) + ut_z directly. */
+int pc_buried_line_get(const u16* line, u8 ut_x);
+void pc_buried_line_set(u16* line, u8 ut_x);
+void pc_buried_line_clear(u16* line, u8 ut_x);
+
+/* ---- House: ac_npc_shop_common.c ---- */
+
+/* Next mortgage from size + basement flag. C applies size->loan and
+ * the message/save mutations. */
+u32 pc_house_next_loan(u8 size, int basement_ordered);
+
+/* ---- Shop: m_shop.c ---- */
+
+/* mSP_GetRealShopLevel. disable_visitor_req mirrors the PC port's
+ * g_pc_settings toggle (Nookington's without a foreign visitor). */
+int pc_shop_real_level(u32 sales_sum, int visitor_flag,
+                       int disable_visitor_req);
+
+/* mSP_PlusSales: clamped new sales sum. C writes it back to the save. */
+u32 pc_shop_plus_sales(u32 sales_sum, u8 tier, u32 sum);
+
+/* ---- Scene ---- */
+
+/* game_get_next_game_dlftbl index validation: C resolves the table
+ * pointer via the retail function-pointer scan first; Rust classifies
+ * the static index. */
+int pc_scene_table_index(u8 table_index);
+
+/* game_dlftbls[] entry count (10). Low value — ARRAY_COUNT suffices. */
+u32 pc_game_dlftbls_count(void);
 
 /* ---- Scene: m_scene.c ---- */
 

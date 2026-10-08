@@ -380,6 +380,11 @@ pub extern "C" fn pc_buried_get(bx: u8, bz: u8, ut_x: u8, ut_z: u8, deposit: *co
 }
 
 /// C ABI: set the buried bit for a tile.
+///
+/// Rewrite-side convenience: takes the whole deposit array and does
+/// the block/line indexing itself. This is NOT the retail boundary —
+/// wire `pc_buried_line_set` instead (C passes `mFI_GetDepositP(bx, bz)
+/// + ut_z` directly).
 #[no_mangle]
 pub extern "C" fn pc_buried_set(bx: u8, bz: u8, ut_x: u8, ut_z: u8, deposit: *mut u16) {
     if deposit.is_null() {
@@ -400,6 +405,11 @@ pub extern "C" fn pc_buried_set(bx: u8, bz: u8, ut_x: u8, ut_z: u8, deposit: *mu
 }
 
 /// C ABI: clear the buried bit for a tile.
+///
+/// Rewrite-side convenience: takes the whole deposit array and does
+/// the block/line indexing itself. This is NOT the retail boundary —
+/// wire `pc_buried_line_clear` instead (C passes `mFI_GetDepositP(bx, bz)
+/// + ut_z` directly).
 #[no_mangle]
 pub extern "C" fn pc_buried_clear(bx: u8, bz: u8, ut_x: u8, ut_z: u8, deposit: *mut u16) {
     if deposit.is_null() {
