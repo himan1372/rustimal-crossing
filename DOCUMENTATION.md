@@ -611,6 +611,26 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: River-Cliff Albumin Tables
+
+### Source findings (all verified against the local decomp)
+
+- mRF_RiverAlbuminCliff(cliff_type, river_type): group-gated (CLIFF 15-21, RIVER 40-46), indices river-40 / cliff-15 into river_cliff_album_data[7][7]. Three real rows (south/east/west) + four all-NONE rows (corner rivers). 17 valid cells: south 7, east 5, west 5.
+- Exact rows: south -> 22..28 (WATERFALL_STRAIGHT_CLIFF_HORIZONTAL .. RIVER_STRAIGHT_CLIFF_BOTTOM_LEFT_CORNER); east -> 29,30,31,32,33,NONE,NONE; west -> 34,NONE,NONE,35,36,37,38.
+- Block group ranges (blockGroup): RIVER_CLIFF_ANY 22..38, RIVER_CLIFF_1 22..28, RIVER_CLIFF_2 29..33, RIVER_CLIFF_3 34..38 (brief said 34..36; source says 38). Enum values extracted programmatically from m_field_make.h.
+- mRF_DecideRiverAlbuminCliff: valid albumin -> cliff_blocks = combined type; no albumin but river present -> cliff_blocks = river block (ordinary river); no river -> unchanged. So cliff_blocks becomes the merged landform map.
+- River-trace legality: mRF_TraceRiverPart2/Part1 call mRF_RiverAlbuminCliff when the next acre has a cliff; incompatible -> return FALSE, failing the river-generation attempt (rejection, not correction).
+- Step-3 towns bypass albumin (pre-authored templates).
+- Combined types keep cliff-direction bits in mRF_GetSystemBlockInfo (height calc) and participate in RIVER_CLIFF_ANY checks downstream.
+
+### Rust rewrite implementation
+
+`rust/src/albumin.rs`: bt/group constants, ALBUMIN 3x7 table, river_albumin_cliff (group gates + index math), decide_albumin_cell (merge semantics), albumin_valid_count. C ABI: pc_river_albumin_cliff, pc_decide_albumin_cell. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Step-3 template bodies and the full mRF_SelectBlock combination-resolution pass not yet ported. BG geometry/collision per albumin output (the suggested next target) not yet traced.
+
 ### Runtime Port Progress: Collision Temporal Lifecycle
 
 ### Source findings (all verified against the local decomp)

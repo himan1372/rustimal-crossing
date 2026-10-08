@@ -68,6 +68,7 @@ mod weather_season;
 mod tool_resolvers;
 mod frame_loops;
 mod collision_temporal;
+mod albumin;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;
