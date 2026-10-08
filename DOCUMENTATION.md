@@ -1665,6 +1665,18 @@ This increment ports the complete retail seasonal-species data layer to Rust: `r
 - Historical BUGFIXES interactions around spawn selection need a separate audit.
 - No C callers are rewired to the new tables yet.
 
+### Runtime Port Progress: Systems Showcase Prototype
+
+`showcase/` is a new generator crate (same pattern as `town_prototype/`): it `#[path]`-includes the real library modules (`town_gen`, `ecology`, `species`, `fish_tables`, `insect_tables`, `letter_score`, `villager_mail`, `quest`, `quest_gen`) and emits a single self-contained `showcase.html` (no network, no game assets). Five tabs:
+
+- **3D Town**: the existing WebGL town viewer (CSS/JS adapted into the tabbed shell), freshly generated town, seed 305419896, 6 residents.
+- **Fish & Bugs**: interactive explorer over all 236 fish + 78 insect tables embedded as JSON — month/day/hour/water/rain/island selectors render the real verbatim entries with weights and spawn areas, including the dynamic Coelacanth rain injection.
+- **Letter Lab**: six sample letters scored at generation time by the real seven-check + trigram engine (`score_letter`, NtscU mode), with per-check bars, totals, and quest ranks.
+- **Quest Board**: the real `l_set_data` rows (12 normal type/kind combos) with recipient mode, day limit, final step, handover, item source, max pay.
+- **Systems Index**: cards summarizing 24 ported systems.
+
+Both inline scripts pass `node --check`; species lookups, letter totals, and quest rows were smoke-tested against the generated JSON.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

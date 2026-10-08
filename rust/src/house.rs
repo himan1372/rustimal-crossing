@@ -342,6 +342,7 @@ mod tests {
     fn basement_from_medium() {
         let mut house = House::default();
         house.size_info.size = HouseSize::Medium;
+        house.size_info.next_size = HouseSize::Medium; // no expansion pending
         // Basement allowed from MEDIUM (retail correction).
         assert!(house.order_basement((2026, 10, 7)));
         assert!(!house.size_info.has_basement); // not yet built

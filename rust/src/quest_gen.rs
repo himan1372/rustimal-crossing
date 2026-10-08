@@ -1490,10 +1490,11 @@ mod tests {
         pockets[2] = 0x2222;
         assert_eq!(find_free_delivery(&deliveries, &pockets), Some(3));
 
-        // Handover binds the first empty pocket.
+        // Handover binds the first empty pocket (pockets[0] and [2] are
+        // occupied; delivery records do not affect the handover scan).
         let idx = handover_item(&mut pockets, 0x3001).unwrap();
-        assert_eq!(idx, 3);
-        assert_eq!(pockets[3], 0x3001);
+        assert_eq!(idx, 1);
+        assert_eq!(pockets[1], 0x3001);
         assert_eq!(handover_item(&mut full.clone(), 0x3001), Err(QuestGenError::NoSpace));
 
         // Grab/put: delivery keeps the pocket index.

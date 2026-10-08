@@ -508,8 +508,9 @@ mod tests {
             let t = crate::insect_tables::INSECT_ISLAND[insect_time_no(h) as usize];
             assert!(!t.is_empty());
         }
-        // Island term 1 has the explicit NONE entry.
-        let isl1 = crate::insect_tables::INSECT_ISLAND[1];
+        // Island term tables: the brief's 1-indexed "term 1" is index 0
+        // (l_insect_isl_t1), which carries the explicit NONE entry.
+        let isl1 = crate::insect_tables::INSECT_ISLAND[0];
         assert!(isl1.iter().any(|e| e.insect == InsectType::None && e.weight == 78));
     }
 

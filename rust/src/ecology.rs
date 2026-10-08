@@ -363,10 +363,13 @@ mod tests {
 
     #[test]
     fn fish_selection() {
-        // Two candidates, equal weight, env 1.0.
+        // Two candidates, equal weight, env 1.0. Retail walks from the total
+        // downward, so high rolls pick early entries and low rolls pick
+        // late entries.
         let w = [(10.0, true), (10.0, true)];
-        assert_eq!(fish_select(&w, 1.0, 0.0), Some(0));
-        assert_eq!(fish_select(&w, 1.0, 0.99), Some(1));
+        assert_eq!(fish_select(&w, 1.0, 0.0), Some(1));
+        assert_eq!(fish_select(&w, 1.0, 0.99), Some(0));
+        assert_eq!(fish_select(&w, 1.0, 0.1), Some(1));
         // Habitat-incompatible first candidate is skipped via retry.
         let w2 = [(10.0, false), (10.0, true)];
         assert_eq!(fish_select(&w2, 1.0, 0.0), Some(1));
@@ -386,9 +389,11 @@ mod tests {
 
     #[test]
     fn insect_selection() {
-        // Total 60 <= 100: roll 0.7 -> 70 > 60 -> no spawn.
+        // Total 60 <= 100: basis is 100, so roll 0.2 -> 20 hits entry 0,
+        // roll 0.5 -> 50 hits entry 1, roll 0.7 -> 70 > 60 -> no spawn.
         let w = [30.0, 30.0];
-        assert_eq!(insect_select(&w, 0.5), Some(0));
+        assert_eq!(insect_select(&w, 0.2), Some(0));
+        assert_eq!(insect_select(&w, 0.5), Some(1));
         assert_eq!(insect_select(&w, 0.7), None); // no-spawn mass
         // Total > 100: normalized.
         let w2 = [60.0, 60.0];
