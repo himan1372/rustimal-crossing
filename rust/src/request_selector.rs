@@ -273,12 +273,12 @@ mod tests {
     #[test]
     fn first_match_pick() {
         let pockets = [10u16, 20, 30];
-        let eligible = [false, true, true];
+        let eligible = [0u8, 1, 1];
         assert_eq!(
             pick_first_eligible(&pockets, &eligible),
             Some(CarriedItem { pocket_idx: 1, item: 20 })
         );
-        assert_eq!(pick_first_eligible(&pockets, &[false; 3]), None);
+        assert_eq!(pick_first_eligible(&pockets, &[0u8; 3]), None);
     }
 
     #[test]
@@ -299,13 +299,13 @@ mod tests {
         // All identity swaps, final pick 0 -> table[0] = entry 0.
         let mut rng = scripted(vec![0; 61]);
         assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, &mut rng), Some(0));
-        // Identity swaps, final pick 49 -> still entry 0
-        // (weights {49,17,17,17} fill table[0..49] with 0).
+        // Identity swaps, final pick 48 -> still entry 0
+        // (weights {49,17,17,17} fill table[0..48] with 0).
         let mut seq = vec![0; 60];
-        seq.push(49);
+        seq.push(48);
         let mut rng = scripted(seq);
         assert_eq!(decide_idx_prob_table(&NORMAL_3_PROBS, &mut rng), Some(0));
-        // Identity swaps, final pick 50 -> entry 1.
+        // Identity swaps, final pick 49 -> entry 1.
         let mut seq = vec![0; 60];
         seq.push(50);
         let mut rng = scripted(seq);
