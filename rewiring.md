@@ -217,8 +217,21 @@ unchanged):
 
 | Rust module | Replaces | What's missing |
 |---|---|---|
-| `mtx.rs` | `src/pc_mtx.c` | `f32.to_bits()` differential suite first (float op-order sensitivity) |
-| `vi.rs` | `src/pc_vi.c` | wire last, after boot/game-loop validation on the Rust profiler; callback ABI already fixed to `void*` |
+| `mtx.rs` | `src/pc_mtx.c` | `f32.to_bits()` differential suite first — runs on your machine (C vs Rust harness). Rust side ready: op order preserved (`PSMTXConcat`, `guRotateF` verified line-by-line); only `sin_cos()` vs separate `sinf`/`cosf` needs the bit check |
+| `vi.rs` | `src/pc_vi.c` | wire last, after boot/game-loop validation on the Rust profiler; callback ABI already fixed to `void*`; pipeline calls back into C (`pc_platform_poll_events`, `pc_gx_draw_pending`, `pc_platform_swap_buffers`, `pc_audio_get_buffer_fill`) — those stay C |
+
+**Wave 3 audit 2026-10-08** — re-verified every brief claim against the
+repo, all confirmed, no code changes needed:
+- Symbol coverage 1:1 for all seven modules (dvd 23/23, disc 7/7,
+  aram 12/12, profiler 12/12, mtx 37/37, vi 13/13, gbi 2/2).
+- `ARFree` → `()` matches `void ARFree(u32*)`; VI callbacks are
+  `*mut c_void` ↔ `void*` both ways.
+- DVDFileInfo layout (0x18 FILE*, 0x30 start, 0x34 length) matches;
+  `pc_disc_extract_dol/rel` return libc `malloc` buffers C frees.
+- GBI token base/count (`0x02F0_0000`/8192) match.
+- `pc_rust.h` correctly does NOT cover Wave 3 (separate ABI boundary).
+- The five wired modules need no C call-site changes; `letter_score.rs`
+  path untouched.
 
 **Deliberately not replaced:** `pc_platform.c` (SDL/GX/audio stay C),
 the profiler's C-owned emu64 counters, `g_pc_profile_*` header decls.
