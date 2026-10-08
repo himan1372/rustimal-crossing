@@ -1603,6 +1603,39 @@ New `rust/src/furniture.rs`: grid/layer constants, `Direction` + rotation encodi
 - Exact `aMR_GetPlayerLookAtUnit` world-position-to-cell mapping (the Rust model quantizes to the placement direction; documented in-module).
 - Place-table sentinel values beyond the free slot, complete `aFTR_size_info_c` collision table, full `aMR_layer_set_info` entries, parent/child move/rotate propagation, per-furniture vtable behaviors, wall/door FG layout on rehouse, HRA scoring on top of this model.
 
+### Runtime Port Progress: Quest Request Generation
+
+This increment ports the retail quest-*generation* layer to `pc/rust/src/quest_gen.rs`, verified against `include/m_quest.h`, `src/game/m_quest.c`, `include/ac_quest_manager.h`, `src/actor/ac_quest_manager.c`, and `src/actor/ac_quest_talk_init.c` (a second verification pass confirmed every claim; corrections below are folded in). It complements `quest.rs` (quest state/rewards/timeouts/completion) and is distinct from `request_selector.rs` (possession/trade dialogue requests).
+
+**Source findings:**
+
+- Generation pipeline: pending quest? -> 75% attempt gate (`mQst_GetRandom(4) != 0`) -> type table (first-job vs normal) -> uniform type -> uniform kind -> `aQMgr_actor_check_occur()` eligibility -> free storage -> `l_set_data[type][kind]` -> recipient -> item -> pocket handover -> persist.
+- Type tables: first-job {DELIVERY, ERRAND}, normal {DELIVERY, ERRAND, CONTEST}; first-job applies when `!mLd_PlayerManKindCheck() && mEv_CheckEvent(mEv_SAVED_FIRSTJOB_PLR0 + player_no)`.
+- Kind tables: fj delivery {NORMAL, LOST}, fj errand {REQUEST}; normal delivery {NORMAL, FOREIGN, REMOVE, LOST}, errand {REQUEST}, contest {FRUIT, SOCCER, SNOWMAN, FLOWER, FISH, INSECT, LETTER} — all uniform selection.
+- Occurrence gating: every contest kind first requires the kind not already active; snowman = Jan / Feb 1-17 / Dec 25-31, hour 8 through 16 (16:59); flower = Feb 25+ through Aug, >=4 empty acre spaces, <=20 flowers; insect = Mar-Oct / Nov 1-28; letter = local resident player (`mLd_PlayerManKindCheck() == FALSE`); foreign/remove = no existing quest + valid stored/last-removed ID. A failed check fails the attempt (no reroll).
+- Six recipient modes (`aQMgr_QUEST_TARGET_*` 0..5): RANDOM (uniform among eligible, giver + same-acre excluded), RANDOM_EXCLUDED (also excludes chain members; sets `errand_type = CHAIN`), ORIGINAL_TARGET (chain head, else giver), FOREIGN (`stored_anm_id`, else `NEW_QUEST_NO_FOREIGN_ID`), LAST_REMOVE (`last_removed_animal_id`, else `NEW_QUEST_NO_REMOVE_ANIMAL_ID`), CLIENT (the giver itself). `mNpc_GetOtherAnimalPersonalIDOtherBlock` picks uniformly among eligible villagers (same-acre residents skipped, not counted).
+- `l_set_data[type][kind]` (`aQMgr_set_data_c`: to_type:3, day_limit:6, last_step:4, handover_item:1, src_item_type:3, item, reward_percentages[8], max_pay, msg_start[13]) ported verbatim: 4 delivery rows, 15 errand rows (REQUEST/RANDOM_EXCLUDED/2d/last-step 4; REQUEST_CONTINUE/last-step 1; REQUEST_FINAL/ORIGINAL_TARGET/handover — the 12 first-job rows are uniformly CLIENT/0-day/no-handover/CURRENT_ITEM, differing only in msg_start), 7 contest rows (all CLIENT; fruit 1d/last 1/FRUIT, soccer 1d/last 2, snowman 1d/last 1, flower/fish/insect 3d/last 1, letter 2d/last 2). Item sources: RANDOM=decide_item, FRUIT=town's non-native fruit, CLOTH=decide_cloth, FROM_DATA=set-data item, CURRENT_ITEM=errand item (or ITM_CLOTH001=0x2401), NONE=EMPTY_NO. Quest init: `progress = last_step`, time limit enabled iff `day_limit != 0`.
+- Entrusted items: handover takes the first empty pocket (`mPr_GetPossessionItemIdx(priv, EMPTY_NO)`), else the request is not created (`NEW_QUEST_NO_SPACE`); the item is stored with `mPr_ITEM_COND_QUEST` (NORMAL=0/PRESENT=1/QUEST=2, 2-bit-per-pocket). Delivery record `i` <-> pocket `i` (15 records); errand records (5) carry their own `pockets_idx`. Grab/put: `grab.pocket_idx` is the pocket index for delivery but the *errand record index* for errands (retail quirk preserved); put-down first displaces the destination slot's occupant (displacement chain).
+- Letter quest: `mQst_SetReceiveLetter` gates on CONTEST/LETTER + progress==2 + empty player_id -> player_id=sender, progress=1, score=rank, present=`mQst_GetPresent(rank)`; rank = length tier (17->+1, 49->+2) + quality>=OK (+3) + present (+6), reusing the ported `mQst_GetMailRank`; presents per rank 0-11 (ranks 5/11: 50/50 carpet/wallpaper via `(RANDOM(4)&1)==0`); reply handbill `0x75 + rank*6 + looks` (72 combinations), festive paper, mailbox-full fails the reply (`mQst_SendRemail` FALSE).
+- First-job letters (`mQst_ERRAND_FIRSTJOB_SEND_LETTER[_2]`): ERRAND/FIRST_JOB quests, progress=2, no time limit/reward/entrusted item, `used_ids[1]`=recipient, `used_num`=2; completion on the letter event sets progress=3 and clears `send_reply`.
+
+**Rust rewrite implementation:**
+
+New `rust/src/quest_gen.rs`: type/kind tables + uniform selection, first-job table selector, full first-job errand kind enum (3-14), `OccurCtx` + `occur_ok`, `QuestTarget` + `resolve_recipient` (uniform-among-eligible), `QuestItemSource` + `resolve_item_source`, verbatim `DELIVERY_SET_DATA`/`ERRAND_SET_DATA`/`CONTEST_SET_DATA` + `set_data()` lookup, `quest_init_from_set_data`, item-condition constants, delivery/errand slot records with the pocket-index invariants, `handover_item`, `check_grab`/`check_put` (with the errand-index quirk and displacement chain), `LetterContest` + receive gate/rank/present/handbill, `FirstJobLetter`. C ABI: pc_quest_use_first_job_table, pc_quest_type_select, pc_quest_kind_count, pc_quest_kind_select, pc_quest_occur_ok, pc_quest_target, pc_quest_set_day_limit, pc_quest_set_handover, pc_quest_item_source, pc_quest_set_max_pay, pc_first_empty_pocket, pc_item_condition_quest, pc_letter_present_category, pc_letter_carpet_or_wallpaper, pc_letter_handbill.
+
+**Correction to existing code:** `quest.rs::contest_complete` previously treated fruit/soccer/snowman/letter as "progress == 1". Retail: fruit needs the requested item possessed; snowman needs `player_id` set and equal to the current player; flower needs goal + player-ID qualification; fish/insect need null player_id + owned category item. Now modeled with `ContestQual` + `cqual` bit flags; `pc_contest_complete` takes a flags bitmask (ABI changed; no C callers are wired yet).
+
+`cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+**Gaps:**
+
+- Exact `msg_start` message-kind semantics (values ported verbatim, meanings untraced).
+- First-job recipient selection details beyond `used_ids`.
+- Full errand-chain progression around `errand_next`.
+- Every interaction that can move/destroy/duplicate/invalidate a quest-conditioned pocket item.
+- Exact completion/reward transaction ordering per quest type.
+- BUGFIXES-configuration differences in quest code.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

@@ -177,17 +177,77 @@ pub fn limit_days(quest_type: u8, quest_kind: u8, progress: u8) -> Option<i32> {
 
 /// Contest completion: (progress, player_qualified) -> complete.
 /// Per-kind rules from ac_quest_contest.c_inc:
-/// - fruit/soccer/snowman/letter: progress == 1
-/// - flower: progress == 1 && flower condition met (player_id null or current)
-/// - fish/insect: progress == 1 && player_id null && owns category item
+/// - fruit: progress == 1 AND requested item possessed
+/// - soccer: progress == 1
+/// - snowman: progress == 1 AND contest.player_id set AND == current player
+/// - letter: progress == 1
+/// - flower: flower goal met and player-ID qualification
+/// - fish/insect: progress == 1 AND player_id null AND owns category item
 ///   (category-based, NOT exact requested-item match).
-pub fn contest_complete(kind: u8, progress: u8, player_qualified: bool) -> bool {
+///
+/// CORRECTION vs the earlier port: fruit and snowman were previously lumped
+/// with soccer/letter as "progress == 1"; retail requires the extra
+/// conditions above.
+pub struct ContestQual {
+    /// Fruit: the requested item is in the player's pockets.
+    pub item_possessed: bool,
+    /// Snowman: contest.player_id is set.
+    pub player_id_set: bool,
+    /// Snowman: contest.player_id == current player.
+    pub player_id_current: bool,
+    /// Flower: flower goal met with player-ID qualification.
+    pub flower_ok: bool,
+    /// Fish/insect: contest.player_id is null.
+    pub player_id_absent: bool,
+    /// Fish/insect: player owns an item of the contest category.
+    pub owns_category_item: bool,
+}
+
+impl ContestQual {
+    pub fn none() -> Self {
+        ContestQual {
+            item_possessed: false,
+            player_id_set: false,
+            player_id_current: false,
+            flower_ok: false,
+            player_id_absent: false,
+            owns_category_item: false,
+        }
+    }
+}
+
+/// Bit flags for [`ContestQual`] used by the C ABI.
+pub mod cqual {
+    pub const ITEM_POSSESSED: u8 = 0x01;
+    pub const PLAYER_ID_SET: u8 = 0x02;
+    pub const PLAYER_ID_CURRENT: u8 = 0x04;
+    pub const FLOWER_OK: u8 = 0x08;
+    pub const PLAYER_ID_ABSENT: u8 = 0x10;
+    pub const OWNS_CATEGORY_ITEM: u8 = 0x20;
+}
+
+pub fn contest_qual_from_flags(flags: u8) -> ContestQual {
+    ContestQual {
+        item_possessed: flags & cqual::ITEM_POSSESSED != 0,
+        player_id_set: flags & cqual::PLAYER_ID_SET != 0,
+        player_id_current: flags & cqual::PLAYER_ID_CURRENT != 0,
+        flower_ok: flags & cqual::FLOWER_OK != 0,
+        player_id_absent: flags & cqual::PLAYER_ID_ABSENT != 0,
+        owns_category_item: flags & cqual::OWNS_CATEGORY_ITEM != 0,
+    }
+}
+
+pub fn contest_complete(kind: u8, progress: u8, q: &ContestQual) -> bool {
     if progress != 1 {
         return false;
     }
     match kind {
-        ckind::FRUIT | ckind::SOCCER | ckind::SNOWMAN | ckind::LETTER => true,
-        ckind::FLOWER | ckind::FISH | ckind::INSECT => player_qualified,
+        ckind::FRUIT => q.item_possessed,
+        ckind::SOCCER => true,
+        ckind::SNOWMAN => q.player_id_set && q.player_id_current,
+        ckind::LETTER => true,
+        ckind::FLOWER => q.flower_ok,
+        ckind::FISH | ckind::INSECT => q.player_id_absent && q.owns_category_item,
         _ => false,
     }
 }
@@ -269,10 +329,11 @@ pub extern "C" fn pc_quest_limit_days(quest_type: u8, quest_kind: u8, progress: 
     limit_days(quest_type, quest_kind, progress).unwrap_or(-1)
 }
 
-/// C ABI: contest completion check.
+/// C ABI: contest completion check. `flags` is a bitmask of [`cqual`]
+/// qualification bits; see [`contest_complete`].
 #[no_mangle]
-pub extern "C" fn pc_contest_complete(kind: u8, progress: u8, player_qualified: u8) -> u8 {
-    contest_complete(kind, progress, player_qualified != 0) as u8
+pub extern "C" fn pc_contest_complete(kind: u8, progress: u8, flags: u8) -> u8 {
+    contest_complete(kind, progress, &contest_qual_from_flags(flags)) as u8
 }
 
 /// C ABI: scaled money reward.
@@ -346,13 +407,50 @@ mod tests {
         assert_eq!(limit_days(qtype::ERRAND, 5, 2), Some(0)); // first-job: no limit
         assert_eq!(limit_days(qtype::DELIVERY, 9, 2), None);
         assert_eq!(MAX_TIME_LIMIT_DAYS, 28);
-        // Contest completion.
-        assert!(contest_complete(ckind::FRUIT, 1, false));
-        assert!(!contest_complete(ckind::FRUIT, 2, true));
-        assert!(contest_complete(ckind::FISH, 1, true));
-        assert!(!contest_complete(ckind::FISH, 1, false)); // category check
+        // Contest completion (retail per-kind rules).
+        let q_none = ContestQual::none();
+        // Fruit needs the requested item possessed.
+        assert!(!contest_complete(ckind::FRUIT, 1, &q_none));
+        let mut q = ContestQual::none();
+        q.item_possessed = true;
+        assert!(contest_complete(ckind::FRUIT, 1, &q));
+        assert!(!contest_complete(ckind::FRUIT, 2, &q));
+        // Soccer: progress == 1 only.
+        assert!(contest_complete(ckind::SOCCER, 1, &q_none));
+        // Snowman: player_id set and == current player.
+        assert!(!contest_complete(ckind::SNOWMAN, 1, &q_none));
+        let mut qs = ContestQual::none();
+        qs.player_id_set = true;
+        assert!(!contest_complete(ckind::SNOWMAN, 1, &qs));
+        qs.player_id_current = true;
+        assert!(contest_complete(ckind::SNOWMAN, 1, &qs));
+        // Letter: progress == 1 only.
+        assert!(contest_complete(ckind::LETTER, 1, &q_none));
+        // Flower: goal + qualification.
+        assert!(!contest_complete(ckind::FLOWER, 1, &q_none));
+        let mut qf = ContestQual::none();
+        qf.flower_ok = true;
+        assert!(contest_complete(ckind::FLOWER, 1, &qf));
+        // Fish/insect: player_id null + owns category item.
+        let mut qi = ContestQual::none();
+        qi.player_id_absent = true;
+        assert!(!contest_complete(ckind::FISH, 1, &qi));
+        qi.owns_category_item = true;
+        assert!(contest_complete(ckind::FISH, 1, &qi));
+        assert!(contest_complete(ckind::INSECT, 1, &qi));
+        // Flag roundtrip.
+        let flags = cqual::ITEM_POSSESSED | cqual::PLAYER_ID_ABSENT | cqual::OWNS_CATEGORY_ITEM;
+        let qf2 = contest_qual_from_flags(flags);
+        assert!(qf2.item_possessed && qf2.player_id_absent && qf2.owns_category_item);
+        assert!(!qf2.flower_ok);
         assert_eq!(pc_quest_limit_days(qtype::CONTEST, 6, 1), 2); // letter
         assert_eq!(pc_contest_complete(ckind::SOCCER, 1, 0), 1);
+        assert_eq!(pc_contest_complete(ckind::FRUIT, 1, 0), 0); // needs item
+        assert_eq!(pc_contest_complete(ckind::FRUIT, 1, cqual::ITEM_POSSESSED), 1);
+        assert_eq!(
+            pc_contest_complete(ckind::SNOWMAN, 1, cqual::PLAYER_ID_SET | cqual::PLAYER_ID_CURRENT),
+            1
+        );
         // Money scaling: base 200, +10%, no money power.
         let p = scaled_pay(200, 0, 1.0, 0);
         assert_eq!(p, (200.0 * (110.0 * 100.0) / 10000.0) as u32);
