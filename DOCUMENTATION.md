@@ -636,6 +636,10 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Authorized Test Run (2026-10-07, commit d2c3957)
+
+Philip said "Run the tests." `cargo test --lib`: **294/294 passed**, 0 failed. (281 from the previous run + 13 new: albumin table, placement passes, albumin geometry trace, placement deep dive.) Authorization consumed.
+
 ### Runtime Port Progress: Placement Passes, Deep Dive (Flat Info, Unique Buildings, Heights)
 
 ### Source findings (all verified against the local decomp)
