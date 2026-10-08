@@ -65,6 +65,14 @@ random inputs, edge cases (zero, negatives, huge values), and real captured
 game inputs. `wall_priority.rs` already contains the template
 (`move_tail_differential_bits`).
 
+## Verdict legend
+
+Every function below carries a verdict:
+
+- 🟢 **Direct** — the Rust function plugs straight into the C call site as-is.
+- 🟡 **Light adapter** — thin C code needed around the call: gather values out of the structs, call Rust, apply the result.
+- 🔴 **Rewrite needed** — the call (or the Rust side) must be redesigned before it can be wired; do not plug it in as-is.
+
 ## Wave 1 — reorganized into kernels
 
 ### Wave 1A — pure numerical kernels ★★★★★
@@ -141,7 +149,7 @@ Central ABI header: `include/pc_rust.h` (Wave 1 + Wave 2 sections;
 `pc_locomotion_core`, `pc_town_generate`, `pc_town_select_initial_villagers`
 deliberately excluded).
 
-**Wave 2A — safe to wire now** (clean scalar boundaries, verified verbatim):
+**Wave 2A 🟢 — safe to wire now** (clean scalar boundaries, verified verbatim):
 
 | Rust kernel | C function | C call site idea |
 |---|---|---|
@@ -154,7 +162,7 @@ deliberately excluded).
 | `pc_shop_plus_sales` | `mSP_PlusSales` | `m_shop.c` — C writes back `sales_sum` |
 | `pc_game_dlftbls_count` | `game_dlftbls` users | count only (11, incl. the PC-only model viewer) |
 
-**Wave 2B — wire with C-side state gathering** (kernels are correct; C
+**Wave 2B 🟡 — wire with C-side state gathering** (kernels are correct; C
 collects the state):
 
 | Rust kernel | Notes |
@@ -167,14 +175,14 @@ collects the state):
 | `pc_collision_neighborhood`, `pc_collision_pack` | sub-operations, not whole-function replacements |
 | `pc_buried_line_get/set/clear` | the exact retail row-pointer boundary (`mFI_*`); the whole-array `pc_buried_get/set/clear` are rewrite-side convenience |
 
-**Wave 2C — fixed in Rust, ready to wire** (were wrong, now corrected):
+**Wave 2C 🟢 — fixed in Rust, ready to wire** (were wrong, now corrected):
 
 | Rust kernel | What was fixed |
 |---|---|
 | `pc_request_dispatch` | was a conventional weighted selector; now the verbatim 61-RNG-call shuffle (shared impl with `talk_topics`). **ABI** is `(probs, n, rng callback)` — C passes a 3-line `RANDOM` wrapper; rated exact, wireable |
 | `pc_letter_friendship_delta` | was `+3/+6/0/+3`; now the retail `+3 / -5-if-BAD / +3-if-present` |
 
-**Wave 2D — do not wire yet** (boundary redesign needed):
+**Wave 2D 🔴 — do not wire yet** (boundary redesign needed):
 
 - `pc_town_generate`, `pc_town_select_initial_villagers` — `TownPlan`
   is rewrite-owned, not retail `mFM_*` state; wiring now would replace
