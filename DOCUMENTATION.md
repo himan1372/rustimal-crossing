@@ -1573,6 +1573,36 @@ This increment ports the GameCube time stack to `pc/rust/src/game_time.rs`, veri
 
 15 unit tests pass (authorized run): epoch/weekday/roundtrips, leap years, nth-weekday spot checks (Thanksgiving 2026, etc.), season terms, 6 AM boundary, renewal, year clamps, delta-based Set Clock, equinoxes, event predicates. Workbook rows 36+ record the findings.
 
+### Runtime Port Progress: Furniture Placement & House Interiors
+
+This increment ports the retail house-interior runtime to `pc/rust/src/furniture.rs`, verified against the decompilation before porting (`include/ac_furniture.h`, `src/actor/ac_my_room.c`, `src/actor/ac_my_room_move.c_inc`, `include/m_room_type.h`, `src/game/m_room_type.c`, `include/m_home_h.h`, `include/m_ftr_def.h`).
+
+**Core architectural finding:** the saved house is a persistent foreground-grid representation; entering a room deserializes it into runtime `FTR_ACTOR`s (from layers 0 and 1 only), and leaving the room serializes runtime state back. Storage furniture keeps three contained items in the higher FG layers while saved and in `FTR_ACTOR.items[3]` while live.
+
+**Source findings:**
+
+- House floor (`mHm_flr_c`, 0x8A8): `layer_main`, `layer_secondary` ("also storage layer 0"), `layer_storage1`, `layer_storage2`, `wall_floor` (flooring/wallpaper indices), `tempo_beat`, `floor_bit_info` (wall_original/floor_original custom-design bits). Each `mHm_lyr_c` (0x228) holds `items[16][16]`, `ftr_switch` u64, `haniwa_step[8]`.
+- Rotation is encoded in the low 2 bits of the saved item number (`FTR_GET_ROTATION`, `FTR_IDX_2_NO`, `FTR_NO_2_IDX`, `FTR_NO_ROT_2_IDX`); 0=SOUTH, 1=EAST, 2=NORTH, 3=WEST.
+- Six shape types: four 1x2 orientations (B90/B180/B270/B0) + 1x1 (A) + 2x2 (C). Exact footprint offsets from `aMR_poccess_table`: B90 {0,-16}, B180 {0,-1}, B270 {0,+16}, B0 {0,+1}, A {0}, C {0,1,16,17} (ut = x + z*16).
+- Multi-cell furniture writes the item in the primary cell and `RSV_FE1F` (0xFE1F) in the rest (`aMR_SetFurniture2FG`); `EMPTY_NO` is 0x0000.
+- Normal interior bounds are the 8x8 region 1..=8 (`aMR_MIN_BOUND`/`aMR_MAX_BOUND`).
+- Placement (`aMR_JudgeBreedNewFurniture`): flat check, reservation check, actor budget, free-slot search, initial facing from `player_angle + 180deg` (45-135 EAST, 135-225 NORTH, 225-315 WEST, else SOUTH), stego skull/balloons (+1) and frog (+2) exceptions (furniture indices 964, 1020-1027, 827 from `m_ftr_def.h`), five-unit forward search (`i = 0..4`), NO_COLLISION under-player fallback, the all-rotations fallback (with the documented missing `aMR_GetPlayerLookAtUnit` call in the retail fallback loop), and the ON_SURFACE-onto-SURFACE layer-1 path.
+- Surface classification (`aFTR_SET_TYPE_NORMAL/SURFACE/ON_SURFACE`); second-layer placement needs surface furniture below and an empty layer-1 cell (`aMR_JudgePlace2ndLayer`).
+- Storage: `aFTR_KEEP_ITEM_COUNT = mCoBG_LAYER_NUM - 1` = 3, `FTR_ACTOR.items[3]`. This corrects the old `save.rs` comment that labeled the 3-slot count a guide-derived claim — it is now source-proven.
+- Save angle quantization (`aMR_GetSaveAngle`): sin > 0.8 -> EAST, sin < -0.8 -> WEST, cos > 0.8 -> SOUTH, cos < -0.8 -> NORTH.
+- 3 reservation slots, 46-frame birth process; 17 actor states (STOP..DEATH); up to 4 fitted children per parent with relative positions.
+- Scene furniture-max table: NPC house 30, shops 10, small 32, medium 48, large 64, museum painting 20, fossil 25, upper 64, LL2 48, basements 64, cottage 64. `aMR_GetWeight` returns 1, so "weight" is an actor-count budget.
+- Switch state: `ftr_switch` u64 keyed by interior position `(ut_x-1)+(ut_z-1)*8`, saved on room exit, cleared/restored on entry — position-keyed, not actor-identity-keyed.
+
+**Rust rewrite implementation:**
+
+New `rust/src/furniture.rs`: grid/layer constants, `Direction` + rotation encoding helpers, `ShapeType` with verbatim footprint offsets and rotation cycling, `SetType`, interaction/contact flag modules, `is_storage`, `FurnitureProfile`, `RoomLayer` (bounds, switch-bit index, get/set), `WallFloor`/`FloorBitInfo`/`HouseFloor`, 17 `FurnitureState`s, `FitFurniture`, `FurnitureActor`, `FurnitureReservation`, `MyRoomRuntime` (actor budget, free-slot search, occupancy occupy/release), scene furniture-max table, weight helpers, `player_facing_to_angle_idx`, `special_orientation_offset`, five-unit forward search, `PlaceJudge`/`Placement`, `check_place_situation`, `judge_place_2nd_layer`, the full `judge_place_furniture` (1x2 forward search + rotation fallback, 1x1/2x2 paths, ON_SURFACE layer-1 path, NO_COLLISION path), `save_angle_quantize`, `set_furniture_to_fg` (primary + RSV_FE1F), `save_switch_data`/`restore_switch_bit`, `make_furniture_actors_from_layers`, `keep_items_to_fg`, `reserve_furniture`. C ABI: pc_ftr_get_rotation, pc_ftr_no_rot_2_idx, pc_ftr_save_angle, pc_furniture_storage_slots, pc_scene_furniture_max, pc_room_bounds_ok, pc_switch_bit_index, pc_judge_place_2nd_layer, pc_ftr_is_storage, pc_furniture_weight. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+**Gaps:**
+
+- Exact `aMR_GetPlayerLookAtUnit` world-position-to-cell mapping (the Rust model quantizes to the placement direction; documented in-module).
+- Place-table sentinel values beyond the free slot, complete `aFTR_size_info_c` collision table, full `aMR_layer_set_info` entries, parent/child move/rotate propagation, per-furniture vtable behaviors, wall/door FG layout on rehouse, HRA scoring on top of this model.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

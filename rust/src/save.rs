@@ -130,9 +130,9 @@ pub const DIARY_MONTHS: usize = 12;
 /// Bonus/gift letters (`mCD_PRESENT_MAX`).
 #[allow(dead_code)] // Public save-system API for the rewrite and future adapters.
 pub const PRESENT_MAX: usize = 9;
-/// Items per storage furniture unit. Contemporary-guide claim; not yet
-/// traced to a decomp struct. House storage is per furniture unit, not a
-/// shared global inventory.
+/// Items per storage furniture unit (`aFTR_KEEP_ITEM_COUNT =
+/// mCoBG_LAYER_NUM - 1` = 4 - 1 = 3, `include/ac_furniture.h`). House storage
+/// is per furniture unit, not a shared global inventory.
 #[allow(dead_code)] // Public save-system API for the rewrite and future adapters.
 pub const FURNITURE_STORAGE_SLOTS: usize = 3;
 /// NES save file: 1 block (contemporary documentation).
