@@ -1,5 +1,5 @@
 //! Collision temporal lifecycle: registration, clearing, and the
-//! TRIS_HIT anomaly.
+//! TRIS_HIT one-frame latch.
 //!
 //! Verified against `m_collision_obj.c` (CollisionCheck_OC/OCC,
 //! CollisionCheck_clear, setOC/setOCC, both clear families,
@@ -14,12 +14,21 @@
 //! REGISTRATION time by two parallel clear families:
 //!   setOC  -> OCClearFunctionTable  (JntSph/Pipe/Tris OCClear)
 //!   setOCC -> OCCClearFunctionTable (TRIS-only OCCClear)
-//! ANOMALY (source-verified, unresolved): ClObj_FLAG2_TRIS_HIT is set
-//! by CollisionCheck_setOCC_HitInfo but no `~ClObj_FLAG2_TRIS_HIT`
-//! exists anywhere in the decomp. collided_actor IS cleared on the
-//! next setOCC, so a stale TRIS_HIT=1 with collided_actor=NULL is
-//! reachable in the current source. Treat as a decomp/retail question,
-//! not as proven retail behavior.
+//! TRIS_HIT is a ONE-FRAME RESULT LATCH: set by
+//! CollisionCheck_setOCC_HitInfo during the collision pass, consumed by
+//! player axe/net logic during Actor_info_call_actor, then cleared by
+//! ClObjTris_OCCClear at the next setOCC registration.
+//!
+//! NAMING TRAP (source-verified, important): ClObj_OCCClear does
+//!   col->collision_flags1 &= ~ClObj_FLAG_DONT_UPDATE_POS;
+//! but ClObj_FLAG_DONT_UPDATE_POS == 0x04 is a flags0-family name while
+//! the operation targets collision_flags1. Numerically this is
+//!   collision_flags1 &= ~0x04;
+//! which clears flags1 bit 2 == ClObj_FLAG2_TRIS_HIT. An earlier
+//! revision of this module misread the constant name and concluded
+//! TRIS_HIT was never cleared ("the anomaly"); the numeric behavior
+//! proves it IS cleared on every setOCC. Nothing ever clears the
+//! actual flags0 DONT_UPDATE_POS bit in the current source.
 
 /// collision_flags0 bits.
 pub mod flag0 {
@@ -30,7 +39,7 @@ pub mod flag0 {
 pub mod flag1 {
     pub const PLAYER_WAS_HIT: u32 = 1 << 0; // 0x01
     pub const OCC_CHECK: u32 = 1 << 1; // 0x02
-    pub const TRIS_HIT: u32 = 1 << 2; // 0x04 -- the anomaly bit
+    pub const TRIS_HIT: u32 = 1 << 2; // 0x04 -- the one-frame latch bit
 }
 /// element flags.
 pub mod elem_flag {
@@ -55,14 +64,17 @@ pub fn oc_clear_elem_flags(flags: u32) -> u32 {
 
 /// What setOCC's clear family (OCCClear, TRIS-only) resets on
 /// registration: collided_actor = NULL;
-/// flags0 &= ~DONT_UPDATE_POS; element attribute.t zeroed.
-/// TRIS_HIT is NOT cleared. (Note: this is ClObj_OCCClear, distinct
-/// from ClObj_OCClear used by setOC's family.)
-pub fn occ_clear_flags0(flags0: u32) -> u32 {
-    flags0 & !flag0::DONT_UPDATE_POS
+/// flags1 &= ~0x04 == ~TRIS_HIT (the source writes the constant as
+/// ~ClObj_FLAG_DONT_UPDATE_POS, a flags0-family NAME applied to
+/// flags1 -- numerically identical to ~ClObj_FLAG2_TRIS_HIT);
+/// element attribute.t zeroed. OCC_CHECK is NOT cleared.
+pub fn occ_clear_flags1(flags1: u32) -> u32 {
+    flags1 & !flag1::TRIS_HIT
 }
-/// Returns true: TRIS_HIT survives setOCC in the current source.
-pub fn tris_hit_survives_setocc() -> bool {
+/// Returns true: TRIS_HIT is cleared on every setOCC (one-frame latch).
+/// (An earlier revision of this module claimed it survived; that was a
+/// misreading of the misleading constant name. See module docs.)
+pub fn tris_hit_cleared_by_setocc() -> bool {
     true
 }
 
@@ -86,10 +98,10 @@ pub fn occ_hit_info(flags1: u32) -> (u32, bool) {
 }
 
 /// Simulate the next setOCC on the same triangle: collided_actor is
-/// cleared, flags0 loses DONT_UPDATE_POS, flags1 (incl. TRIS_HIT) is
-/// untouched -- the anomaly.
+/// cleared, flags1 loses TRIS_HIT, flags0 is untouched -- the latch
+/// resets, so the next frame starts clean.
 pub fn setocc_after_hit(flags0: u32, flags1: u32) -> (u32, u32, bool) {
-    (occ_clear_flags0(flags0), flags1, false) // collided_actor cleared
+    (flags0, occ_clear_flags1(flags1), false) // collided_actor cleared
 }
 
 /// Registration pools: OC objects go to collider_table (capacity
@@ -146,10 +158,10 @@ pub extern "C" fn pc_oc_clear(flags0: u32, flags1: u32, elem_flags: u32, out: *m
     }
 }
 
-/// C ABI: apply setOCC clear semantics to flags0. TRIS_HIT untouched.
+/// C ABI: apply setOCC clear semantics to flags1. Clears TRIS_HIT.
 #[no_mangle]
-pub extern "C" fn pc_occ_clear_flags0(flags0: u32) -> u32 {
-    occ_clear_flags0(flags0)
+pub extern "C" fn pc_occ_clear_flags1(flags1: u32) -> u32 {
+    occ_clear_flags1(flags1)
 }
 
 /// C ABI: 1 if TRIS_HIT is set in flags1.
@@ -182,16 +194,16 @@ mod tests {
         assert_eq!(oc_clear_elem_flags(0xFF), 0xFF & !0x02);
         // OC clear does NOT touch TRIS_HIT (flags1 bit 2).
         assert_eq!(oc_clear_flags1(flag1::TRIS_HIT), flag1::TRIS_HIT);
-        // OCC clear: DONT_UPDATE_POS removed from flags0.
-        assert_eq!(occ_clear_flags0(0xFF), 0xFF & !0x04);
-        // The anomaly: nothing clears TRIS_HIT.
-        assert!(tris_hit_survives_setocc());
+        // OCC clear: TRIS_HIT removed from flags1 (one-frame latch).
+        assert_eq!(occ_clear_flags1(0xFF), 0xFF & !0x04);
+        // The corrected latch: setOCC clears TRIS_HIT.
+        assert!(tris_hit_cleared_by_setocc());
         let (f1, has_actor) = occ_hit_info(0);
         assert_eq!(f1 & flag1::TRIS_HIT, flag1::TRIS_HIT);
         assert!(has_actor);
         let (f0b, f1b, has_actor_b) = setocc_after_hit(0xFF, f1);
-        assert_eq!(f0b, 0xFF & !0x04); // DONT_UPDATE_POS cleared
-        assert_eq!(f1b & flag1::TRIS_HIT, flag1::TRIS_HIT); // still set
+        assert_eq!(f0b, 0xFF); // flags0 untouched by OCC clear
+        assert_eq!(f1b & flag1::TRIS_HIT, 0); // latch cleared
         assert!(!has_actor_b); // payload cleared
         // Flag values match the header.
         assert_eq!(flag1::TRIS_HIT, 0x04);
@@ -201,7 +213,7 @@ mod tests {
         let mut out = [0u32; 3];
         pc_oc_clear(0xFF, 0xFF, 0xFF, out.as_mut_ptr());
         assert_eq!(out, [0xFF & !0x02, 0xFF & !0x01, 0xFF & !0x02]);
-        assert_eq!(pc_occ_clear_flags0(0xFF), 0xFF & !0x04);
+        assert_eq!(pc_occ_clear_flags1(0xFF), 0xFF & !0x04);
         assert_eq!(pc_tris_hit(0x04), 1);
         assert_eq!(pc_tris_hit(0x00), 0);
         // Dispatch tables.

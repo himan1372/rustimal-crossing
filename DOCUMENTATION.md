@@ -644,10 +644,24 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 - Two registration pools: collider_table (OC) and mco_work.colliders[10] (OCC). CollisionCheck_clear empties both; object state untouched.
 - Frame order (m_play.c): CollisionCheck_OC (OCC pass at its end) -> CollisionCheck_clear -> Actor_info_call_actor.
 - TWO similarly-named clear tables (easy trap): OCClearFunctionTable (setOC: JntSph/Pipe/Tris OCClear) vs OCCClearFunctionTable (setOCC: NULL/NULL/Tris OCCClear; setOCC rejects non-Tris first).
-- ClObj_OCClear (OC family): clears COLLIDED, collided_actor, PLAYER_WAS_HIT. ClObj_OCCClear (OCC family): clears collided_actor, DONT_UPDATE_POS. Neither clears TRIS_HIT or OCC_CHECK.
+- ClObj_OCClear (OC family): clears COLLIDED, collided_actor, PLAYER_WAS_HIT. ClObj_OCCClear (OCC family): clears collided_actor and flags1 &= ~0x04 (TRIS_HIT; source names the constant ~ClObj_FLAG_DONT_UPDATE_POS, a flags0-family name applied to flags1). CORRECTION (2026-10-07): the earlier "TRIS_HIT never cleared" analysis was wrong -- see the TRIS_HIT correction section.
 - ClObjTrisElem_OCClear clears element FLAG_HIT; ClObjTrisElem_OCCClear zeroes attribute.t. (Brief conflated these names.)
 - Dispatch: OC = JntSph/Pipe x JntSph/Pipe; OCC = Tris x JntSph/Pipe. setOCC_HitInfo sets TRIS_HIT + collided_actor + hit position (no COLLIDED).
-- ClObj_set4 overwrites flags0/flags1/type wholesale - the path that clears sticky TRIS_HIT.
+- ClObj_set4 overwrites flags0/flags1/type wholesale.
+
+### Correction (2026-10-07): TRIS_HIT is a one-frame latch, not a persistent flag
+
+Retracts the earlier "TRIS_HIT anomaly" (commits 515579a, 03ecf54). The anomaly came from reading the constant NAME instead of its numeric effect:
+
+- ClObj_OCCClear (m_collision_obj.c:698): `col->collision_flags1 &= ~ClObj_FLAG_DONT_UPDATE_POS;`
+- ClObj_FLAG_DONT_UPDATE_POS == 0x04, but that name belongs to the flags0 family. The operation targets collision_flags1.
+- Numerically: `collision_flags1 &= ~0x04` -> clears flags1 bit 2 == ClObj_FLAG2_TRIS_HIT.
+- So every setOCC clears TRIS_HIT, collided_actor, and the element hit position. The intended invariant (net check: TRIS_HIT==0 => don't consume collided_actor) holds.
+- Nothing in the current source ever clears the actual flags0 DONT_UPDATE_POS bit (only read at m_collision_obj.c:379).
+- Player side confirms the latch: axe/net triangles registered via setOCC from Player_actor_SetPosition_OBJtoLine_forItem (m_player_common.c_inc:2133); TRIS_HIT consumed by Player_actor_Check_OBJtoLine_forItem_axe/net (lines 2055/2062) during Actor_info_call_actor, which runs AFTER CollisionCheck_OC and BEFORE the next registration.
+- `~ClObj_FLAG_DONT_UPDATE_POS` appears exactly once in src/ (the OCCClear line), consistent with a flag-refactor naming slip rather than a second semantic use.
+- Rust fix: occ_clear_flags0 -> occ_clear_flags1 (clears TRIS_HIT); tris_hit_survives_setocc -> tris_hit_cleared_by_setocc; C ABI pc_occ_clear_flags0 -> pc_occ_clear_flags1. No C callers existed.
+- Remaining assembly question (deferred per Philip): confirm retail ClObj_OCCClear stores byte col+0x09 &= 0xFB (vs col+0x08).
 - CORRECTIONS vs brief: (1) DONT_UPDATE_POS is cleared by ClObj_OCCClear, NOT ClObj_OCClear; (2) attribute.t zeroing is ClObjTrisElem_OCCClear, not OCClear.
 
 ### Rust rewrite implementation
@@ -656,7 +670,7 @@ Extended `rust/src/collision_temporal.rs`: pool constants, oc_dispatch/occ_dispa
 
 ### Gaps
 
-- None on the registration internals. Retail assembly check of the TRIS_HIT anomaly still needs static.dol.
+- Retail assembly check of ClObj_OCCClear's flags1 &= ~0x04 (byte col+0x09) still needs static.dol (deferred per Philip).
 
 ### Authorized Test Run (2026-10-07, commit e742d2a)
 
@@ -825,20 +839,20 @@ Extended `rust/src/placement.rs`: d2_to_d1, PLACEMENT_CELL_COUNT, side/cheight e
 
 - Frame order (m_play.c): CollisionCheck_OC (OCC runs at its end) -> CollisionCheck_clear -> Actor_info_call_actor -> draw/registration. CollisionCheck_clear only NULLs the registration containers (collider_table, mco_work.colliders) and zeroes the counts; it does NOT touch object state.
 - Two registration pools: OC (collider_table via setOC) and OCC (mco_work via setOCC, cap 10, TRIS-only).
-- Two parallel clear families (naming corrected vs. brief): setOC -> OCClearFunctionTable (JntSph/Pipe/Tris OCClear -> ClObj_OCClear: flags0 &= ~COLLIDED, collided_actor=NULL, flags1 &= ~PLAYER_WAS_HIT; elements &= ~HIT). setOCC -> OCCClearFunctionTable (ClObjTris_OCCClear -> ClObj_OCCClear: collided_actor=NULL, flags0 &= ~DONT_UPDATE_POS; element attribute.t zeroed).
+- Two parallel clear families (naming corrected vs. brief): setOC -> OCClearFunctionTable (JntSph/Pipe/Tris OCClear -> ClObj_OCClear: flags0 &= ~COLLIDED, collided_actor=NULL, flags1 &= ~PLAYER_WAS_HIT; elements &= ~HIT). setOCC -> OCCClearFunctionTable (ClObjTris_OCCClear -> ClObj_OCCClear: collided_actor=NULL, flags1 &= ~0x04 == ~TRIS_HIT; element attribute.t zeroed). CORRECTION (2026-10-07): the source writes the constant as ~ClObj_FLAG_DONT_UPDATE_POS, a flags0-family NAME applied to flags1; numerically it clears flags1 bit 2 = TRIS_HIT. The earlier "TRIS_HIT anomaly/persistent hit" analysis was wrong -- see the TRIS_HIT correction section below.
 - Flag values (m_collision_obj.h): flags0 COLLIDED=0x02, DONT_UPDATE_POS=0x04; flags1 PLAYER_WAS_HIT=0x01, OCC_CHECK=0x02, TRIS_HIT=0x04; element HIT=0x02.
-- ANOMALY (source-verified): TRIS_HIT is set in exactly one place (CollisionCheck_setOCC_HitInfo) and read in two (axe/net checks); no `~ClObj_FLAG2_TRIS_HIT` exists anywhere in src/ or include/. So after an OCC hit: collided_actor is cleared by the next setOCC but TRIS_HIT persists, making hit=TRUE with hit_actor=NULL reachable in the current source. Flagged as an unresolved decomp/retail question (needs static.dol assembly comparison of ClObj_OCCClear/ClObjTris_OCCClear/setOCC_HitInfo), NOT as proven retail behavior.
+- ANOMALY RETRACTED (2026-10-07): the earlier analysis claimed TRIS_HIT was never cleared because no `~ClObj_FLAG2_TRIS_HIT` exists in the source. That was a misreading of a misleading constant NAME. ClObj_OCCClear does `collision_flags1 &= ~ClObj_FLAG_DONT_UPDATE_POS`; ClObj_FLAG_DONT_UPDATE_POS == 0x04, and the operation targets flags1, so numerically it is `flags1 &= ~0x04`, clearing flags1 bit 2 == TRIS_HIT. TRIS_HIT is a one-frame result latch, not a persistent flag. Nothing ever clears the actual flags0 DONT_UPDATE_POS bit. See the TRIS_HIT correction section below.
 - Temporal pipeline: player draw path registers axe/net triangles via setOCC (Player_actor_SetPosition_OBJtoLine_forItem); the OCC result is consumed one frame later in player movement (Player_actor_Check_OBJtoLine_forItem_*). Body pipes register via setOC in movement. So tool geometry is one frame ahead of semantic consumption.
 - Multiple OCC hits: no break in the outer actor loop; later hits overwrite collided_actor, so the final payload is the last qualifying collider in table order (registration order = actor traversal order).
 - Actor Status_c (damage/effects/collision_vec) is cleared separately at the end of each actor's update (CollisionCheck_Status_Clear) -- different reset point from ClObj flags.
 
 ### Rust rewrite implementation
 
-`rust/src/collision_temporal.rs`: flag0/flag1/elem_flag constants, OCC_WORK_CAP, oc_clear_*/occ_clear_flags0 (both clear families), tris_hit_survives_setocc, frame_phase order, TOOL_TRIANGLE_PIPELINE_FRAMES, occ_hit_info/setocc_after_hit lifecycle simulation. C ABI: pc_oc_clear, pc_occ_clear_flags0, pc_tris_hit. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+`rust/src/collision_temporal.rs`: flag0/flag1/elem_flag constants, OCC_WORK_CAP, oc_clear_*/occ_clear_flags1 (both clear families), tris_hit_cleared_by_setocc, frame_phase order, TOOL_TRIANGLE_PIPELINE_FRAMES, occ_hit_info/setocc_after_hit lifecycle simulation, pool/dispatch/frame_order/set4_flags. C ABI: pc_oc_clear, pc_occ_clear_flags1 (replaced pc_occ_clear_flags0), pc_tris_hit, pc_oc_dispatch, pc_occ_dispatch. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
 
 ### Gaps
 
-- Assembly verification of the TRIS_HIT anomaly against static.dol (out of scope for this VM). If retail clears the bit somewhere the decomp missed, the model needs updating.
+- Retail assembly verification of ClObj_OCCClear's `flags1 &= ~0x04` against static.dol (deferred per Philip's instruction; would confirm the mask lands on byte +0x09).
 
 ### Runtime Port Progress: Full Trace Loops
 
