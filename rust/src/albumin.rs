@@ -65,12 +65,12 @@ pub fn river_albumin_cliff(cliff_type: u8, river_type: u8) -> u8 {
 /// Merge step (mRF_DecideRiverAlbuminCliff): for one block, given the
 /// current cliff block and river block, returns the new cliff_blocks
 /// value, or None if the cell is left unchanged.
-/// Border-cliff-river and tracks-river also copy through as rivers.
+/// Border-cliff-river (1) and tracks-river (13) also copy through as rivers.
 pub fn decide_albumin_cell(cliff_block: u8, river_block: u8) -> Option<u8> {
     let album = river_albumin_cliff(cliff_block, river_block);
     if album != bt::NONE {
         Some(album)
-    } else if in_group(river_block, group::RIVER) {
+    } else if in_group(river_block, group::RIVER) || river_block == 1 || river_block == 13 {
         Some(river_block) // ordinary river copied into cliff_blocks
     } else {
         None // unchanged
@@ -143,6 +143,8 @@ mod tests {
         // Merge semantics.
         assert_eq!(decide_albumin_cell(15, 40), Some(22));
         assert_eq!(decide_albumin_cell(20, 41), Some(41)); // river copied
+        assert_eq!(decide_albumin_cell(15, 1), Some(1)); // BORDER_CLIFF_RIVER copied
+        assert_eq!(decide_albumin_cell(15, 13), Some(13)); // TRACKS_RIVER copied
         assert_eq!(decide_albumin_cell(15, 39), None); // unchanged
         // C ABI.
         assert_eq!(pc_river_albumin_cliff(15, 40), 22);

@@ -636,6 +636,20 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Code Audit (2026-10-07, self-directed)
+
+Philip asked for an audit of earlier work for bugs/errors. Static audit (no test run - standing rule):
+
+**Constant audit**: all block-type ids in albumin.rs, placement.rs, albumin_geometry.rs, template_select.rs, step3_data.rs re-verified programmatically against m_field_make.h - all correct. (NONE=255 fix from the previous commit confirmed in place.)
+
+**Bug found and fixed**: `decide_albumin_cell` (albumin.rs) was missing the BORDER_CLIFF_RIVER (1) / TRACKS_RIVER (13) passthrough from mRF_DecideRiverAlbuminCliff. Fixed + test cases added.
+
+**Verified clean**: albumin group gates + index math (no underflow: gates guarantee 0..6); decide merge semantics; marin_cell edge handling; bridge/slope/pool offsets; judge_flat_block source-faithful branches; needlework ordinal pick; base-height column order; albumin asset table order (22..38) and waterfall set (matches WATERFALL-attribute units); collision data integrity (17x256 units, attrs < 64, heights <= 16); template_select RNG-fidelity (double GetRandom on the -1 path preserved); select_traversal Z-major/X-minor; step3 dual-copy; lib.rs wiring; DOCUMENTATION.md consistency (no stale gaps).
+
+**Warnings**: only dead-code warnings on C-ABI library functions - not bugs.
+
+**Not covered by this audit**: runtime test verification (needs Philip's authorization); retail assembly/objdiff checks (needs static.dol from his ISO).
+
 ### Runtime Port Progress: Step-3 Template Bodies
 
 ### Source findings (all verified against the local decomp)
