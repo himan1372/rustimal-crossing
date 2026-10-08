@@ -714,6 +714,26 @@ New `rust/src/quest.rs`: QuestBase, type/kind/reward enums, REGIST_NUM=35, all r
 
 - Request-generation tables (first-job vs normal type/kind selection), recipient-selection modes, entrusted-item pocket handling, and letter-quest specifics are traced in the brief but not yet ported -- natural next steps.
 
+### Runtime Port Progress: Fishing and Bug-Catching (Ecology)
+
+### Source findings (all verified against the local decomp)
+
+- Fish time: 4 periods (0: 21-03:59, 1: 04-08:59, 2: 09-15:59, 3: 16-20:59); hours 21-23 match no branch and keep init TIME_0. 24 half-month terms ((month-1)*2 + (day>15)). 5-day term transition with rates 5/6..1/6 blending current/next term weights.
+- Field-rank modifier: 0.5/0.75/0.875/1.0 (shared shape, different application per system).
+- Fish: 7 spawn areas (pool/waterfall/river_mouth/offing/sea/river/pond); weighted selection subtracts weight*env_rate per candidate; habitat-incompatible picks retry without replacement. Spawn on 12x12 interior (2..13) water units; ocean fish need 20.0 depth; whale uses 5..10.
+- Fish bite timing by size: {26,39,39,39,52,65,78,78}, doubled for normal fish. UKI float states CARRY/READY/CAST/FLOAT/VIB/COMEBACK/CATCH; 50-frame cast, 40-frame timer; gyo_type 0..39 -> ITM_FISH00..39 + trash.
+- Insects: 14 spawn areas; 9 actor slots (8 normal spawn); the no-spawn roll (total<=100 -> roll against 100, leaving explicit no-spawn mass); habitat filtering BEFORE selection (unlike fish); multi-birth red dragonfly/firefly 6+rand(3).
+- Net: player-side request table (8 slots, insertion order, force requests first); capture window after frame 6.0; golden net 60.0 sweep / 21.0+radius vs normal 50.0 / 15.0+radius; projection-onto-axis geometric test; first hit wins, never nearest.
+- Do NOT: normalize insect weights, use one spawn helper for both, make net capture nearest-insect, or make golden net cosmetic.
+
+### Rust rewrite implementation
+
+New `rust/src/ecology.rs`: time terms, transition rates, field-rank rates, fish/insect spawn areas, fish_select (retry), insect_select (no-spawn mass), interior checks, bite timing, net geometry + capture test + insertion-order pick, birth counts. C ABI: pc_fish_time_no, pc_fish_term, pc_field_rank_rate_milli, pc_interior_unit_ok, pc_net_sweep_len, pc_net_capture_len, pc_insect_birth_count. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Full seasonal spawn tables (fish/insect species lists), UKI float state machine, bee/ant special actors, and letter-quest mail integration are traced in the brief but not yet ported.
+
 ### Authorized Test Run (2026-10-07, commit e742d2a)
 
 Philip said "Run the tests." `cargo test --lib`: **296/296 passed**, 0 failed. (294 prior + 2 new: template_select, step3_data; plus the audit-fix assertions in the albumin test.) This also runtime-verifies the audit fix. Authorization consumed.

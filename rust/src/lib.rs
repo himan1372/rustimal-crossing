@@ -49,6 +49,7 @@ mod npc;
 mod profiler;
 mod request_selector;
 mod quest;
+mod ecology;
 mod save;
 mod town_gen;
 mod vi;
