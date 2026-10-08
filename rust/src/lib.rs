@@ -79,6 +79,7 @@ mod albumin_geometry;
 mod albumin_collision_data;
 mod template_select;
 mod species;
+mod uki;
 mod fish_tables;
 mod insect_tables;
 mod step3_data;

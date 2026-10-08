@@ -732,7 +732,7 @@ New `rust/src/ecology.rs`: time terms, transition rates, field-rank rates, fish/
 
 ### Gaps
 
-- Full seasonal spawn tables (fish/insect species lists), UKI float state machine, bee/ant special actors, and letter-quest mail integration are traced in the brief but not yet ported.
+- Full seasonal spawn tables (fish/insect species lists) are ported (`species.rs`); bee/ant special actors and letter-quest mail integration are traced in the brief but not yet ported.
 
 ### Runtime Port Progress: Shop/House Progression Fidelity Fixes
 
@@ -1676,6 +1676,54 @@ This increment ports the complete retail seasonal-species data layer to Rust: `r
 - **Systems Index**: cards summarizing 24 ported systems.
 
 Both inline scripts pass `node --check`; species lookups, letter totals, and quest rows were smoke-tested against the generated JSON.
+
+### Runtime Port Progress: UKI Float State Machine
+
+New `rust/src/uki.rs`, verified against `include/ac_uki.h`, `src/actor/ac_uki.c`,
+and `src/actor/ac_uki_move.c_inc` (GAFE01_00 Rev. 0; PC port corroborating).
+
+Fishing is not one state machine. UKI is a coordinator between four
+independent pieces of state, kept as separate Rust types on purpose:
+- `proc` (11 `aUKI_PROC_*` values: CARRY, READY, AIR, CAST, WAIT, HIT,
+  TOUCH, BITE, CATCH, GET, FORCE) — the float's own process,
+- `status` (8 `aUKI_STATUS_*` values) — the player-visible status,
+- `gyo_command` (0/1/2: none/engaged/bitten) and `gyo_status` (0..8) —
+  the fish-side handshake channel (numeric values are source-proven,
+  names are reconstruction),
+- `child_actor` — the linked fish actor.
+The player only writes `command` (0..8, values source-proven at the call
+sites, names reconstructed); the fish only writes `gyo_command`/`gyo_type`.
+The machine only runs while `command != 0`, and the per-frame hand offset
+is modeled (`apply_hand_offset`).
+
+Ported faithfully: init state (frame_timer 2 at construction, 4 on every
+subsequent `set_proc(CARRY)`; gyo_type -1; scale 0.01; max_velocity_y -20.0;
+gravity 1.2), all 11 proc initializers (CARRY 4f,
+READY 32f + 20f linear parabola 30u behind player, AIR 14f, CAST 50f +
+cast_timer 40, WAIT 12f/gyo_status 1, HIT 52f dual trajectories,
+TOUCH 12f/gyo_status 2, BITE size-based reel timer, CATCH 20f/gyo_status 6,
+GET gyo_status 7), force commands 7/8, the 40-frame fish gate
+(`cast_timer`), the failed-reel path (command 6 with no fish -> HIT ->
+CARRY), verbatim parabola math (type 0 linear, type 1/2 accelerated with
+y_param 12.0/4.5), water drift (0.45 / 0.225 engaged / 0.8 homing past
+130u, ripple past 127), coast WAVE/SAND handling, the `touch_timer`
+water-state machine (+7.5 hooked / -7.5 unhooked / -1.7 touch cycle),
+and waterfall behavior.
+
+Fish-side data tables (verbatim): 45-entry `gyoei_type` (size,
+search_area, bite_time), reel timers 26/39/39/39/52/65/78/78 (x2, trash
+always 26), search angles (normal 3/7/30/50/180, golden 7.5/15/40/60/180),
+search distances (40/40/40/50/60), bite times (normal 10/11/12/15/45,
+golden 11/12/13/18/60, x2), touch radii/counters/retreat speeds,
+trash substitution `gomi[]` (1/20 on bite commit), and the fish->item
+table with its duplicate FISH39 and FISH22 tail. Engine-dependent pieces
+(bg collision, effects, sound, vibration) are `StepEnv` inputs and
+`UkiEvent` outputs. 7 C ABI exports.
+
+Corrections vs brief: `sizeof(UKI_ACTOR) == 0x2C8` (not 0x2B8); there are
+more fields past `coast_flag` (`_2B5`, `hamon_accum`, `touch_vib_accum`,
+`logic_accum`, `logic_ticks`). The `ecology.rs` `uki` module only held
+status constants; the full machine lives here.
 
 ## File Reference
 
