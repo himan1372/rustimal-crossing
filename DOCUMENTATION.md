@@ -611,6 +611,27 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 ### Runtime Port Progress: Line-vs-Column Sweep
 
+### Runtime Port Progress: Collision Temporal Lifecycle
+
+### Source findings (all verified against the local decomp)
+
+- Frame order (m_play.c): CollisionCheck_OC (OCC runs at its end) -> CollisionCheck_clear -> Actor_info_call_actor -> draw/registration. CollisionCheck_clear only NULLs the registration containers (collider_table, mco_work.colliders) and zeroes the counts; it does NOT touch object state.
+- Two registration pools: OC (collider_table via setOC) and OCC (mco_work via setOCC, cap 10, TRIS-only).
+- Two parallel clear families (naming corrected vs. brief): setOC -> OCClearFunctionTable (JntSph/Pipe/Tris OCClear -> ClObj_OCClear: flags0 &= ~COLLIDED, collided_actor=NULL, flags1 &= ~PLAYER_WAS_HIT; elements &= ~HIT). setOCC -> OCCClearFunctionTable (ClObjTris_OCCClear -> ClObj_OCCClear: collided_actor=NULL, flags0 &= ~DONT_UPDATE_POS; element attribute.t zeroed).
+- Flag values (m_collision_obj.h): flags0 COLLIDED=0x02, DONT_UPDATE_POS=0x04; flags1 PLAYER_WAS_HIT=0x01, OCC_CHECK=0x02, TRIS_HIT=0x04; element HIT=0x02.
+- ANOMALY (source-verified): TRIS_HIT is set in exactly one place (CollisionCheck_setOCC_HitInfo) and read in two (axe/net checks); no `~ClObj_FLAG2_TRIS_HIT` exists anywhere in src/ or include/. So after an OCC hit: collided_actor is cleared by the next setOCC but TRIS_HIT persists, making hit=TRUE with hit_actor=NULL reachable in the current source. Flagged as an unresolved decomp/retail question (needs static.dol assembly comparison of ClObj_OCCClear/ClObjTris_OCCClear/setOCC_HitInfo), NOT as proven retail behavior.
+- Temporal pipeline: player draw path registers axe/net triangles via setOCC (Player_actor_SetPosition_OBJtoLine_forItem); the OCC result is consumed one frame later in player movement (Player_actor_Check_OBJtoLine_forItem_*). Body pipes register via setOC in movement. So tool geometry is one frame ahead of semantic consumption.
+- Multiple OCC hits: no break in the outer actor loop; later hits overwrite collided_actor, so the final payload is the last qualifying collider in table order (registration order = actor traversal order).
+- Actor Status_c (damage/effects/collision_vec) is cleared separately at the end of each actor's update (CollisionCheck_Status_Clear) -- different reset point from ClObj flags.
+
+### Rust rewrite implementation
+
+`rust/src/collision_temporal.rs`: flag0/flag1/elem_flag constants, OCC_WORK_CAP, oc_clear_*/occ_clear_flags0 (both clear families), tris_hit_survives_setocc, frame_phase order, TOOL_TRIANGLE_PIPELINE_FRAMES, occ_hit_info/setocc_after_hit lifecycle simulation. C ABI: pc_oc_clear, pc_occ_clear_flags0, pc_tris_hit. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Assembly verification of the TRIS_HIT anomaly against static.dol (out of scope for this VM). If retail clears the bit somewhere the decomp missed, the model needs updating.
+
 ### Runtime Port Progress: Full Trace Loops
 
 ### Source findings (all verified against the local decomp)
