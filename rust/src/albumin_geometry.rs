@@ -85,6 +85,48 @@ pub fn albumin_unit(asset_idx: usize, x: usize, z: usize) -> Option<crate::album
     }
 }
 
+/// keep_h semantics (mFM_BgUtDataSet, m_field_make.c:128):
+/// keep_h[z][x] = collision[z][x].data.center at field construction.
+/// The saved/base height map is initialized directly from the
+/// collision center heights -- not a separate authored map.
+pub fn keep_h_init(asset_idx: usize, x: usize, z: usize) -> Option<u8> {
+    albumin_center_height(asset_idx, x, z)
+}
+
+/// mCoBG_Collision_u 32-bit packing (m_collision_bg.h:163):
+/// bit 31: slate_flag (1), bits 30..26: center (5), 25..21: top_left (5),
+/// 20..16: bot_left (5), 15..11: bot_right (5), 10..6: top_right (5),
+/// bits 5..0: unit_attribute (6). Heights are 5-bit (max 31).
+pub fn pack_col_unit(slate: u32, center: u32, tl: u32, bl: u32, br: u32, tr: u32, attr: u32) -> u32 {
+    ((slate & 1) << 31)
+        | ((center & 31) << 26)
+        | ((tl & 31) << 21)
+        | ((bl & 31) << 16)
+        | ((br & 31) << 11)
+        | ((tr & 31) << 6)
+        | (attr & 63)
+}
+
+/// Unpack a raw collision word into (slate, center, tl, bl, br, tr, attr).
+pub fn unpack_col_unit(raw: u32) -> (u8, u8, u8, u8, u8, u8, u8) {
+    (
+        ((raw >> 31) & 1) as u8,
+        ((raw >> 26) & 31) as u8,
+        ((raw >> 21) & 31) as u8,
+        ((raw >> 16) & 31) as u8,
+        ((raw >> 11) & 31) as u8,
+        ((raw >> 6) & 31) as u8,
+        (raw & 63) as u8,
+    )
+}
+
+/// Two height layers (do not conflate):
+/// A. Acre/base height: from mRF_MakeBaseHeightTable, the procedural
+///    cliff-topology level the whole acre sits on.
+/// B. Unit collision height: data_bgd collision[16][16] center/corners,
+///    the physical surface inside the acre.
+/// world_y = unit_height * 10.0 + acre_base_height.
+
 /// Center height of one unit of an albumin asset.
 pub fn albumin_center_height(asset_idx: usize, x: usize, z: usize) -> Option<u8> {
     albumin_unit(asset_idx, x, z).map(|u| u.1)
@@ -165,6 +207,13 @@ mod tests {
         assert_eq!((UT_X_NUM, UT_Z_NUM), (16, 16));
         assert_eq!((COMBI_TYPE_BITS, COMBI_HEIGHT_BITS), (14, 2));
         assert_eq!(world_y(5, 100.0), 150.0);
+        // keep_h initializes from center.
+        assert_eq!(keep_h_init(0, 0, 0), albumin_center_height(0, 0, 0));
+        // Bitfield pack/unpack round-trip.
+        let raw = pack_col_unit(1, 16, 12, 4, 8, 20, 13);
+        assert_eq!(unpack_col_unit(raw), (1, 16, 12, 4, 8, 20, 13));
+        assert_eq!(raw >> 31, 1); // slate at bit 31
+        assert_eq!(raw & 63, 13); // attribute in low 6 bits
         // C ABI.
         assert_eq!(pc_albumin_asset_idx(22), 0);
         assert_eq!(pc_albumin_asset_idx(38), 16);

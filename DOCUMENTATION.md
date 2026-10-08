@@ -672,6 +672,25 @@ Extended `rust/src/collision_temporal.rs`: pool constants, oc_dispatch/occ_dispa
 
 - Retail assembly check of ClObj_OCCClear's flags1 &= ~0x04 (byte col+0x09) still needs static.dol (deferred per Philip).
 
+### Runtime Port Progress: Albumin Physical Pipeline (keep_h, Bitfield, Height Layers)
+
+### Source findings (all verified against the local decomp)
+
+- Complete logical-to-physical pipeline: cliff topology + river topology -> mRF_RiverAlbuminCliff (3x7 lookup, 17 valid) -> combined block type -> mRF_SelectBlock -> data_combi_table -> bg_id -> data_bgd -> mFM_SetBG -> mFM_BgUtDataSet copies collision[16][16] into bg_info with NO transformation (m_field_make.c:121-135).
+- keep_h semantics (m_field_make.c:128): `keep[0] = data[0].data.center` -- the saved/base height map initializes directly from collision center heights, not from a separate authored map.
+- mCoBG_Collision_u is 32 bits (m_collision_bg.h:163): slate_flag:1 (bit 31), center:5, top_left:5, bot_left:5, bot_right:5, top_right:5, unit_attribute:6 (bits 5..0). Heights are 5-bit (max 31).
+- Two height layers, do not conflate: (A) acre/base height from mRF_MakeBaseHeightTable (procedural cliff-topology level); (B) unit collision height from data_bgd (physical surface inside the acre). world_y = unit_height * 10.0 + acre_base_height.
+- All 17 BG_TYPE_GRD_S_C*_R*_1 names confirmed present in data_combi.c; corner rivers (river4-7) map to river_no_album_data -- albumin is specifically the straight-river/cliff composite family.
+- Note: the literal 17x256 collision words were already extracted from bg_data.c in the PC-port decomp (commit bb70ca1); no separate asset dump was needed for our repo.
+
+### Rust rewrite implementation
+
+Extended `rust/src/albumin_geometry.rs`: keep_h_init, pack_col_unit/unpack_col_unit (exact bitfield), documented the two height layers. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- None. The physical pipeline is fully modeled.
+
 ### Authorized Test Run (2026-10-07, commit e742d2a)
 
 Philip said "Run the tests." `cargo test --lib`: **296/296 passed**, 0 failed. (294 prior + 2 new: template_select, step3_data; plus the audit-fix assertions in the albumin test.) This also runtime-verifies the audit fix. Authorization consumed.
