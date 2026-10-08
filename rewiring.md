@@ -4,8 +4,9 @@
 replacement part sitting on a shelf. "Rewiring" is the job of opening up the
 game's C code and plugging those parts in — replacing a C function call with a
 call into the matching Rust function — then proving the game still behaves the
-same. Only one part is plugged in today (the letter scorer). Everything below
-is still on the shelf.
+same. Two parts are plugged in today: the letter scorer (call-site pattern)
+and five Wave 3 platform modules (build-system pattern, see below).
+Everything else below is still on the shelf.
 
 ## The one working example
 
@@ -115,44 +116,95 @@ game inputs. `wall_priority.rs` already contains the template
 
 ## Full inventory — everything still on the shelf
 
-### Wave 2 — functions needing game structs
+### Wave 2 — functions needing game structs (status after 2026-10-08 audit)
 
-| Rust module | C function(s) | C call site idea |
+Every claim below was re-verified against the USA Rev. 0 decomp; the
+Rust-side corrections are in (commit `848b39c`, workbook row 249).
+Standing rule established: **Rust never owns the retail RNG call** — C
+does `r = RANDOM(n)` and passes the bounded value (or a callback) in.
+
+**Wave 2A — safe to wire now** (clean scalar boundaries, verified verbatim):
+
+| Rust kernel | C function | C call site idea |
 |---|---|---|
-| `item_prefs.rs` | `pc_npc_house_goods`, `pc_eligible_furniture_count` | furniture selection in `m_npc.c` |
-| `request_selector.rs` | `pc_request_pick_carried`, `pc_request_dispatch` | quest-talk init in `ac_quest_talk_normal_init.c` |
-| `player_move.rs` | `pc_turn_mod`, `pc_locomotion_core` | player movement in `m_player*.c_inc` |
-| `movement.rs` | `pc_wander_choice`, `pc_friendship_mode` | NPC wander/friendship in `m_npc.c` |
-| `npc.rs` | `pc_npc_schedule_state`, `pc_npc_is_asleep` | NPC scheduling |
-| `interaction.rs` | `pc_npc_patience` | NPC interaction |
-| `behavior.rs` | `pc_letter_friendship_delta` | letter friendship effects |
-| `collision.rs` | `pc_collision_neighborhood`, `pc_collision_pack` | collision packing |
-| `buried_items.rs` | `pc_buried_get/set/clear` | buried-item field state |
-| `house.rs` | `pc_house_next_loan` | house loan progression |
-| `shop.rs` | `pc_shop_real_level`, `pc_shop_plus_sales` | shop state |
-| `scene.rs` | `pc_scene_table_index`, `pc_game_dlftbls_count` | scene tables |
-| `town_gen.rs` | `pc_town_generate`, `pc_town_select_initial_villagers` | town generation (`m_random_field.c`) |
-| `endpoint_circle.rs` | `pc_cross_circle_line` | `mCoBG_GetCrossCircleAndLine2Dvector` callers |
-| `terrain_walls.rs` | `pc_terrain_wall_policy`, `pc_search_wall_flag`, `pc_bridge_search_water_mask`, `pc_bridge_quarter_attribute`, `pc_search_slate_detail` | `mCoBG_RegistNormalWallVector_AttributeOff`, `mCoBG_SearchWallFlag`, bridge water search in `m_collision_bg_wall.c_inc` / `m_collision_bg.c` |
-| `decal_circles.rs` | (registration is gameplay-driven; add ABI when a C caller is chosen) | dig/scoop actions |
+| `pc_npc_house_goods` | `mQst_GetGoods_common` | `m_quest.c` — C keeps the `RANDOM(10)` |
+| `pc_turn_mod` | `Player_actor_Movement_Walk` | `m_player_main_walk.c_inc` — `0.01f32` already bit-identical |
+| `pc_wander_choice` | `aNPC_think_wander_decide_next` | `ac_npc_think_wander.c_inc` |
+| `pc_friendship_mode` | `aNPC_chk_avoid_and_search` | `ac_npc_move.c_inc` — pass `*friendship + over_friendship` |
+| `pc_house_next_loan` | `aNSC_set_talk_info_start_wait` | `ac_npc_shop_common.c` |
+| `pc_shop_real_level` | `mSP_GetRealShopLevel` | `m_shop.c` |
+| `pc_shop_plus_sales` | `mSP_PlusSales` | `m_shop.c` — C writes back `sales_sum` |
+| `pc_game_dlftbls_count` | `game_dlftbls` users | count only (11, incl. the PC-only model viewer) |
 
-### Wave 3 — engine plumbing (build-system level, do last)
+**Wave 2B — wire with C-side state gathering** (kernels are correct; C
+collects the state):
 
-| Rust module | C function(s) | Notes |
+| Rust kernel | Notes |
+|---|---|
+| `pc_eligible_furniture_count` | replaces only the counting pass of `mNpc_DecideNpcFurniture`; C builds the 100-byte flag array, keeps the second scan |
+| `pc_request_pick_carried` | now takes `&[u8]`, no allocation across FFI |
+| `pc_npc_schedule_state` | correct value for `schedule->saved_type` only; C keeps forced/current/event overrides |
+| `pc_npc_is_asleep` | answers the base schedule, not the actor's sleep state |
+| `pc_npc_patience(talk_num, looks)` | takes personality — retail indexes `l_npc_temper` by looks (quirk preserved) |
+| `pc_collision_neighborhood`, `pc_collision_pack` | sub-operations, not whole-function replacements |
+| `pc_buried_line_get/set/clear` | the exact retail row-pointer boundary (`mFI_*`); the whole-array `pc_buried_get/set/clear` are rewrite-side convenience |
+
+**Wave 2C — fixed in Rust, ready to wire** (were wrong, now corrected):
+
+| Rust kernel | What was fixed |
+|---|---|
+| `pc_request_dispatch` | was a conventional weighted selector; now the verbatim 61-RNG-call shuffle (shared impl with `talk_topics`). **ABI changed** to `(probs, n, rng callback)` — C passes a 3-line `RANDOM` wrapper |
+| `pc_letter_friendship_delta` | was `+3/+6/0/+3`; now the retail `+3 / -5-if-BAD / +3-if-present` |
+| `pc_locomotion_core` | documented as a classification helper only, not a movement replacement |
+
+**Wave 2D — do not wire yet** (boundary redesign needed):
+
+- `pc_town_generate`, `pc_town_select_initial_villagers` — `TownPlan`
+  is rewrite-owned, not retail `mFM_*` state; wiring now would replace
+  the retail generator rather than shim a function.
+- `pc_scene_table_index` — retail resolves via init-function-pointer
+  comparison; the pointer scan stays in C.
+- Full player-movement core — needs the `#[repr(C)]`
+  `PcPlayerMoveState` bridge designed first.
+
+### Wave 3 — engine plumbing (status 2026-10-08, commit `aeb52a7`)
+
+Different pattern from Waves 1–2: no call-site changes. The Rust
+modules already export the same ABI names as the PC C platform files,
+so the "wiring" is CMake exclusions — the C versions stop compiling
+and the Rust archive satisfies the existing C calls. Symbol coverage
+verified 1:1 for all seven modules.
+
+**Wired** (exclusions active in `CMakeLists.txt`; headers and C callers
+unchanged):
+
+| Rust module | Replaces | Notes |
 |---|---|---|
-| `aram.rs` | `pc_aram_get_base` | ARAM access; platform-sensitive |
-| `dvd.rs` | (check exports) | disc access; platform-sensitive |
-| `gbi_runtime.rs` | `pc_gbi_pack_runtime_ptr`, `pc_gbi_unpack_runtime_ptr` | graphics runtime pointers |
-| `mtx.rs` | (check exports) | matrix math |
-| `vi.rs` | (check exports) | video interface |
-| `profiler.rs` | (check exports) | profiling only |
-| `lib.rs` | `pc_disc_init/is_open/extract_dol/extract_rel/shutdown` | disc image handling |
+| `aram.rs` | `src/pc_aram.c` | `ARFree` ABI fixed to `void` (decomp header's `u32` is an "Unused/inlined in P2" guess; no C callers) |
+| `dvd.rs` + `lib.rs` (`pc_disc_*`) | `src/pc_dvd.c` + `src/pc_disc.c` | migrated as one cluster — `dvd.rs` calls the Rust `pc_disc_*` |
+| `gbi_runtime.rs` | `src/pc_gbi_runtime.c` | token mechanism preserved |
+| `profiler.rs` | `src/pc_profiler.c` | C hot-path inline wrappers keep calling the Rust `*_slow` exports |
+
+**Staged** (exclusion lines written but commented out):
+
+| Rust module | Replaces | What's missing |
+|---|---|---|
+| `mtx.rs` | `src/pc_mtx.c` | `f32.to_bits()` differential suite first (float op-order sensitivity) |
+| `vi.rs` | `src/pc_vi.c` | wire last, after boot/game-loop validation on the Rust profiler; callback ABI already fixed to `void*` |
+
+**Deliberately not replaced:** `pc_platform.c` (SDL/GX/audio stay C),
+the profiler's C-owned emu64 counters, `g_pc_profile_*` header decls.
+
+Also in `CMakeLists.txt`: the hard-coded Rust `.rs` DEPENDS list is now
+a recursive `CONFIGURE_DEPENDS` glob over `rust/src/*.rs`, so the
+archive rebuilds when any module changes.
 
 ### Already wired (do not touch)
 
 | Rust module | C function(s) | Called from |
 |---|---|---|
 | `letter_score.rs` | `mMck_check_key_hit`, `mMck_check_key_hit_nes` | `m_mail_check.c`, `m_mail_check_ovl.c`, `m_npc.c` |
+| Wave 3 (build-system) | `pc_aram.c`, `pc_dvd.c`, `pc_disc.c`, `pc_gbi_runtime.c`, `pc_profiler.c` exclusions | `CMakeLists.txt` — Rust archive satisfies the same ABI |
 
 ## How a single rewiring goes
 
