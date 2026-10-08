@@ -94,6 +94,48 @@ impl ShopTier {
             ShopTier::Dsuper => None,
         }
     }
+
+    /// Numeric tier index for level comparisons.
+    pub fn tier_idx(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Days in month (non-leap; retail uses lbRTC_GetDaysByMonth).
+fn days_in_month(y: u16, m: u8) -> u8 {
+    match m {
+        2 => {
+            if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+                29
+            } else {
+                28
+            }
+        }
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
+}
+
+/// Add n days to a (y,m,d) date.
+fn add_days((y, m, d): (u16, u8, u8), n: u8) -> (u16, u8, u8) {
+    let (mut y, mut m, mut d) = (y, m, d);
+    for _ in 0..n {
+        d += 1;
+        if d > days_in_month(y, m) {
+            d = 1;
+            m += 1;
+            if m > 12 {
+                m = 1;
+                y += 1;
+            }
+        }
+    }
+    (y, m, d)
+}
+
+/// True when a >= b as calendar dates.
+fn ymd_ge(a: (u16, u8, u8), b: (u16, u8, u8)) -> bool {
+    a.0 > b.0 || (a.0 == b.0 && (a.1 > b.1 || (a.1 == b.1 && a.2 >= b.2)))
 }
 
 /// Town-owned Nook shop state (mirrors the persistent `Shop_c` fields).
@@ -107,6 +149,8 @@ pub struct ShopState {
     pub visitor_flag: bool,
     /// The shop is undergoing renovations today.
     pub upgrading_today: bool,
+    /// Retail: Nook has been notified an upgrade is pending.
+    pub send_upgrade_notice: bool,
     /// Today's stock: 39 persistent inventory slots.
     pub items: [u16; GOODS_COUNT],
     /// Spotlight rare item.
@@ -118,6 +162,7 @@ pub struct ShopState {
     /// Last tier renewal (year, month, day).
     pub renewal_ymd: (u16, u8, u8),
     /// PC-port toggle: skip the foreign-town shopper requirement.
+    /// PC ENHANCEMENT -- not retail. Retail requires visitor_flag.
     pub disable_visitor_req: bool,
 }
 
@@ -128,6 +173,7 @@ impl Default for ShopState {
             shop_level: ShopTier::Zakka,
             visitor_flag: false,
             upgrading_today: false,
+            send_upgrade_notice: false,
             items: [0; GOODS_COUNT],
             rare_item: 0,
             lottery_items: [0; LOTTERY_ITEM_COUNT],
@@ -140,9 +186,10 @@ impl Default for ShopState {
 
 impl ShopState {
     /// Add `sum` to the sales total, clamping to the current tier's upgrade
-    /// threshold. Mirrors `mSP_PlusSales` exactly.
+    /// threshold. Mirrors `mSP_PlusSales`: retail uses plain u32 `+=`
+    /// (wrapping), then the clamp; NOT saturating_add.
     pub fn plus_sales(&mut self, sum: u32) {
-        self.sales_sum = self.sales_sum.saturating_add(sum);
+        self.sales_sum = self.sales_sum.wrapping_add(sum);
         if let Some(cap) = self.shop_level.sales_cap() {
             if self.sales_sum > cap {
                 self.sales_sum = cap;
@@ -185,6 +232,7 @@ impl ShopState {
 
     /// Sync the displayed tier to the earned tier. Mirrors
     /// `mSP_RenewShopLevel`; returns true when the tier changed.
+    /// This is the FINAL step of renovation, not the whole process.
     pub fn renew_level(&mut self) -> bool {
         let real = self.real_level();
         if self.shop_level != real {
@@ -193,6 +241,51 @@ impl ShopState {
         } else {
             false
         }
+    }
+
+    /// Schedule a renovation (aSL_JudgeRenewShop): if the earned tier
+    /// exceeds the displayed tier, set the renewal date to today + 2
+    /// days at opening time. Blocked when a bargain day falls on today,
+    /// tomorrow, or the +2 day date. Returns true when scheduled.
+    /// `bargain_ymd`: Some((y,m,d)) of Nook's sale day, or None.
+    pub fn schedule_renewal(
+        &mut self,
+        today: (u16, u8, u8),
+        open_hour: u8,
+        bargain_ymd: Option<(u16, u8, u8)>,
+    ) -> bool {
+        if self.shop_level.tier_idx() >= self.real_level().tier_idx() {
+            return false;
+        }
+        let plus1 = add_days(today, 1);
+        let plus2 = add_days(today, 2);
+        if let Some(b) = bargain_ymd {
+            if b == today || b == plus1 || b == plus2 {
+                return false; // Nook sale collides; skip scheduling.
+            }
+        }
+        self.renewal_ymd = plus2;
+        self.send_upgrade_notice = true;
+        self.upgrading_today = true;
+        let _ = open_hour; // opening time anchors the renewal RTC timestamp
+        true
+    }
+
+    /// True when today has reached the scheduled renewal date.
+    pub fn renewal_due(&self, today: (u16, u8, u8)) -> bool {
+        self.upgrading_today && ymd_ge(today, self.renewal_ymd)
+    }
+
+    /// Complete a due renovation: rewrite the building (abstracted),
+    /// then sync the tier. Clears the upgrade notice state.
+    pub fn complete_renewal(&mut self, today: (u16, u8, u8)) -> bool {
+        if !self.renewal_due(today) {
+            return false;
+        }
+        let changed = self.renew_level();
+        self.upgrading_today = false;
+        self.send_upgrade_notice = false;
+        changed
     }
 
     /// Mark a foreign-town shopper visit. Mirrors `mSP_SetNewVisitor`
@@ -366,5 +459,42 @@ mod tests {
         let shop = ShopState::default();
         assert_eq!(shop.items.len(), GOODS_COUNT);
         assert_eq!(GOODS_COUNT, 39);
+    }
+
+    #[test]
+    fn renovation_scheduler() {
+        let mut shop = ShopState::default();
+        shop.plus_sales(25_000); // earn Nook 'n Go
+        // Schedule: +2 days, no bargain collision.
+        assert!(shop.schedule_renewal((2026, 10, 7), 9, None));
+        assert_eq!(shop.renewal_ymd, (2026, 10, 9));
+        assert!(shop.send_upgrade_notice);
+        assert!(shop.upgrading_today);
+        // Not due yet.
+        assert!(!shop.renewal_due((2026, 10, 8)));
+        assert!(!shop.complete_renewal((2026, 10, 8)));
+        assert_eq!(shop.shop_level, ShopTier::Zakka); // still old tier
+        // Due on the renewal date.
+        assert!(shop.renewal_due((2026, 10, 9)));
+        assert!(shop.complete_renewal((2026, 10, 9)));
+        assert_eq!(shop.shop_level, ShopTier::Combini);
+        assert!(!shop.upgrading_today);
+        assert!(!shop.send_upgrade_notice);
+        // Bargain day blocks scheduling.
+        let mut shop2 = ShopState::default();
+        shop2.plus_sales(25_000);
+        assert!(!shop2.schedule_renewal((2026, 10, 7), 9, Some((2026, 10, 9))));
+        assert!(!shop2.schedule_renewal((2026, 10, 7), 9, Some((2026, 10, 7))));
+        assert!(!shop2.upgrading_today);
+    }
+
+    #[test]
+    fn sales_wrap_not_saturate() {
+        // Retail uses plain u32 += (wrapping); the clamp is what bounds it.
+        let mut shop = ShopState::default();
+        shop.shop_level = ShopTier::Dsuper; // no cap
+        shop.sales_sum = u32::MAX - 10;
+        shop.plus_sales(20);
+        assert_eq!(shop.sales_sum, 9); // wrapped, not saturated
     }
 }

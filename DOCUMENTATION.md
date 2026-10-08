@@ -734,6 +734,30 @@ New `rust/src/ecology.rs`: time terms, transition rates, field-rank rates, fish/
 
 - Full seasonal spawn tables (fish/insect species lists), UKI float state machine, bee/ant special actors, and letter-quest mail integration are traced in the brief but not yet ported.
 
+### Runtime Port Progress: Shop/House Progression Fidelity Fixes
+
+### Source findings (all verified against the local decomp)
+
+House (m_home.c, ac_npc_shop_common.c):
+- Three phases, not one: (A) order -> next_size+=1 (or basement_ordered=TRUE) + palette + order date, size/renew UNTOUCHED; (B) mHm_CheckRehouseOrder on a later calendar date (any y/m/d component differs) -> size=next_size (or has_basement=TRUE, or next_size=STATUE) + renew=TRUE; (C) Nook sees renew -> assigns loan (basement: 49800 + pad_1=1; else rehouse_loan[size-1]), clears renew.
+- Basement orderable from MEDIUM or LARGE (old Rust required LARGE only).
+- pad_1 is a basement-completion progression flag (set in the Nook renewal branch; gates the UPPER dialogue offer).
+- Statue: ordered at loan==0/size==UPPER/next_size==UPPER (rank = town count capped 3); next_size=STATUE on a later date; Nook clears statue_ordered.
+- Old Rust bugs fixed: order_expansion no longer sets size/renew immediately; order_basement works from MEDIUM; complete_construction split into check_rehouse_order + nook_process_renewal; pad_1/has_basement/ordered_outlook_pal added.
+
+Shop (m_shop.c, ac_shop_level.c):
+- plus_sales now uses wrapping_add (retail: plain u32 +=, then clamp) instead of saturating_add.
+- disable_visitor_req labeled as a PC enhancement, not retail.
+- Renovation scheduler added: schedule_renewal (+2 days at opening time, blocked by bargain-day collision on today/tomorrow/+2), renewal_due, complete_renewal. renew_level retained as the final primitive.
+
+### Rust rewrite implementation
+
+Rewrote `rust/src/house.rs` (three-phase API: order_expansion/order_basement/check_rehouse_order/nook_process_renewal/order_statue/nook_process_statue_built + pc_order_date_passed). Extended `rust/src/shop.rs` (wrapping_add, send_upgrade_notice, schedule_renewal/renewal_due/complete_renewal, date helpers). `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- The Nook dialogue/choice functions selecting LARGE vs BASEMENT vs UPPER still need a full trace for a complete Rust-ready progression function.
+
 ### Authorized Test Run (2026-10-07, commit e742d2a)
 
 Philip said "Run the tests." `cargo test --lib`: **296/296 passed**, 0 failed. (294 prior + 2 new: template_select, step3_data; plus the audit-fix assertions in the albumin test.) This also runtime-verifies the audit fix. Authorization consumed.

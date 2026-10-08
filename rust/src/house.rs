@@ -1,38 +1,32 @@
 //! Player house progression for the Rust rewrite.
 //!
-//! Source-verified architecture (upstream `include/m_player.h`,
-//! `include/m_home_h.h`, `include/m_private.h`,
-//! `include/ac_npc_shop_common.h`,
-//! `src/actor/npc/ac_npc_shop_common.c`,
-//! `src/actor/ac_intro_demo_move.c_inc`):
+//! Source-verified architecture (`include/m_player.h`,
+//! `include/m_home_h.h`, `src/game/m_home.c` (mHm_CheckRehouseOrder),
+//! `src/actor/npc/ac_npc_shop_common.c` (Nook order/dialogue/renewal),
+//! `src/game/m_repay_ovl.c`):
 //!
 //! * Mortgage values (`mPlayer_DEBT0`..`DEBT4`): 17400 (buy house), 148000
-//!   (medium), 398000 (large), 49800 (basement), 798000 (upper). The Nook
-//!   dialogue side mirrors them as `aNSC_LOAN_MEDIUM/LARGE/UPPER/STATUE(0)/
-//!   BASEMENT`.
-//! * The mortgage lives in `Private_c.inventory.loan` (`m_private.h:204`);
-//!   the intro sets `loan = mPlayer_DEBT0` (17400) directly.
-//! * House sizes (`mHm_HOMESIZE_*`): SMALL (initial), MEDIUM (paid off first
-//!   debt), LARGE (paid off second debt, excluding basement), UPPER (paid
-//!   off third debt & basement), STATUE (paid off final debt). There is no
-//!   separate basement size; the basement is a flag.
-//! * `home_size_info_s`: `size:3` / `next_size:3` / `statue_rank:2`
-//!   (0=gold, 1=silver, 2=bronze, 3=jade), `renew:1`, `statue_ordered:1`,
-//!   `basement_ordered:1`, plus the upgrade order date.
-//! * Expansion rule (`aNSC_set_talk_info_start_wait`): when construction
-//!   finishes (`renew`), the new loan is assigned for the house just built:
-//!   basement orders get 49800, otherwise
-//!   `rehouse_loan[size-1]` = {148000, 398000, 798000, 0}[size-1].
-//!   Accepting the next mortgage does not enlarge the house; the house only
-//!   changes after the existing debt reaches zero.
-//! * Statue: when `loan == 0` and size is UPPER, Nook offers the statue;
-//!   `statue_rank` is the town's statue count capped at 3
-//!   (`Save_Get(num_statues)`, "number of statues built for players who
-//!   have paid off their debts").
-//!
-//! Rewrite-owned: the pay/order/complete state-transition API. Storage is
-//! per-furniture (3 items per storage unit, per contemporary guides), not a
-//! house-wide inventory; that container model is not in this module.
+//!   (medium), 398000 (large), 49800 (basement), 798000 (upper).
+//! * The mortgage lives in `Private_c.inventory.loan`; the intro sets
+//!   `loan = mPlayer_DEBT0` (17400) directly.
+//! * House sizes (`mHm_HOMESIZE_*`): SMALL/MEDIUM/LARGE/UPPER/STATUE.
+//!   Basement is a flag (`flags.has_basement`), not a size.
+//! * Three distinct phases (do NOT conflate):
+//!   Phase A (order): Nook accepts -> next_size += 1 (or
+//!     basement_ordered = TRUE), ordered palette, upgrade_order_date.
+//!     size and renew are UNTOUCHED.
+//!   Phase B (construction): mHm_CheckRehouseOrder on a later calendar
+//!     date -> size = next_size (or has_basement = TRUE, or
+//!     next_size = STATUE), renew = TRUE, physical room rebuilt.
+//!   Phase C (Nook renewal): aNSC_set_talk_info_start_wait sees renew ->
+//!     assigns next loan (basement: 49800 + pad_1 = 1; else
+//!     rehouse_loan[size-1]), clears renew.
+//! * Basement can be ordered from MEDIUM or LARGE (not just LARGE).
+//! * pad_1 is a basement-completion progression flag (set when the
+//!   basement loan is assigned; gates the UPPER offer).
+//! * Statue: ordered when loan==0 && size==UPPER && next_size==UPPER;
+//!   next_size becomes STATUE on a later date; Nook then clears
+//!   statue_ordered. statue_rank = town statue count capped at 3.
 
 // Public shop/house API for the rewrite and future adapters. The crate
 // builds as a staticlib, so unused public items would warn as dead code.
@@ -55,6 +49,10 @@ pub const LOAN_LARGE: u32 = DEBT_LARGE;
 pub const LOAN_UPPER: u32 = DEBT_UPPER;
 pub const LOAN_STATUE: u32 = 0;
 pub const LOAN_BASEMENT: u32 = DEBT_BASEMENT;
+
+/// Ordinary upgrade loans indexed by completed size-1:
+/// MEDIUM->148k, LARGE->398k, UPPER->798k, STATUE->0.
+pub const REHOUSE_LOAN: [u32; 4] = [LOAN_MEDIUM, LOAN_LARGE, LOAN_UPPER, LOAN_STATUE];
 
 /// House sizes (`mHm_HOMESIZE_*`), in decomp order.
 #[repr(u8)]
@@ -94,7 +92,7 @@ pub const STATUE_RANK_JADE: u8 = 3;
 /// Maximum statue rank index (town statue count is capped at 3).
 pub const STATUE_RANK_MAX: u8 = 3;
 
-/// Per-player home size state (`home_size_info_s`).
+/// Per-player home size state (`home_size_info_s` + related flags).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HomeSizeInfo {
     /// Current house size.
@@ -103,14 +101,20 @@ pub struct HomeSizeInfo {
     pub next_size: HouseSize,
     /// Statue ranking (gold/silver/bronze/jade).
     pub statue_rank: u8,
-    /// Construction finished; refresh size on next Nook visit.
+    /// Construction finished; Nook must assign the next loan.
     pub renew: bool,
     /// Statue ordered from Nook.
     pub statue_ordered: bool,
     /// Basement ordered.
     pub basement_ordered: bool,
+    /// Retail `pad_1`: basement-completion progression flag.
+    pub basement_completion_marker: bool,
+    /// Basement physically exists (`flags.has_basement`).
+    pub has_basement: bool,
     /// Date the upgrade was ordered (year, month, day).
     pub upgrade_order_ymd: (u16, u8, u8),
+    /// Chosen roof palette (ordered_outlook_pal).
+    pub ordered_outlook_pal: u8,
 }
 
 /// One player's house: mortgage plus size state.
@@ -130,9 +134,14 @@ impl Default for House {
     }
 }
 
+/// CHECK_ORDER_DATE: true when the calendar date differs from the order
+/// date (any component).
+pub fn order_date_passed(order: (u16, u8, u8), today: (u16, u8, u8)) -> bool {
+    order.0 != today.0 || order.1 != today.1 || order.2 != today.2
+}
+
 impl House {
     /// Pay `bells` toward the mortgage. Returns the amount actually applied.
-    /// The loan saturates at zero; overpayment is not banked.
     pub fn pay(&mut self, bells: u32) -> u32 {
         let applied = bells.min(self.loan);
         self.loan -= applied;
@@ -144,92 +153,130 @@ impl House {
         self.loan == 0
     }
 
-    /// Order a main-floor expansion. Records the order date and marks the
-    /// house for renewal; the physical house changes only after
-    /// construction completes.
-    pub fn order_expansion(&mut self, next: HouseSize, ymd: (u16, u8, u8)) -> bool {
-        match (self.size_info.size, next) {
-            (HouseSize::Small, HouseSize::Medium)
-            | (HouseSize::Medium, HouseSize::Large)
-            | (HouseSize::Large, HouseSize::Upper) => {
-                self.size_info.next_size = next;
-                self.size_info.size = next;
-                self.size_info.renew = true;
-                self.size_info.upgrade_order_ymd = ymd;
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Order the basement. The basement does not change `size`; it is
-    /// tracked by `basement_ordered`.
-    pub fn order_basement(&mut self, ymd: (u16, u8, u8)) -> bool {
-        if self.size_info.size == HouseSize::Large && !self.size_info.basement_ordered {
-            self.size_info.basement_ordered = true;
-            self.size_info.renew = true;
-            self.size_info.upgrade_order_ymd = ymd;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Complete construction: assign the mortgage for the expansion just
-    /// built. Mirrors the `renew` branch of `aNSC_set_talk_info_start_wait`:
-    /// basement orders get `LOAN_BASEMENT`, otherwise
-    /// `rehouse_loan[size - 1]`.
-    pub fn complete_construction(&mut self) -> bool {
-        if !self.size_info.renew {
+    /// Phase A: order a main-floor expansion. Only records next_size
+    /// (size+1), the palette, and the order date. size and renew are
+    /// untouched -- construction happens in check_rehouse_order.
+    /// Requires the current loan to be cleared.
+    pub fn order_expansion(&mut self, palette: u8, ymd: (u16, u8, u8)) -> bool {
+        if !self.debt_cleared() {
             return false;
         }
-        if self.size_info.basement_ordered {
-            self.size_info.basement_ordered = false;
-            self.loan = LOAN_BASEMENT;
-        } else {
-            let idx = self.size_info.size as usize;
-            const REHOUSE_LOAN: [u32; 4] = [LOAN_MEDIUM, LOAN_LARGE, LOAN_UPPER, LOAN_STATUE];
-            if idx == 0 || idx > REHOUSE_LOAN.len() {
-                return false;
-            }
-            self.loan = REHOUSE_LOAN[idx - 1];
-        }
-        self.size_info.renew = false;
+        let next = match self.size_info.size {
+            HouseSize::Small => HouseSize::Medium,
+            HouseSize::Medium => HouseSize::Large,
+            HouseSize::Large => HouseSize::Upper,
+            _ => return false,
+        };
+        // Retail does next_size += 1; the enum order makes this identical.
+        self.size_info.next_size = next;
+        self.size_info.ordered_outlook_pal = palette;
+        self.size_info.upgrade_order_ymd = ymd;
         true
     }
 
-    /// Offer/order the statue once the upper-floor debt is cleared. Mirrors
-    /// the statue branch: `statue_rank` is the town statue count capped at 3.
-    pub fn order_statue(&mut self, town_statues: u8, ymd: (u16, u8, u8)) -> bool {
-        if self.loan == 0
-            && self.size_info.size == HouseSize::Upper
-            && !self.size_info.statue_ordered
-        {
-            self.size_info.statue_ordered = true;
-            self.size_info.statue_rank = town_statues.min(STATUE_RANK_MAX);
-            self.size_info.upgrade_order_ymd = ymd;
+    /// Phase A: order the basement. Allowed from MEDIUM or LARGE when no
+    /// basement exists or is ordered. Does not change size.
+    pub fn order_basement(&mut self, ymd: (u16, u8, u8)) -> bool {
+        match self.size_info.size {
+            HouseSize::Medium | HouseSize::Large => {}
+            _ => return false,
+        }
+        if self.size_info.has_basement || self.size_info.basement_ordered {
+            return false;
+        }
+        self.size_info.basement_ordered = true;
+        self.size_info.upgrade_order_ymd = ymd;
+        true
+    }
+
+    /// Phase B: mHm_CheckRehouseOrder. On a later calendar date than the
+    /// order, completes construction: size = next_size (main), or
+    /// has_basement = TRUE (basement), or next_size = STATUE (statue).
+    /// Sets renew for the main/basement paths.
+    pub fn check_rehouse_order(&mut self, today: (u16, u8, u8)) -> bool {
+        if !order_date_passed(self.size_info.upgrade_order_ymd, today) {
+            return false;
+        }
+        let si = &mut self.size_info;
+        if si.size != si.next_size && (si.next_size as u8) < HouseSize::Statue as u8 {
+            si.size = si.next_size;
+            si.renew = true;
+            true
+        } else if si.basement_ordered {
+            si.has_basement = true;
+            si.renew = true;
+            true
+        } else if si.statue_ordered {
+            si.next_size = HouseSize::Statue;
             true
         } else {
             false
         }
     }
 
-    /// Finish the statue build: the house reaches its final state.
-    pub fn complete_statue(&mut self) -> bool {
-        if self.size_info.statue_ordered {
-            self.size_info.statue_ordered = false;
-            self.size_info.size = HouseSize::Statue;
-            self.size_info.next_size = HouseSize::Statue;
+    /// Phase C: Nook's renewal processing (aNSC_set_talk_info_start_wait).
+    /// Assigns the next loan, clears basement_ordered/renew, sets pad_1
+    /// for the basement path. Returns the assigned loan, or None.
+    pub fn nook_process_renewal(&mut self) -> Option<u32> {
+        let si = &mut self.size_info;
+        if !si.renew {
+            return None;
+        }
+        si.basement_completion_marker = false; // pad_1 = 0 first
+        let loan = if si.basement_ordered {
+            si.basement_ordered = false;
+            si.basement_completion_marker = true; // pad_1 = 1
+            LOAN_BASEMENT
+        } else {
+            let idx = si.size as usize;
+            if idx == 0 || idx > REHOUSE_LOAN.len() {
+                return None;
+            }
+            REHOUSE_LOAN[idx - 1]
+        };
+        self.loan = loan;
+        si.renew = false;
+        Some(loan)
+    }
+
+    /// Phase A (statue): order the statue. Requires loan==0, size==UPPER,
+    /// next_size==UPPER, not already ordered. Rank = town count capped at 3.
+    pub fn order_statue(&mut self, town_statues: u8, ymd: (u16, u8, u8)) -> bool {
+        let si = &self.size_info;
+        if self.loan != 0
+            || si.size != HouseSize::Upper
+            || si.next_size != HouseSize::Upper
+            || si.statue_ordered
+        {
+            return false;
+        }
+        self.size_info.statue_ordered = true;
+        self.size_info.statue_rank = town_statues.min(STATUE_RANK_MAX);
+        self.size_info.upgrade_order_ymd = ymd;
+        true
+    }
+
+    /// Phase C (statue): Nook sees statue_ordered && next_size == STATUE
+    /// (set by check_rehouse_order on a later date) and marks it built.
+    pub fn nook_process_statue_built(&mut self) -> bool {
+        let si = &mut self.size_info;
+        if si.statue_ordered && si.next_size == HouseSize::Statue {
+            si.statue_ordered = false;
             true
         } else {
             false
         }
+    }
+
+    /// True once the statue pipeline has fully completed.
+    pub fn statue_built(&self) -> bool {
+        !self.size_info.statue_ordered && self.size_info.next_size == HouseSize::Statue
     }
 }
 
 /// C ABI: mortgage assigned when construction of `size` completes.
-/// `basement_ordered` nonzero selects the basement loan. Mirrors the
-/// `renew` branch loan assignment. Returns `u32::MAX` for an invalid size.
+/// `basement_ordered` nonzero selects the basement loan. Returns
+/// `u32::MAX` for an invalid size.
 #[no_mangle]
 pub extern "C" fn pc_house_next_loan(size: u8, basement_ordered: i32) -> u32 {
     if basement_ordered != 0 {
@@ -244,6 +291,19 @@ pub extern "C" fn pc_house_next_loan(size: u8, basement_ordered: i32) -> u32 {
     }
 }
 
+/// C ABI: 1 if the order date has passed (any calendar component differs).
+#[no_mangle]
+pub extern "C" fn pc_order_date_passed(
+    oy: u16,
+    om: u8,
+    od: u8,
+    ty: u16,
+    tm: u8,
+    td: u8,
+) -> u8 {
+    order_date_passed((oy, om, od), (ty, tm, td)) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,51 +312,95 @@ mod tests {
     fn starter_debt_and_payoff() {
         let mut house = House::default();
         assert_eq!(house.loan, 17400);
-        assert_eq!(house.pay(20000), 17400); // overpayment not banked
+        assert_eq!(house.pay(20000), 17400);
         assert_eq!(house.loan, 0);
         assert!(house.debt_cleared());
     }
 
     #[test]
-    fn expansion_assigns_next_mortgage_on_completion() {
+    fn three_phase_expansion() {
         let mut house = House::default();
         house.pay(17400);
-        assert!(house.order_expansion(HouseSize::Medium, (2026, 10, 7)));
-        assert!(house.complete_construction());
+        // Phase A: order records next_size/date only.
+        assert!(house.order_expansion(3, (2026, 10, 7)));
+        assert_eq!(house.size_info.next_size, HouseSize::Medium);
+        assert_eq!(house.size_info.size, HouseSize::Small); // NOT changed
+        assert!(!house.size_info.renew); // NOT set
+        // Same date: no construction.
+        assert!(!house.check_rehouse_order((2026, 10, 7)));
+        // Next date: Phase B builds.
+        assert!(house.check_rehouse_order((2026, 10, 8)));
+        assert_eq!(house.size_info.size, HouseSize::Medium);
+        assert!(house.size_info.renew);
+        // Phase C: Nook assigns the loan.
+        assert_eq!(house.nook_process_renewal(), Some(DEBT_MEDIUM));
         assert_eq!(house.loan, DEBT_MEDIUM);
-        assert!(house.order_expansion(HouseSize::Large, (2026, 10, 8)));
-        assert!(house.complete_construction());
-        assert_eq!(house.loan, DEBT_LARGE);
+        assert!(!house.size_info.renew);
     }
 
     #[test]
-    fn basement_uses_flag_not_size() {
+    fn basement_from_medium() {
+        let mut house = House::default();
+        house.size_info.size = HouseSize::Medium;
+        // Basement allowed from MEDIUM (retail correction).
+        assert!(house.order_basement((2026, 10, 7)));
+        assert!(!house.size_info.has_basement); // not yet built
+        assert!(house.check_rehouse_order((2026, 10, 8)));
+        assert!(house.size_info.has_basement);
+        assert!(house.size_info.renew);
+        assert_eq!(house.nook_process_renewal(), Some(DEBT_BASEMENT));
+        assert_eq!(house.loan, DEBT_BASEMENT);
+        assert!(house.size_info.basement_completion_marker); // pad_1
+        assert_eq!(house.size_info.size, HouseSize::Medium); // size unchanged
+    }
+
+    #[test]
+    fn basement_from_large() {
         let mut house = House::default();
         house.size_info.size = HouseSize::Large;
         assert!(house.order_basement((2026, 10, 7)));
-        assert!(house.complete_construction());
-        assert_eq!(house.loan, DEBT_BASEMENT);
-        assert_eq!(house.size_info.size, HouseSize::Large); // size unchanged
+        assert!(house.check_rehouse_order((2026, 10, 8)));
+        assert_eq!(house.nook_process_renewal(), Some(DEBT_BASEMENT));
     }
 
     #[test]
-    fn statue_rank_caps_at_jade() {
+    fn statue_pipeline() {
         let mut house = House::default();
         house.size_info.size = HouseSize::Upper;
-        house.pay(DEBT_BUY_HOUSE); // statue requires a paid-off loan
+        house.size_info.next_size = HouseSize::Upper;
+        house.pay(DEBT_BUY_HOUSE);
         assert!(house.order_statue(7, (2026, 10, 7)));
         assert_eq!(house.size_info.statue_rank, STATUE_RANK_JADE);
-        assert!(house.complete_statue());
-        assert_eq!(house.size_info.size, HouseSize::Statue);
+        // Later date: next_size becomes STATUE.
+        assert!(house.check_rehouse_order((2026, 10, 8)));
+        assert_eq!(house.size_info.next_size, HouseSize::Statue);
+        // Nook marks it built.
+        assert!(house.nook_process_statue_built());
+        assert!(house.statue_built());
         assert_eq!(house.loan, 0);
     }
 
     #[test]
-    fn expansion_order_is_gated() {
+    fn ordering_is_gated() {
         let mut house = House::default();
-        // Cannot skip straight to the upper floor.
-        assert!(!house.order_expansion(HouseSize::Upper, (2026, 10, 7)));
-        // Basement only after the large main floor.
-        assert!(!house.order_basement((2026, 10, 7)));
+        // Cannot order with debt outstanding.
+        assert!(!house.order_expansion(0, (2026, 10, 7)));
+        house.pay(17400);
+        assert!(house.order_expansion(0, (2026, 10, 7)));
+        // Small -> Medium only; no skipping.
+        let mut h2 = House::default();
+        h2.pay(17400);
+        h2.size_info.size = HouseSize::Medium;
+        h2.size_info.next_size = HouseSize::Medium;
+        assert!(h2.order_expansion(0, (2026, 10, 7)));
+        assert_eq!(h2.size_info.next_size, HouseSize::Large);
+        // Basement not from Small.
+        let mut h3 = House::default();
+        assert!(!h3.order_basement((2026, 10, 7)));
+        // No double basement.
+        let mut h4 = House::default();
+        h4.size_info.size = HouseSize::Medium;
+        assert!(h4.order_basement((2026, 10, 7)));
+        assert!(!h4.order_basement((2026, 10, 7)));
     }
 }
