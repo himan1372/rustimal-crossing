@@ -2017,6 +2017,63 @@ town file as pure buffer logic (GameCube CARD I/O stays engine-side):
 5 C ABI exports (`pc_savef_*`). cargo check --lib clean; tests written
 but not run per the standing rule. Second verification pass pending.
 
+### Runtime Port Progress: Game-Layer Audio (Na_*)
+
+New `rust/src/audio.rs`, verified against `src/audio.c`,
+`src/static/jaudio_NES/game/game64.c_inc`,
+`include/jaudio_NES/audiocommon.h`, `include/jaudio_NES/audiostruct.h`,
+`src/static/jaudio_NES/internal/sub_sys.c`, and `include/m_config.h`
+(GAFE01_00 Rev. 0).
+
+Retail audio is a stateful stack, not `play_sound(id)` calls: game
+systems -> sAdo_* -> the Na_* game layer (this module) -> the deferred
+256-entry `AudioPort` command ring -> the JAudio engine (sequence VM,
+DSP, NEOS, AI). This module implements the Na_* layer; the sequence VM,
+sample banks, ADPCM, and DSP mixer stay engine-side behind the command
+boundary (ROM assets are excluded from the decomp).
+
+Ported:
+
+- Engine constants: 5 groups, 16 subtracks/group, 128 notes, 4 notes per
+  subtrack, 48 tatums/beat, 24 AGC channels, 0x90000 CPU audio heap,
+  0x810000 ARAM, triple-buffered DAC (7x560), 64 DSP channels, 4 FX
+  buffers.
+- Group assignments: SE=0, BGM0=1, FTR_INST=2, BGM1=3, VOICE=4, with the
+  BGM0/BGM1 crossfade handle alternation.
+- `AudioPort` (opcode + 3 arg bytes + param union) and the 256-entry
+  retail command ring (the PC port uses 2048; retail is 256).
+- Sound-ID packing: upper nibble flags (MONO 0x1000, DIST_REVERB 0x2000,
+  ECHO 0x4000, SINGLETON 0x8000), low byte index, 0x0F00 bank byte.
+- Trigger SEs: 6 stateful slots, MONO subtrack-14 bypass, singleton
+  rejection, free-slot preference, oldest-frames replacement gated by
+  `TRGPRIO` priority, per-frame parameter pushes (`Sou_TrgMake`).
+- Positional math: quadratic `distance2vol` (540-unit radius, 1.15
+  base), `angle2pan` + `pan_kochou` with output-mode scaling (x1.6 /
+  x1 / x0.75), MD curve clamped [0.2, 0.8].
+- Level SEs: 6 slots x 8-entry history with FIFO push/shift removal.
+- Ongen: 50-entry source cache with aging, 4 active continuous slots,
+  retail foundIndex-stays-0 quirk.
+- Room insects: 50 entries with randomized variance and the j=0
+  restart bug.
+- Voice: 2 alternating slots, Animalese/Click/Silent modes, spec ->
+  sequence (243/244/245) and per-spec volume/pitch table.
+- BGM: 24-entry fine/snow/sakura mute tables + 6-entry museum table
+  (verbatim values), weather masking with the 0x45 substitution,
+  per-subtrack filter pushes.
+- Furniture instruments (2 melody identities) and the 14-slot rhythm
+  allocator on group 2; scene audio state (echo, chime, BGM volume,
+  persistent sequences 242/246).
+
+Preserved retail quirks: the kiteki dead-branch/negative volume, the
+ROOM_TYPE_OTHER AREA2 bug, the insect variance restart bug, the
+foundIndex slot-0 quirk. Documented safety deviations (unknowable from
+source): `TRGPRIO` out-of-bounds reads (120-entry table, no retail
+bounds check) return `None`; the level-fade 8..14 indexing bug is noted
+but not reproduced.
+
+5 C ABI exports (`pc_audio_*`). cargo check --lib clean; tests written
+but not run per the standing rule. Second verification pass pending.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
