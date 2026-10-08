@@ -636,6 +636,26 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Runtime Port Progress: Template Anti-Reuse (SelectBlock)
+
+### Source findings (all verified against the local decomp)
+
+- Anti-reuse operates on concrete data_combi_table indices, not semantic types. l_use_data[70] (s16) reset to -1 at each mRF_SelectBlock; mRF_SearchAlreadyUse is exact index equality over all 70 slots.
+- mRF_TypeCombCount / mRF_IndexInType2BlockNo: reuse=FALSE excludes used indices; reuse=TRUE ignores them. Uniform selection via mRF_GetRandom(count). Exhaustion -> reuse pool. Verified function bodies verbatim.
+- Per-type template counts extracted programmatically from data_combi.c (368 entries, 92 NONE): brief's table matched exactly (FLAT 10, RIVER_SOUTH 4, PORT 3, POOL_* 1 each, etc.). SEA_EXCEPTIONAL has 0 entries (BG-name path).
+- SEA_EXCEPTIONAL bypasses anti-reuse entirely: no l_use_data update, BG-name matching via mRF_GetExceptionalSeaBgDownBgName + mRF_BgName2RandomConbiNo. Retail bug confirmed: mRF_GetRandom(0) (always first match) with the @BUG comment; PC port BUGFIXES uses count. Both paths modeled via retail_bug flag.
+- Defensive fallback BLOCK_COMBI_GRD_S_F_7 = 161 confirmed from m_combi_type.h.
+- Traversal is Z-major/X-minor; selection happens after the perfect-bit loop (no town regen on template collision).
+- One deviation risk noted: my select_block_type falls through to the reuse pool when IndexInType returns -1, matching the source's duplicated block.
+
+### Rust rewrite implementation
+
+`rust/src/template_select.rs`: use_data_reset, search_already_use, type_comb_count, index_in_type_2_block_no, select_block_type (with rand_n closure for RNG fidelity), bg_name_2_random_combi_no (retail_bug flag), select_traversal. C ABI: pc_type_comb_count, pc_search_already_use. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- mRF_GetExceptionalSeaBgDownBgName table (27x2) not yet ported. Full SelectBlock grid loop remains source-side.
+
 ### Authorized Test Run (2026-10-07, commit d2c3957)
 
 Philip said "Run the tests." `cargo test --lib`: **294/294 passed**, 0 failed. (281 from the previous run + 13 new: albumin table, placement passes, albumin geometry trace, placement deep dive.) Authorization consumed.

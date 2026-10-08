@@ -72,6 +72,7 @@ mod albumin;
 mod placement;
 mod albumin_geometry;
 mod albumin_collision_data;
+mod template_select;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;
