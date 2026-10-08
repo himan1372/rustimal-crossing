@@ -1911,6 +1911,59 @@ date Y/M/D + `normal[7]` + `monthly[2]` + `august`), not in Private_c.
 
 4 C ABI exports (`pc_mother_mail_*`).
 
+### Runtime Port Progress: NPC Reply Generation
+
+New `rust/src/npc_reply.rs` plus machine-extracted
+`rust/src/mck_key_tables.rs`, verified against `src/game/m_npc.c`,
+`src/game/m_mail_check_ovl.c`, `src/game/m_handbill.c`,
+`include/m_handbill.h`, `src/game/m_font.c`,
+`src/game/m_font_main.c_inc`, and `src/game/m_msg_main.c_inc`
+(GAFE01_00 Rev. 0).
+
+Three pieces, kept separate:
+
+1. **mMck letter scorer** (`check_key_hit_nes`): deterministic 7-component
+   heuristic over the 192-byte body — A (final `.`/`?`/`!` +20, then +10/-10
+   per separator for uppercase within 3 chars), B (+3 per vocabulary hit),
+   C (+20/-10 on the first non-space char), D (-50 once for a triple
+   identical alpha), E (+20/-20 on spaces/non-spaces >= 20%), F (-150 once
+   for a 75+ char run-on), G (-20 per spaceless 32-byte block). The 26
+   a-z key tables were extracted verbatim by script (89 pairs max, 's').
+   USA retail bug preserved as a documented deviation: the tables end
+   `0, 0` (or nothing) while `mMck_cmp_key` scans for a 0x7F terminator, so
+   retail reads linker-adjacent bytes — unknowable from source, the Rust
+   search stops at the table end. Only the first key byte is
+   case-insensitive; bytes 2-3 match lowercase entries exactly.
+
+2. **Reply scheduler**: rank <50 BAD / 50-99 no reply / >=100 OK via
+   `mNpc_CheckNormalMail_nes` (the `_length` variant is unused in USA).
+   Receiving a letter stamps the date, sets `cond` + `send_reply` for BAD/OK
+   only; the `// 25%` comment has no RNG behind it. First-job and
+   letter-contest letters suppress the normal reply. Friendship: +3, -5 if
+   BAD, +3 if a present was attached (skipped during the first job).
+   `mNpc_Remail` scans NPCs in animals[] order, generates on a later
+   calendar date only, `break`s the scan on post-office failure (pending
+   replies stay pending), then handles the single foreign `Private_c.remail`
+   (looks != 0x7F sentinel, no date check, cleared only on success).
+
+3. **Reply generation + mHandbillz composer**: BAD = canned
+   `0xC5`/`0xD8` + looks*3 + RANDOM(3), no present. GOOD = `RANDOM(4) & 1`
+   present chance, category `RANDOM(4) & 1`, 11 `RANDOM_F` free-string
+   category rolls (bases 0x314...0x3B4, ranges 32/40), then five fragment
+   indices into SUPERZ/MAILA/MAILB/MAILC/PSZ (MAILB half shifted +16 when a
+   present is given), random paper for every reply. The composer is an
+   in-place buffer editor over a `HandbillzResources` provider trait:
+   SUPER newline-border -> header_back_start (adjusted by control-code
+   expansion), MAILA+B+C concatenated (total > 192 fails) newline-padded,
+   PS space-padded; FREE0-19 variable-width substitution with article and
+   capital-letter controls; the retail `mHandbill_clr_capital_flag`
+   copy-paste bug is preserved (it writes `force_art` instead of clearing
+   `capital_flag`). Final ROM text needs retail assets the decomp excludes.
+
+`LetterInfo` bitfield, `AnimalRemail` (0x16), and the exact RNG call order
+are modeled; engine-owned pieces (ROM text, article strings, random-item
+presents, NPC names) stay behind traits/inputs. 5 C ABI exports.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
