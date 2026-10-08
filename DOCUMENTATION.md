@@ -1725,6 +1725,45 @@ more fields past `coast_flag` (`_2B5`, `hamon_accum`, `touch_vib_accum`,
 `logic_accum`, `logic_ticks`). The `ecology.rs` `uki` module only held
 status constants; the full machine lives here.
 
+### Runtime Port Progress: Bee/Ant Special Actors
+
+New `rust/src/bee_ant.rs`, verified against `src/actor/ac_bee.c`,
+`src/actor/ac_ant.c`, `src/actor/ac_insect_clip.c_inc`,
+`src/actor/ac_set_ovl_insect.c`, and `src/bg_item/bg_item_common.c_inc`
+(GAFE01_00 Rev. 0).
+
+Bee and ant are two-stage actors, not normal insects. They are BG-part
+special actors (`mAc_PROFILE_BEE` / `mAc_PROFILE_ANT`) with their own
+state machines (`aBEE_ACT_*`: APPEAR/FLY/CAUGHT/ATTACK_WAIT/ATTACK/
+DISAPPEAR; `aANT_ACT_*`: WAIT/CAUGHT/DISAPPEAR). Only on capture are they
+converted into a normal `aINS_INSECT_ACTOR` via `aINS_MAKE_EXIST`, which
+occupies the reserved ninth insect slot (slots 0..7 are normal spawns).
+
+Ported: insect controller slot reservation, the clip's retryable pending
+ant spawn (`ant_spawn_pending` cleared only on successful actor creation),
+the runtime ant overlay (ANT/ON_CANDY, ANT/ON_TRASH, COCKROACH/ON_TRASH
+appended to every range), the candy/trash weight-override
+(`limit_insect_data`) and the field-rank bypass (`env_rate = 1.0`) for
+candy/trash selection, exact-one birth, ant substrate checks
+(candy 0x2806 / spoiled turnip 0x2F03, rain/snow excluded at the habitat
+level), 24.0 catch radius with `NET_CATCH_TYPE_ANT` (vs `INSECT` = 0),
+bee tree shake lifecycle (TREE_BEES/CEDAR_TREE_BEES/GOLD_TREE_BEES ->
+dormant bee at (-1,-1,-1) + HONEYCOMB drop with speed 5 / accel -1.2,
+tree reverts immediately, bee positioned on landing, honeycomb lingers
+120 frames independently), bee APPEAR (~85 frames, +3 alpha), 60-frame
+catch delay, player-relative flight (speed 2.9 eased, altitude
+player.y+50+5*sin(bobbing), turn-dependent body deformation), 30-unit
+attack trigger with ATTACK_WAIT staging, sting coupling (bee waits while
+the player is STUNG_BEE), ~17-frame disappearance (alpha -15, scale to
+0.03 bee / 0.01 ant), and `extra_data = 0` non-release conversion.
+Player/net/engine reads are `BeeEnv`/`AntEnv` inputs; side effects are
+`BeeEvent`/`AntEvent` outputs. 6 C ABI exports.
+
+Corrections vs brief: bee net-catch uses a 40.0 force-request radius
+and a 24.0 table radius (the brief listed only 24.0); the bee does no
+catch/attack logic until its rotation.x eases to <= 22.5 deg; the ant
+force-catch path uses one-block proximity rather than a fixed radius.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
