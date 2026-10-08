@@ -636,6 +636,30 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Runtime Port Progress: Placement Passes, Deep Dive (Flat Info, Unique Buildings, Heights)
+
+### Source findings (all verified against the local decomp)
+
+- Index math: mRF_D2ToD1(bx, bz) = bz * 7 + bx. Placement scans cover z=0..7 (56 cells) - correction vs the brief's "42 blocks" claim.
+- mRF_MakeFlatPlaceInfomation: initializes all cells to BOTH/BOTH, then per-column top-down scan (ABOVE until CLIFF_ANY hit -> BELOW) and per-row left-right scan (LEFT until RIVER or RIVER_CLIFF_ANY -> RIGHT). Computed BEFORE beach/bridge/slope mutation and never recomputed - the pass order is load-bearing.
+- mRF_JudgeFlatBlock: source-faithful predicate ported. Subtle: a BOTH request is not a pure wildcard - when cliff_height == BOTH the source requires the info array to literally equal BOTH (true only on unclassified border cells). Live calls always use BELOW.
+- mRF_FlatBlock2Unique: count qualifying -> RANDOM(num) -> rewrite n-th in scan order (sequential, destructive).
+- Shrine: side0 = RANDOM(100)&1, side1 = side0^1, tries side0 then side1, BELOW cliff. Police: tries side1 (opposite) first, then side0. Museum: BOTH sides, BELOW.
+- Shop/Post: RANDOM(1000)&1 decides which goes to x=1..2 vs x=4..5 slots on z=1; each waits for a TRACKS_DUMP cell.
+- Needlework: RANDOM(3)-th BEACH cell in x=1..5 scan order (ordinal, not x = r+1) - encoded as needlework_pick.
+- Dock has no success bit: (5,6) must be BEACH -> PORT, else the whole needlework/wharf pass returns 0 and NEEDLEWORK is never set.
+- mRF_GetBlockBase: per X column scanned z=9->0 from FIELD_STEP1 (=0), incrementing after cliff-horizontal/top-right/top-left bits or border transitions.
+- mRF_SelectBlock unique-avoidance: l_use_data + mRF_SearchAlreadyUse prefers unused combinations, reuses when exhausted.
+- mRF_MakePerfectBit: builds 0x1FF from mRF_BIT_NUM.
+
+### Rust rewrite implementation
+
+Extended `rust/src/placement.rs`: d2_to_d1, PLACEMENT_CELL_COUNT, side/cheight enums, classify_river_row, classify_cliff_col, judge_flat_block (source-faithful), rewrite_flat_idx, shrine_sides, shop_first, needlework_pick, base_height_column, PASS_ORDER (12 passes). C ABI: pc_d2_to_d1, pc_shrine_sides, pc_needlework_pick. `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- Full grid-array passes (bridge/slope/building selection loops) remain source-side; Rust has the per-cell/per-row resolvers. mRF_SelectBlock combination resolution not yet ported.
+
 ### Runtime Port Progress: Albumin Physical Geometry Table
 
 ### Source findings
