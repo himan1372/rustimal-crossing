@@ -2003,6 +2003,14 @@ town file as pure buffer logic (GameCube CARD I/O stays engine-side):
   0x028596 (a decomp artifact - duplicate member names can't compile);
   the operative field is the 0x1A one because `mCD_check_copyProtect`
   only reads the first 0x200 bytes of each copy.
+- Correction: the decomp's `mCD_keep_original_c` fields only sum to
+  0xCC68, contradicting the struct's own "force size to 0xCCA0" comment
+  (the decomp struct is missing 0x38 bytes). The port keeps 0xCCA0
+  because the struct's stated intent and an independent PC-port
+  round-trip log agree on it; the decomp field arithmetic is what's
+  suspect. Correction: `mCD_SaveHome_bg_write_others` passes
+  `OTHERS_SIZE + sizeof(Save)*2` as the *expected on-card file length*
+  (asserted against the existing file), not as the write byte count.
 - GCI: 0x40 directory-entry prefix + 0x72000 = 0x72040; exact retail
   dir-entry bytes remain unverified (needs a real USA GCI).
 

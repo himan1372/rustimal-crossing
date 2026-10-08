@@ -95,6 +95,13 @@ pub mod aux {
     pub const MAIL_OFS: usize = 0x1440;
     pub const MAIL_SIZE: usize = 0xBAC0;
     pub const ORIGINAL_OFS: usize = 0xCF00;
+    /// Keep-design block size. NOTE: the decomp's visible
+    /// `mCD_keep_original_c` fields only sum to 0xCC68 (32-aligned 0xCC80),
+    /// contradicting the struct's own `_CC80` "force size to 0xCCA0"
+    /// comment — the decomp struct is missing 0x38 bytes somewhere. The
+    /// 0xCCA0 value is kept because the struct's stated intent and an
+    /// independent PC-port round-trip log both agree on 0xCCA0; treat the
+    /// decomp field arithmetic, not the size, as suspect.
     pub const ORIGINAL_SIZE: usize = 0xCCA0;
     pub const DIARY_OFS: usize = 0x19BA0;
     pub const DIARY_SIZE: usize = 0xBA20;
@@ -224,12 +231,16 @@ pub struct SaveMeta {
 
 /// Build a serialized save slot exactly like `mCD_SaveHome_bg_set_data`:
 /// zero the 0x26000 buffer, copy the live `Save_t` (0x242A0), stamp
-/// version/code/land_id/RTC time, write the copy-protect value at
-/// `Save_t+0x1A`, then store the flat checksum over the whole slot.
+/// version/code/land_id/RTC time, then store the flat checksum over the whole
+/// slot.
 ///
-/// The live-save mutations retail performs *before* the copy (save_exist,
+/// Retail applies the save-time mutations (save_exist, copy_protect,
 /// travel_hard_time, reset-code clearing, money-stone shine, Wisp removal)
-/// are engine-owned and must already be reflected in `live`.
+/// to the *live* save via `Save_Set`/`Common_Set` *before* the `bcopy`;
+/// only version/save-check/checksum are set post-copy. `meta.copy_protect`
+/// is written here for convenience — the resulting bytes are identical to
+/// retail's pre-copy application. Any other live-save mutations must
+/// already be reflected in `live` by the engine.
 pub fn build_save_slot(live: &[u8; SAVE_T_SIZE], meta: &SaveMeta) -> [u8; SAVE_SLOT_SIZE] {
     let mut slot = [0u8; SAVE_SLOT_SIZE];
     slot[..SAVE_T_SIZE].copy_from_slice(live);
