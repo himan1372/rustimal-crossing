@@ -1636,6 +1636,35 @@ New `rust/src/quest_gen.rs`: type/kind tables + uniform selection, first-job tab
 - Exact completion/reward transaction ordering per quest type.
 - BUGFIXES-configuration differences in quest code.
 
+### Runtime Port Progress: Full Seasonal Species Tables
+
+This increment ports the complete retail seasonal-species data layer to Rust: `rust/src/species.rs` (enums, term/time lookup, transition blending, dynamic insertions, C ABI) plus two machine-generated data modules, `rust/src/fish_tables.rs` and `rust/src/insect_tables.rs`, extracted verbatim from `src/actor/ac_set_ovl_gyoei.c` and `src/actor/ac_set_ovl_insect.c` (GAFE01_00 Rev. 0) by `/tmp/extract_species.py`. The extraction was machine-checked: 678 unique fish entries and 514 + 62 = 576 unique insect entries, exactly the source counts.
+
+**Source findings:**
+
+- Fish: 24 half-month terms (`(month-1)*2 + (day>15)`) x 4 daily periods (21:00-03:59, 04:00-08:59, 09:00-15:59, 16:00-20:59). Separate river / ocean / pond table families plus tournament and island tables. Pond tables exist only Apr-Aug and Sep 1-15; other months are NULL. September is the only month with a distinct latter-half river table (ocean also has a latter-August table).
+- Fish tables are ordered entry lists `(species, spawn area, weight)` with relative weights (not percentages). 40 ordinary types plus extended Whale / Empty Can / Boot / Old Tire / Salmon2. Salmon2 is a distinct river-mouth type (acre must be RIVER + MARINE).
+- Dynamic fish insertions: Coelacanth is NOT a seasonal entry — rain + ocean + outside 09:00-15:59 injects `(COELACANTH, SEA, 2.0)` into the current term only. Offing copies the ocean table, multiplies all weights by 10, adds Whale = 1.
+- Insects: 12 monthly terms x 6 daily periods (23:00-03:59, 04:00-07:59, 08:00-15:59, 16:00-16:59, 17:00-18:59, 19:00-22:59). Jan/Feb/Dec use the sparse 3-entry fallback (Pill Bug / Mole Cricket / Bagworm) for every term. 40 normal types plus SPIRIT and NONE.
+- NONE is a real insect entry (explicit no-insect mass); do not remove and renormalize. Insect selection rolls against 100 when the table totals <= 100 (no-spawn mass), against the total otherwise.
+- Every town insect table gets Ant/ON_CANDY 1, Ant/ON_TRASH 1, Cockroach/ON_TRASH 1 appended at runtime; when candy or spoiled turnips are present, all other weights are removed (full override). Spirit discards the seasonal table for a single SPIRIT/FLYING/100 entry.
+- Seasonal transitions (5-day, randomized 0-5 offset, rates 5/6..1/6, persistent term fields at 0x024174-0x024177) blend tables by ordered concatenation (current x rate + next x (1-rate)); a species may appear twice. Fish transition at half-month boundaries, insects at month boundaries. The island skips transition blending (rate forced 1.0) but the rain-driven Coelacanth injection still runs there.
+- `l_insect_birth_sum`: only red dragonfly and firefly are multi-birth (6 + rand(3)); NONE is implicitly (0, 0).
+- Verification corrections vs. the brief: Salmon2's river-mouth RIVER+MARINE gate is `#if VERSION >= VER_GAFU01_00` (Australian) — USA Rev. 0 requires RIVER only. The fish invalid-area retry marks the selected entry slot, not the fish type (already matches `ecology::fish_select`). The whale is added for the current term only during transitions.
+
+**Rust rewrite implementation:**
+
+`species.rs` defines `FishType` (45, source order), `InsectType` (42, source order), `FishArea`/`InsectArea` (source order), the `FishSpawnEntry`/`InsectSpawnEntry` structs, `insect_time_no` (the 6-term day segmentation; fish terms/times and the selection algorithms already live in `ecology.rs` and are reused), `blend_fish_tables`/`blend_insect_tables` (ordered concatenation, duplicates preserved), `coelacanth_active`, `offing_entry` (x10 + Whale 1), `candy_trash_entries` + `candy_trash_override_active`, `spirit_table`, `insect_birth_sum`, and table lookup conveniences. Generated modules expose `fish_table(env, term24, time4) -> Option<&[FishSpawnEntry]>` (None for pond-less months), `INSECT_TOWN[12][6]`, `INSECT_ISLAND[6]`, `INSECT_BIRTH_SUM`, `FISH_EVENT[4]`, `FISH_ISLAND[4]`. C ABI: pc_fish_seasonal_count, pc_fish_table_entry, pc_insect_seasonal_count, pc_insect_table_entry, pc_insect_time_no, pc_coelacanth_active.
+
+`cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+**Gaps:**
+
+- Physical spawn-unit selection (fish collision scan, insect live-unit bitmap) is modeled in `ecology.rs` at the algorithm level but not wired to real acre data.
+- The odd guide-move initialization of `insect_term`/`gyoei_term` (apparent indexing discrepancy) was noted but not copied; needs investigation if save-init behavior must match exactly.
+- Historical BUGFIXES interactions around spawn selection need a separate audit.
+- No C callers are rewired to the new tables yet.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
