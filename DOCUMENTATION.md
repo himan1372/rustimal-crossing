@@ -636,6 +636,23 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Runtime Port Progress: Albumin Physical Geometry Table
+
+### Source findings
+
+- Reconstructed all 17 albumin outputs as exact physical geometry: per-asset 16x16 ASCII height maps generated from the extracted collision data, plus a summary table (river direction, cliff shape, waterfall or not, BG asset, water height, sloped-unit count).
+- Geometric rules distilled: waterfalls = river CROSSES the cliff contour (water drops 12/16 -> 0 across WATERFALL-attribute units); non-waterfalls = river ALONGSIDE the cliff on one terrace level. South rivers run at 0/12, east/west at 12. Cliff faces are 1-2 unit wide sloped bands (9-20 units). Water channels are ~3 units wide. East/west families are mirrors.
+- Full reference: `albumin_geometry.md` in the repo root.
+
+### Rust rewrite implementation
+
+- `rust/src/albumin_geometry.rs`: added ASSET_RIVER_DIR and ASSET_CLIFF_IDX tables (asset index -> river direction / cliff shape).
+- `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- None. The symbolic 7x7 table is now a physical geometry table.
+
 ### Runtime Port Progress: Albumin Physical Collision Data
 
 ### Source findings

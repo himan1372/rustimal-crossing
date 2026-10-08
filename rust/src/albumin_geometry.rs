@@ -78,8 +78,7 @@ pub fn world_y(corner: i8, base_height: f32) -> f32 {
 
 /// Collision unit for one albumin asset (by ALBUMIN_ASSETS index 0..16)
 /// at unit (x, z), each 0..16. Returns (slate, center, tl, bl, br, tr, attr).
-pub fn albumin_unit(asset_idx: usize, x: usize, z: usize) -> Option<crate::albumin_collision_data::ColUnit> {
-    if asset_idx < 17 && x < 16 && z < 16 {
+pub fn albumin_unit(asset_idx: usize, x: usize, z: usize) -> Option<crate::albumin_collision_data::ColUnit> {    if asset_idx < 17 && x < 16 && z < 16 {
         Some(crate::albumin_collision_data::ALBUMIN_COLLISION[asset_idx][z * 16 + x])
     } else {
         None
@@ -95,6 +94,14 @@ pub fn albumin_center_height(asset_idx: usize, x: usize, z: usize) -> Option<u8>
 pub fn albumin_unit_world_y(asset_idx: usize, x: usize, z: usize, base_height: f32) -> Option<f32> {
     albumin_center_height(asset_idx, x, z).map(|c| c as f32 * COLLISION_HEIGHT_SCALE + base_height)
 }
+
+/// River direction per asset index (0..16): 0 = south, 1 = east, 2 = west.
+/// Asset order is south row (7), east row (5), west row (5).
+pub const ASSET_RIVER_DIR: [u8; 17] = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
+
+/// Cliff shape index per asset index (0..16): 0 = H, 1 = BR, 2 = VR,
+/// 3 = TR, 4 = TL, 5 = VL, 6 = BL. East/west rows skip the NONE cells.
+pub const ASSET_CLIFF_IDX: [u8; 17] = [0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 0, 3, 4, 5, 6];
 
 // ---- C ABI ----
 
