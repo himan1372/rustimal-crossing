@@ -21,8 +21,8 @@ static mut FRAME_START_TIME: u64 = 0;
 static mut PERF_FREQ: u64 = 0;
 static mut FPS_START: u64 = 0;
 static mut FPS_COUNT: i32 = 0;
-static mut PRE_RETRACE_CALLBACK: Option<extern "C" fn(u32)> = None;
-static mut POST_RETRACE_CALLBACK: Option<extern "C" fn(u32)> = None;
+static mut PRE_RETRACE_CALLBACK: *mut c_void = std::ptr::null_mut();
+static mut POST_RETRACE_CALLBACK: *mut c_void = std::ptr::null_mut();
 
 extern "C" {
     static mut g_pc_running: i32;
@@ -217,18 +217,19 @@ pub extern "C" fn VIGetDTVStatus() -> u32 {
     0
 }
 
+/// Matches the PC layer (`void* VISetPreRetraceCallback(void* cb)` in
+/// `pc_vi.c`), which is the ABI Wave 3 replaces. The Dolphin header's
+/// `VIRetraceCallback` (fn(u32)) is not used here: the PC layer treats
+/// the callbacks as opaque `void*`, so the Rust side does too rather
+/// than pretending they are Rust-callable.
 #[no_mangle]
-pub extern "C" fn VISetPreRetraceCallback(
-    callback: Option<extern "C" fn(u32)>,
-) -> Option<extern "C" fn(u32)> {
+pub extern "C" fn VISetPreRetraceCallback(callback: *mut c_void) -> *mut c_void {
     // SAFETY: The legacy shim stores this callback on the game thread only.
     unsafe { std::ptr::replace(std::ptr::addr_of_mut!(PRE_RETRACE_CALLBACK), callback) }
 }
 
 #[no_mangle]
-pub extern "C" fn VISetPostRetraceCallback(
-    callback: Option<extern "C" fn(u32)>,
-) -> Option<extern "C" fn(u32)> {
+pub extern "C" fn VISetPostRetraceCallback(callback: *mut c_void) -> *mut c_void {
     // SAFETY: The legacy shim stores this callback on the game thread only.
     unsafe { std::ptr::replace(std::ptr::addr_of_mut!(POST_RETRACE_CALLBACK), callback) }
 }

@@ -202,6 +202,29 @@ list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/m_item_debug\\.c$")
 # matching this build's BUGFIXES table terminators.
 list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/m_mail_check_ovl\\.c$")
 
+# Wave 3: platform implementations now live in Rust (rust/src/*.rs).
+# The C callers are unchanged; the Rust archive satisfies the same ABI.
+# Migrate in dependency clusters: DVD+disc together (dvd.rs calls the
+# Rust pc_disc_*), and keep VI+profiler together when VI goes last.
+# ARAM (rust/src/aram.rs)
+list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_aram\\.c$")
+# DVD + disc cluster (rust/src/dvd.rs + rust/src/lib.rs pc_disc_*)
+list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_dvd\\.c$")
+list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_disc\\.c$")
+# GBI runtime pointer packing (rust/src/gbi_runtime.rs)
+list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_gbi_runtime\\.c$")
+# Profiler (rust/src/profiler.rs); the C hot-path inline wrappers keep
+# calling the Rust *_slow exports, so no header changes are needed.
+list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_profiler\\.c$")
+# Matrix (rust/src/mtx.rs) -- enable only after the f32.to_bits()
+# differential suite passes (PSMTXConcat/Inverse/MultVec, C_MTX*,
+# gu*). The export lists already match 1:1.
+# list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_mtx\\.c$")
+# VI (rust/src/vi.rs) -- wire last, after the full boot/game loop is
+# validated on the Rust profiler. Pair with the profiler exclusion
+# above (already active); only pc_vi.c remains.
+# list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_vi\\.c$")
+
 # Exclude NPC anime data fragments (no headers, #included from other NPC files)
 list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/actor/npc/.*_anime\\.c$")
 
@@ -286,6 +309,10 @@ endif()
 
 set(PC_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
 set(PC_RUST_LIBRARY "${PC_RUST_TARGET_DIR}/${PC_RUST_TARGET}/release/${CMAKE_STATIC_LIBRARY_PREFIX}ac_pc_rust${CMAKE_STATIC_LIBRARY_SUFFIX}")
+# Track every Rust source so the archive rebuilds when any module changes.
+file(GLOB_RECURSE PC_RUST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/*.rs"
+)
 add_custom_command(
     OUTPUT "${PC_RUST_LIBRARY}"
     COMMAND ${CMAKE_COMMAND} -E env "CARGO_TARGET_DIR=${PC_RUST_TARGET_DIR}"
@@ -295,18 +322,7 @@ add_custom_command(
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml"
         "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.lock"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/lib.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/aram.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/dvd.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/gbi_runtime.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/game_time.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/mtx.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/profiler.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/town_gen.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/vi.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/villager_mail.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/letter_score.rs"
-        "${CMAKE_CURRENT_SOURCE_DIR}/rust/src/letter_score_tables.rs"
+        ${PC_RUST_SOURCES}
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/rust"
     COMMENT "Building Rust PC runtime layer (${PC_RUST_TARGET})"
     VERBATIM

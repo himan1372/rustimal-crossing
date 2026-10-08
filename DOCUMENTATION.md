@@ -2619,3 +2619,47 @@ Corrections applied to the Rust code:
 Not changed (brief items for Philip's C tree, not this repo):
 CMake Rust-dependency list, the actual `#ifdef USE_RUST` C rewires,
 `PcPlayerMoveState` struct bridge (Wave 2D).
+
+## Wave 3: engine plumbing (2026-10-08)
+
+Build/linkage migration, not call-site rewiring: the Wave 3 Rust
+modules already export the same ABI names as the PC C platform
+replacements, so the plug is to stop compiling the C versions and let
+the Rust archive satisfy the existing C calls. Verified symbol
+coverage 1:1 for all seven modules (mtx has 2 extra Rust-only
+exports, `PSVECDotProduct`/`PSVECMag`, which is harmless).
+
+ABI corrections (verified against decomp + PC layer):
+
+- `aram.rs`: `ARFree` now returns `()` to match the PC layer (`void
+  ARFree(u32*)` in `pc_aram.c`), which is the ABI being replaced.
+  The decomp's Dolphin header guesses `u32 ARFree(u32*)` but flags it
+  "Unused/inlined in P2" (no retail implementation to check); no C
+  callers of `ARFree` exist in the tree.
+- `vi.rs`: `VISetPreRetraceCallback` / `VISetPostRetraceCallback` now
+  take and return `*mut c_void`, matching `pc_vi.c` (`void*
+  VISetPreRetraceCallback(void* cb)`). The Dolphin header's
+  `VIRetraceCallback` (fn(u32)) is not used — the PC layer treats the
+  callbacks as opaque, and the Rust side only stores them.
+
+CMake (`CMakeLists.txt`):
+
+- Wave 3 exclusions added for the green-lit modules: `pc_aram.c`,
+  `pc_dvd.c` + `pc_disc.c` (migrated as one cluster — `dvd.rs`
+  calls the Rust `pc_disc_*`), `pc_gbi_runtime.c`, `pc_profiler.c`.
+  The C hot-path profiler inline wrappers keep calling the Rust
+  `*_slow` exports; headers unchanged.
+- `pc_mtx.c` / `pc_vi.c` exclusions are present but commented out:
+  matrix needs the `f32.to_bits()` differential suite first
+  (floating-point op-order sensitivity), VI goes last after the
+  boot/game loop is validated on the Rust profiler.
+- The hard-coded Rust `.rs` DEPENDS list is replaced by
+  `file(GLOB_RECURSE PC_RUST_SOURCES CONFIGURE_DEPENDS
+  "rust/src/*.rs")` so the archive rebuilds when any module changes.
+
+Deliberately untouched: `pc_platform.c` (SDL/GX/audio stay C — Rust
+`vi.rs` still calls `pc_platform_poll_events`,
+`pc_platform_swap_buffers`, `pc_gx_draw_pending`,
+`pc_audio_get_buffer_fill`); the profiler's C-owned emu64 counters;
+the already-wired `letter_score.rs` (`mMck_check_key_hit`,
+`mMck_check_key_hit_nes`).

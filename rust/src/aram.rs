@@ -76,9 +76,14 @@ pub extern "C" fn ARAlloc(size: u32) -> u32 {
     address
 }
 
+/// Matches the PC layer (`void ARFree(u32* addr)` in `pc_aram.c`),
+/// which is the ABI Wave 3 replaces. Note: the decomp's Dolphin header
+/// guesses `u32 ARFree(u32*)` but flags it "Unused/inlined in P2"
+/// (no out-of-line retail implementation to check against); the PC
+/// layer and the official SDK use `void`, so `void` it is.
 #[no_mangle]
-pub extern "C" fn ARFree(_addr: *mut u32) -> u32 {
-    0 // The original PC layer uses a bump allocator; free is a no-op.
+pub extern "C" fn ARFree(_addr: *mut u32) {
+    // The original PC layer uses a bump allocator; free is a no-op.
 }
 
 #[no_mangle]
