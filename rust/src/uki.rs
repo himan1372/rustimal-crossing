@@ -1053,12 +1053,14 @@ mod tests {
         let mut ev = Vec::new();
         let env = StepEnv::default();
         // Jump to WAIT like a finished cast.
-        u.command = command::REEL;
+        u.command = command::CARRY;
         u.set_proc(proc::WAIT, 0, &mut ev);
+        u.cast_timer = 40; // as set by a real CAST
         assert_eq!(u.gyo_status, gyo_status::AVAILABLE);
-        // cast_timer gates the fish: 40 ticks.
+        // cast_timer gates the fish: 40 ticks; not reeling yet.
         for _ in 0..40 {
             u.step(&env, &mut ev);
+            assert_eq!(u.proc, proc::WAIT);
         }
         assert_eq!(u.cast_timer, 0);
         // Fish engages.

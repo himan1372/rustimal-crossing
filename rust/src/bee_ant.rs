@@ -859,15 +859,20 @@ mod tests {
         }
         assert_eq!(bee.action, bee_action::FLY);
         assert_eq!(bee.catch_delay_frames, bee::CATCH_DELAY_FRAMES);
-        // Catch delay counts down.
+        // Catch delay counts down once the bee has leveled out (retail
+        // gates it on rotation.x <= 22.5 deg); keep the player far away.
+        let fly_env = BeeEnv { leveled: true, dist_xz: 100.0, ..BeeEnv::default() };
         for _ in 0..60 {
-            bee.step(&env, &mut ev);
+            bee.step(&fly_env, &mut ev);
         }
         assert_eq!(bee.catch_delay_frames, 0.0);
         // Net catch -> CAUGHT -> conversion -> DISAPPEAR.
         let mut catch_env = BeeEnv { catch_label_is_me: true, leveled: true, ..BeeEnv::default() };
         bee.step(&catch_env, &mut ev);
         assert_eq!(bee.action, bee_action::CAUGHT);
+        // Conversion is requested on the next tick (aBEE_caught).
+        ev.clear();
+        bee.step(&catch_env, &mut ev);
         assert!(ev.contains(&BeeEvent::ConvertToInsect));
         bee.on_converted();
         ev.clear();

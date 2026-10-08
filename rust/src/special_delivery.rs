@@ -135,8 +135,11 @@ pub fn ticket_count(item: u16) -> u8 {
     (1 + ((item) & 7)) as u8
 }
 
+/// Build a ticket item id for `month` (1-12) holding `count` (1-5) tickets.
+/// The low 3 bits store `count - 1` (retail forms these as
+/// `ticket + minus_ticket - 1`).
 pub fn ticket_get_item(month: u8, count: u8) -> u16 {
-    TICKET_START | (((month as u16) - 1) << 3) | ((count as u16) & 7)
+    TICKET_START | (((month as u16) - 1) << 3) | (((count as u16) - 1) & 7)
 }
 
 pub fn is_ticket_item(item: u16) -> bool {
