@@ -1804,6 +1804,73 @@ decomp. `mPO_first_work()` (game start) ->
 current player's house whenever the player is a local (non-foreigner)
 player — modeled as `first_delivery_special_mail_house`. 7 C ABI exports.
 
+### Runtime Port Progress: Leaflet Broadcast
+
+New `rust/src/leaflet.rs`, verified against `include/m_post_office.h`,
+`src/game/m_post_office.c`, `src/actor/npc/ac_npc_post_man_move.c_inc`,
+`src/actor/ac_event_manager.c`, `src/game/m_event.c`,
+`src/game/m_event_schedule.c_inc`, `src/game/m_shop.c`, and
+`src/save_check.c_inc` (GAFE01_00 Rev. 0). All 20 brief claims confirmed
+verbatim; one brief interpretation corrected (see below).
+
+Two persistent singleton broadcast messages, not queues:
+- `leaflet` (PostOffice @ 0x5DA) — normal broadcast channel.
+- `event_leaflet` (PostOffice @ 0x704) — event broadcast channel.
+- Separate 4-bit recipient masks: `leaflet_flags` @ 0x830,
+  `event_flags` @ 0x832, as a union with a raw int; `sizeof(PostOffice_c)`
+  = 0x83C, `delivery_time` @ 0x834. Save checker rejects mask bits outside
+  0b1111.
+- Inverse flag polarity vs normal mail: 0 = pending, 1 = delivered
+  (retail comment: "normal mail flags are set when mail is to be delivered,
+  leaflet & event flags are set when mail IS delivered").
+- `mPO_post_office_init` sets both masks to 0xF (`raw = 0x000F000F`).
+- `mPO_receipt_proc(LEAFLET/EVENT_LEAFLET)` overwrites the singleton and
+  resets its mask to 0; a new leaflet replaces an undelivered one.
+- Per-house delivery: attempts only when the bit is 0; unclaimed houses
+  (land_id 0xFFFF) are marked delivered without mail; foreign/Arbeit
+  players are skipped; the singleton is copied into the mailbox via
+  `mPO_copy_contents` and the bit set on success; a full mailbox leaves the
+  bit at 0 (retryable later).
+- Event leaflet validity filter: `mMl_TYPE_SHOP_SALE_LEAFLET` ->
+  `mEv_EVENT_SHOP_SALE` (26), `mMl_TYPE_BROKER_SALE_LEAFLET` ->
+  `mEv_EVENT_BROKER_SALE` (29), anything else -> -1; delivered only while
+  the matching special event is active. An expired handbill becomes
+  undeliverable rather than delivered late.
+- Event manager builds handbills from ROM templates
+  (`aEvMgr_actor_regist_handbill`, font RECV, submitted via
+  `mPO_receipt_proc(EVENT_LEAFLET)`): shop-sale uses a 4x4
+  shop-level × category table (0x002-0x011, paper 55) with dynamic
+  item-count/item-name/month/day/hour free strings; broker-sale picks one of
+  0x031-0x033 with `RANDOM(3)` (paper 54) with month/day/hour strings.
+- Schedule: `mEv_EVENT_HANDBILL_SHOP_SALE` precedes `SHOP_SALE`
+  (Mar→Apr, then Apr 1-23); `mEv_EVENT_HANDBILL_BROKER` precedes
+  `BROKER_SALE`.
+- Rare-furniture chirashi: `mSP_SetShopRareFurnitureChirashi` gates on shop
+  renewal/daytime state, finds a rare furniture item, uses
+  `rare_chirashi_bunmen[shop_level][type & 1]` =
+  {{18,18},{19,19},{21,20},{23,22}}, paper ITM_PAPER55, type
+  `mMl_TYPE_SHOP_SALE_LEAFLET`. The `send_proc` parameter is a
+  source-reading trap: only `mPO_SENDTYPE_MAIL` routes through the
+  broadcast receipt; the traced caller passes `mPO_SENDTYPE_LEAFLET`,
+  which takes the default direct-mailbox branch.
+- Postman: `aPMAN_check_delivery` visits a house on normal mail pending OR
+  leaflet pending OR event leaflet pending (Arbeit workers: normal mail
+  only); `aPMAN_set_delivery_idx` scans from the current index;
+  `aPMAN_delivery_init` runs mail -> leaflet -> event leaflet per house.
+- Delivery schedule: 09:00/17:00/next-day 09:00 (`mPO_set_next_delivery_time`).
+- Startup: `mPO_first_delivery_proc` delivers normal mail, then
+  catalog/ticket special mail for the current local player, then leaflets —
+  the real caller behind the special-delivery helper.
+
+Correction vs brief: special-event setup sets `event_flags = 0b1111`,
+which (given 0 = pending) marks all four recipients DELIVERED, i.e. it
+suppresses event-leaflet delivery by default; the pending state comes from
+the handbill registration's `mPO_receipt_proc(EVENT_LEAFLET)` (mask = 0).
+The brief's claim-20 reading ("all four considered pending") is inverted.
+
+`HouseInfo`/`LeafletMailbox` carry the engine-owned save reads; 7 C ABI
+exports (`pc_leaflet_*`).
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
