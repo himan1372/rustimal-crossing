@@ -44,6 +44,9 @@ impl DirtySet {
     pub fn is_dirty(&self, d: Dirty) -> bool {
         self.flags.contains(&d)
     }
+    pub fn all(&self) -> &[Dirty] {
+        &self.flags
+    }
 }
 
 /// Other-mode (RDP) state.

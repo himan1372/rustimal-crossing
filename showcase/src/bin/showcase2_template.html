@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rustimal Crossing — Showcase 2: Walkabout</title>
+<style>
+:root{--bg:#10151c;--panel:#182029;--line:#2b3644;--txt:#dfe7ef;--dim:#93a1b3;--acc:#7fd08a;--warn:#e8b34b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--line);background:#141b23}
+header h1{margin:0;font-size:20px}header p{margin:4px 0 0;color:var(--dim);font-size:13px}
+nav.tabs{display:flex;gap:6px;padding:10px 20px;border-bottom:1px solid var(--line);background:#141b23;flex-wrap:wrap}
+nav.tabs button{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:14px}
+nav.tabs button.active{background:#23405a;border-color:#3f6d96}
+.tabpane{display:none;padding:16px 20px}.tabpane.active{display:block}
+.note{color:var(--dim);font-size:12.5px}.badge{display:inline-block;background:#23405a;border:1px solid #3f6d96;border-radius:20px;padding:2px 10px;margin:2px;font-size:12px}
+table.data{border-collapse:collapse;margin:10px 0;min-width:60%}table.data th,table.data td{border:1px solid var(--line);padding:6px 10px;text-align:left}table.data th{background:#1c2632}td.count{text-align:right;font-variant-numeric:tabular-nums}
+/* walkabout */
+#walk-wrap{position:relative;max-width:1100px}
+#walk{width:100%;height:560px;display:block;background:#5f8fce;border-radius:10px;border:1px solid var(--line)}
+#hud{position:absolute;top:10px;left:10px;background:rgba(10,14,18,.78);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;max-width:340px}
+#talk-hint{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(10,14,18,.85);border:1px solid var(--acc);border-radius:8px;padding:8px 16px;display:none;font-size:14px}
+#talk-panel{position:absolute;top:10px;right:10px;width:330px;background:rgba(12,17,22,.95);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:none}
+#talk-panel h3{margin:0 0 4px;font-size:16px}#talk-panel .x{float:right;cursor:pointer;color:var(--dim)}
+.fbar{height:10px;background:#0a0e12;border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:4px 0}
+.fbar i{display:block;height:100%;background:var(--acc)}
+#talk-log{max-height:180px;overflow-y:auto;margin:8px 0;font-size:13px}
+#talk-log div{margin:4px 0;padding:6px 8px;background:#141c25;border-radius:6px}
+#talk-log .sys{color:var(--dim);font-size:12px}
+#talk-log .demo{color:#cfe3ff;font-style:italic}
+button.act{background:#23405a;color:#fff;border:1px solid #3f6d96;border-radius:8px;padding:8px 14px;cursor:pointer;margin:4px 4px 0 0}
+/* mailroom */
+.filters{margin:8px 0}.filters button{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:16px;padding:5px 12px;margin:2px;cursor:pointer}.filters button.active{background:#23405a}
+.mail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;margin-top:10px}
+.mail-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.mail-card h4{margin:0 0 6px;font-size:14px}.mail-card .no{font-family:monospace;color:var(--warn)}
+/* gfx lab */
+#gfx-wrap{display:flex;gap:16px;flex-wrap:wrap}
+#gfx-list{max-height:480px;overflow-y:auto;min-width:300px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px}
+#gfx-list div{padding:6px 10px;border-radius:6px;cursor:pointer;font-family:monospace;font-size:13px}
+#gfx-list div.cur{background:#23405a}
+#gfx-detail{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:320px;flex:1}
+.swatch{display:inline-block;width:34px;height:20px;border:1px solid #000;vertical-align:middle;border-radius:4px}
+/* sound */
+#snd-steps{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+#snd-steps button{background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12.5px}
+#snd-steps button.cur{background:#23405a}
+</style>
+</head>
+<body>
+<header>
+<h1>🏘️ Rustimal Crossing — Showcase 2: Walkabout</h1>
+<p>Everything here is computed from the real Rust rewrite: the town plan, walkability, NPC schedules,
+topic-selection weights, mail generators, the GBI interpreter, and the audio state machine.</p>
+</header>
+<nav class="tabs">
+<button class="active" data-tab="tab-walk">🚶 Walkabout</button>
+<button data-tab="tab-mail">✉️ Mailroom</button>
+<button data-tab="tab-gfx">🎨 Graphics Lab</button>
+<button data-tab="tab-snd">🔊 Sound Board</button>
+</nav>
+
+<div class="tabpane active" id="tab-walk">
+<div id="walk-wrap">
+<canvas id="walk" width="1100" height="560"></canvas>
+<div id="hud">
+<b>Walkabout</b><br>
+<span class="note">WASD / arrows to walk · camera follows · walk up to a villager and press <b>E</b> to talk</span>
+<div id="hud-pos" class="note"></div>
+</div>
+<div id="talk-hint">Press <b>E</b> to talk</div>
+<div id="talk-panel">
+<span class="x" id="talk-close">✕</span>
+<h3 id="tp-name">Villager</h3>
+<div id="tp-meta" class="note"></div>
+<div>Friendship <span id="tp-fnum" class="note"></span></div>
+<div class="fbar"><i id="tp-fbar"></i></div>
+<div id="talk-log"></div>
+<button class="act" id="talk-btn">💬 Say hi</button>
+<div class="note" style="margin-top:6px">Topic picks use the real <i>talk_topics</i> probability trees; message text lives in ROM assets (not included). Friendship +8 per talk (<i>GREETING_RELATION_BUMP</i>).</div>
+</div>
+</div>
+<p class="note">NPCs wander when their schedule (real <i>SCHEDULE_TABLES</i>, 10:00) says FIELD; otherwise they stay by their house. Rivers and trees block movement.</p>
+</div>
+
+<div class="tabpane" id="tab-mail">
+<h2>NPC Mailroom <span class="note">— generated by the real <i>npc_event_mail.rs</i> generators</span></h2>
+<div class="filters" id="mail-filters"></div>
+<div class="mail-grid" id="mail-grid"></div>
+</div>
+
+<div class="tabpane" id="tab-gfx">
+<h2>Graphics Lab <span class="note">— a real <i>Emu64</i> interpreter trace, one command at a time</span></h2>
+<div id="gfx-wrap">
+<div id="gfx-list"></div>
+<div id="gfx-detail">
+<div style="margin-bottom:8px"><button class="act" id="gfx-prev">◀ Prev</button> <button class="act" id="gfx-next">Next ▶</button></div>
+<div id="gfx-info"></div>
+</div>
+</div>
+<p class="note">The demo list sets up render state, loads 3 vertices, draws a triangle, then G_DL PUSHes into a nested list (env color + packed G_TRIN) and returns. Dirty flags show exactly which state each command touched.</p>
+</div>
+
+<div class="tabpane" id="tab-snd">
+<h2>Sound Board <span class="note">— a scripted <i>GameAudio</i> session</span></h2>
+<div id="snd-steps"></div>
+<div id="snd-detail" style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;max-width:900px"></div>
+<p class="note">6 trigger-SE slots, singleton rule, oldest-frames replacement gated by the 128-entry TRGPRIO table, MONO bypass, and the deferred 256-entry command ring.</p>
+</div>
+
+<script>
+"use strict";
+document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".tabpane").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active");
+  document.getElementById(b.dataset.tab).classList.add("active");
+}));
+const TOWN = __TOWN_JSON__;
+const WALK = __WALK_JSON__;
+const MAILS = __MAIL_JSON__;
+const GFX = __GFX_JSON__;
+const SND = __SND_JSON__;
+</script>
+<script>
+"use strict";
+/* ================= WALKABOUT ================= */
+(function(){
+const canvas=document.getElementById("walk"),gl=canvas.getContext("webgl");
+if(!gl){document.getElementById("hud").innerHTML="WebGL unavailable";return;}
+const ACRES_X=5,UNITS=16,WORLD_X=80,WORLD_Z=96;
+// walkability bitmap
+const raw=atob(WALK.walk),wbits=new Uint8Array(raw.length);
+for(let i=0;i<raw.length;i++)wbits[i]=raw.charCodeAt(i);
+function walkable(x,z){const xi=Math.floor(x),zi=Math.floor(z);
+  if(xi<0||zi<0||xi>=WORLD_X||zi>=WORLD_Z)return false;
+  const i=zi*WORLD_X+xi;return (wbits[i>>3]>>(i&7))&1?true:false;}
+// shaders
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o;}
+const vs=sh(gl.VERTEX_SHADER,"attribute vec3 p;attribute vec3 c;uniform mat4 m;varying vec3 v;void main(){v=c;gl_Position=m*vec4(p,1.);}");
+const fs=sh(gl.FRAGMENT_SHADER,"precision mediump float;varying vec3 v;void main(){gl_FragColor=vec4(v,1.);}");
+const pr=gl.createProgram();gl.attachShader(pr,vs);gl.attachShader(pr,fs);gl.linkProgram(pr);gl.useProgram(pr);
+const locP=gl.getAttribLocation(pr,"p"),locC=gl.getAttribLocation(pr,"c"),locM=gl.getUniformLocation(pr,"m");
+const buf=gl.createBuffer();
+let staticVerts=[];
+function tri(a,b,c,col){for(const p of [a,b,c])staticVerts.push(p[0],p[1],p[2],col[0],col[1],col[2]);}
+function quad(a,b,c,d,col){tri(a,b,c,col);tri(a,c,d,col);}
+function boxAt(cx,cy,cz,sx,sy,sz,col){const x0=cx-sx/2,x1=cx+sx/2,y0=cy-sy/2,y1=cy+sy/2,z0=cz-sz/2,z1=cz+sz/2;
+  quad([x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],col);quad([x0,y0,z1],[x0,y1,z1],[x1,y1,z1],[x1,y0,z1],col);
+  quad([x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1],col);quad([x0,y0,z0],[x0,y0,z1],[x1,y0,z1],[x1,y0,z0],col);
+  quad([x0,y0,z0],[x0,y1,z0],[x0,y1,z1],[x0,y0,z1],col);quad([x1,y0,z0],[x1,y0,z1],[x1,y1,z1],[x1,y1,z0],col);}
+function coneAt(cx,baseY,cz,r,h,col){const n=7;for(let k=0;k<n;k++){const t0=k*2*Math.PI/n,t1=(k+1)*2*Math.PI/n;
+  tri([cx,baseY+h,cz],[cx+Math.cos(t0)*r,baseY,cz+Math.sin(t0)*r],[cx+Math.cos(t1)*r,baseY,cz+Math.sin(t1)*r],col);}}
+function groundY(a){return a.elevation*1.7;}
+function groundAt(x,z){const ai=Math.max(0,Math.min(29,Math.floor(x/16)+Math.floor(z/16)*5));return groundY(TOWN.acres[ai]);}
+// ground + houses + trees + water
+const greens=[[.42,.66,.36],[.38,.62,.33],[.45,.68,.38]];
+TOWN.acres.forEach((a,i)=>{const ox=(i%ACRES_X)*UNITS,oz=Math.floor(i/ACRES_X)*UNITS,y=groundY(a);
+  const g=greens[a.pattern%3];
+  quad([ox,y,oz],[ox+16,y,oz],[ox+16,y,oz+16],[ox,y,oz+16],g);
+  // river strips (same math as the walk bitmap)
+  if(a.river){const pts={1:[8,0],2:[16,8],4:[8,16],8:[0,8]};const bend=((TOWN.seed^(i*2654435761))>>>0)%61/10-3;
+    for(const b of [1,2,4,8])if(a.river&b){const e=pts[b];
+      const dx=e[0]-8,dz=e[1]-8,L=Math.hypot(dx,dz),px=-dz/L*1.9,pz=dx/L*1.9;
+      quad([ox+8+px,y+.12,oz+8+pz],[ox+8-px,y+.12,oz+8-pz],[ox+e[0]-px,y+.12,oz+e[1]-pz],[ox+e[0]+px,y+.12,oz+e[1]+pz],[.2,.5,.7]);}}
+  // ocean outlet
+  if(a.river&4&&Math.floor(i/ACRES_X)===5){quad([ox,y+.1,oz+16],[ox+16,y+.1,oz+16],[ox+16,y+.1,oz+20],[ox,y+.1,oz+20],[.13,.46,.64]);}
+  // trees
+  a.cells.forEach((c,ci)=>{if(c===2){const cx=ox+ci%16+.5,cz=oz+Math.floor(ci/16)+.5;
+    boxAt(cx,y+.5,cz,.25,1,.25,[.4,.28,.16]);coneAt(cx,y+1,cz,1,1.8,[.25,.5,.28]);}});
+});
+// houses
+WALK.npcs.forEach(n=>{const ai=Math.floor(n.hx/16)+Math.floor(n.hz/16)*5,a=TOWN.acres[ai],y=groundY(a);
+  boxAt(n.hx,y+.8,n.hz,3,1.6,3,[.79,.68,.48]);boxAt(n.hx,y+2.1,n.hz,3.3,.9,3.3,[.6,.24,.19]);});
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(staticVerts),gl.STATIC_DRAW);
+const staticCount=staticVerts.length/6;
+// actors (rebuilt per frame)
+const abuf=gl.createBuffer();
+let actVerts=[];
+// camera math
+function norm(v){const n=Math.hypot(v[0],v[1],v[2])||1;return v.map(x=>x/n);}
+function lookAt(e,t){const z=norm([e[0]-t[0],e[1]-t[1],e[2]-t[2]]),x=norm([z[2],0,-z[0]]),y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];
+  return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]),-(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]),-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]),1]);}
+function persp(f,a,n,fa){const t=1/Math.tan(f/2),nf=1/(n-fa);return new Float32Array([t/a,0,0,0,0,t,0,0,0,0,(fa+n)*nf,-1,0,0,2*fa*n*nf,0]);}
+function mul(a,b){const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];return o;}
+// player + npcs
+const P={x:WALK.spawn.x,z:WALK.spawn.z,dx:0,dz:1,speed:4.5};
+const PCOL={normal:[.95,.75,.5],peppy:[1,.6,.7],lazy:[.6,.75,.95],jock:[.5,.85,.5],cranky:[.7,.55,.45],snooty:[.8,.6,.95]};
+const npcs=WALK.npcs.map(n=>({d:n,x:n.hx,z:n.hz+2,tx:n.hx,tz:n.hz+2,pause:1+Math.random()*2,field:n.sched===0,friend:40+Math.floor(Math.random()*40)}));
+function pickTarget(n){for(let k=0;k<12;k++){const r=n.field?10:3,a=Math.random()*2*Math.PI;
+  const tx=n.d.hx+Math.cos(a)*r,tz=n.d.hz+Math.sin(a)*r;
+  if(walkable(tx,tz)){n.tx=tx;n.tz=tz;return;}}}
+// keys
+const keys={};addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true;
+  if(e.key.toLowerCase()==="e")tryTalk();
+  if(["arrowup","arrowdown","arrowleft","arrowright"," "].includes(e.key.toLowerCase()))e.preventDefault();});
+addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false;});
+// talk
+let talking=null;
+const LINES={normal:"Oh, hi! Lovely day, isn't it?",peppy:"Hiii! You HAVE to see my new shirt!",lazy:"*yaaawn* ...hey. Nap o'clock soon.",jock:"Yo! Gotta keep those legs moving!",cranky:"Hmph. What do you want?",snooty:"Oh. It's you. How... quaint."};
+function pickW(tab){const t=[];tab.forEach((w,i)=>{for(let k=0;k<w;k++)t.push(i);});return t[Math.floor(Math.random()*t.length)];}
+const KI=["small talk","weather/time","free item","furniture","free item + money"];
+const N2=["letter","normal-3","trade","memory"],N3=["ordinary","weather/time","weather","season"],GM=["game hint","game/event"];
+function rollTopic(looks){
+  const happy=Math.random()<0.35;
+  let path;
+  if(happy){path="HAPPY mood → KI tree {40,30,10,10,10} → <b>"+KI[pickW([40,30,10,10,10])]+"</b>";}
+  else{const a=pickW([70,30]);
+    if(a===0){const b=pickW([15,35,35,15]);let leaf=N2[b];
+      if(b===1)leaf="normal-3 → <b>"+N3[pickW([49,17,17,17])]+"</b>";
+      path="mood → NORMAL tree {70,30} → normal-2 {15,35,35,15} → <b>"+leaf+"</b>";}
+    else{path="mood → NORMAL tree {70,30} → <b>game "+GM[pickW([40,60])]+"</b> {40,60}";}}
+  return {happy,path,formula:"msg = base["+looks+"] + rand (ROM table)"};
+}
+function nearNPC(){let best=null,bd=2.6;npcs.forEach(n=>{const d=Math.hypot(n.x-P.x,n.z-P.z);if(d<bd){bd=d;best=n;}});return best;}
+function tryTalk(){const n=nearNPC();if(!n||talking)return;talking=n;
+  document.getElementById("talk-panel").style.display="block";
+  document.getElementById("tp-name").textContent=n.d.pers[0].toUpperCase()+n.d.pers.slice(1)+" villager #"+n.d.id;
+  document.getElementById("tp-meta").innerHTML="personality <b>"+n.d.pers+"</b> (looks "+n.d.looks+") · schedule <b>"+n.d.sname+"</b> · mood <b>"+(n.mood||"—")+"</b>";
+  updFriend(n);document.getElementById("talk-log").innerHTML="";
+  log("sys","Walked up. Talk range is 80 units in-game; here it's 2.6 for the demo.");}
+function updFriend(n){document.getElementById("tp-fbar").style.width=(n.friend/255*100)+"%";
+  document.getElementById("tp-fnum").textContent=n.friend+" / 255";}
+function log(cls,html){const d=document.createElement("div");d.className=cls;d.innerHTML=html;
+  const l=document.getElementById("talk-log");l.appendChild(d);l.scrollTop=l.scrollHeight;}
+document.getElementById("talk-close").onclick=()=>{talking=null;document.getElementById("talk-panel").style.display="none";};
+document.getElementById("talk-btn").onclick=()=>{if(!talking)return;const n=talking;
+  const r=rollTopic(n.d.looks);n.mood=r.happy?"happy":"normal";
+  n.friend=Math.min(255,n.friend+8);updFriend(n);
+  document.getElementById("tp-meta").innerHTML="personality <b>"+n.d.pers+"</b> (looks "+n.d.looks+") · schedule <b>"+n.d.sname+"</b> · mood <b>"+n.mood+"</b>";
+  log("demo","“"+LINES[n.d.pers]+"” <span class='sys'>(illustrative line — retail text is a ROM message)</span>");
+  log("sys","Topic roll: "+r.path+"<br>"+r.formula+" · friendship +8 → "+n.friend);};
+// main loop
+let last=performance.now(),camX=0,camZ=0;
+function frame(t){
+  const dt=Math.min(.05,(t-last)/1000);last=t;
+  // player move
+  let mx=0,mz=0;
+  if(keys["w"]||keys["arrowup"])mz-=1;if(keys["s"]||keys["arrowdown"])mz+=1;
+  if(keys["a"]||keys["arrowleft"])mx-=1;if(keys["d"]||keys["arrowright"])mx+=1;
+  if(mx||mz){const l=Math.hypot(mx,mz);mx/=l;mz/=l;P.dx=mx;P.dz=mz;
+    const nx=P.x+mx*P.speed*dt;if(walkable(nx+(mx>0?.3:-.3),P.z))P.x=nx;
+    const nz=P.z+mz*P.speed*dt;if(walkable(P.x,nz+(mz>0?.3:-.3)))P.z=nz;}
+  // npcs
+  npcs.forEach(n=>{if(talking===n)return;
+    if(n.pause>0){n.pause-=dt;if(n.pause<=0)pickTarget(n);return;}
+    const dx=n.tx-n.x,dz=n.tz-n.z,d=Math.hypot(dx,dz);
+    if(d<.4){n.pause=1+Math.random()*3;return;}
+    const sp=1.1*dt,nx=n.x+dx/d*sp,nz=n.z+dz/d*sp;
+    if(walkable(nx,n.z))n.x=nx; if(walkable(n.x,nz))n.z=nz;
+    if(!walkable(n.x,n.z)){n.pause=1+Math.random()*2;}});
+  // camera
+  const cx=P.x-P.dx*7,cz=P.z-P.dz*7;
+  camX+=(cx-camX)*Math.min(1,dt*4);camZ+=(cz-camZ)*Math.min(1,dt*4);
+  const gy=groundAt(P.x,P.z),eye=[camX,gy+7.5,camZ],tgt=[P.x,gy+1,P.z];
+  const m=mul(persp(.9,canvas.width/canvas.height,.1,400),lookAt(eye,tgt));
+  gl.viewport(0,0,canvas.width,canvas.height);gl.enable(gl.DEPTH_TEST);
+  gl.clearColor(.55,.75,.9,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.uniformMatrix4fv(locM,false,m);
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.vertexAttribPointer(locP,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(locC,3,gl.FLOAT,false,24,12);
+  gl.enableVertexAttribArray(locP);gl.enableVertexAttribArray(locC);
+  gl.drawArrays(gl.TRIANGLES,0,staticCount);
+  // actors: redirect boxAt into actVerts
+  actVerts=[];
+  const all=[{x:P.x,y:groundAt(P.x,P.z),z:P.z,color:[.2,.3,.9],skin:[1,.85,.7]}]
+    .concat(npcs.map(n=>({x:n.x,y:groundAt(n.x,n.z),z:n.z,color:PCOL[n.d.pers]||[.8,.8,.8],skin:[1,.85,.7]})));
+  // temporarily swap target array
+  const keep=staticVerts;staticVerts=actVerts;
+  for(const o of all){boxAt(o.x,o.y+.55,o.z,.5,1.1,.35,o.color);boxAt(o.x,o.y+1.35,o.z,.42,.42,.42,o.skin);}
+  actVerts=staticVerts;staticVerts=keep;
+  gl.bindBuffer(gl.ARRAY_BUFFER,abuf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(actVerts),gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(locP,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(locC,3,gl.FLOAT,false,24,12);
+  gl.drawArrays(gl.TRIANGLES,0,actVerts.length/6);
+  // hud + hint
+  document.getElementById("hud-pos").textContent="pos ("+P.x.toFixed(1)+", "+P.z.toFixed(1)+") · villagers: "+npcs.length;
+  const near=nearNPC();
+  document.getElementById("talk-hint").style.display=(near&&!talking)?"block":"none";
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+"use strict";
+/* ================= MAILROOM ================= */
+(function(){
+const systems=[...new Set(MAILS.map(m=>m.system))];
+const fw=document.getElementById("mail-filters"),grid=document.getElementById("mail-grid");
+let cur=systems[0];
+systems.forEach(s=>{const b=document.createElement("button");b.textContent=s;b.dataset.s=s;
+  b.onclick=()=>{cur=s;render();};fw.appendChild(b);});
+function render(){
+  fw.querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.s===cur));
+  grid.innerHTML="";
+  MAILS.filter(m=>m.system===cur).forEach(m=>{
+    const d=document.createElement("div");d.className="mail-card";
+    let free=m.free.map(f=>"<div>free"+f[0]+": “"+f[1]+"”</div>").join("");
+    d.innerHTML="<h4>"+m.title+" <span class='no'>"+m.no+"</span></h4>"+
+      "<div class='note'>type "+m.type+" · present <b>"+m.present+"</b> · paper <b>"+m.paper+"</b><br>delivery: "+m.delivery+"</div>"+free;
+    grid.appendChild(d);
+  });
+}
+render();
+})();
+</script>
+
+<script>
+"use strict";
+/* ================= GRAPHICS LAB ================= */
+(function(){
+const list=document.getElementById("gfx-list"),info=document.getElementById("gfx-info");
+let cur=0;
+const DESC={G_GEOMETRYMODE:"Sets the geometry pipeline mode bits (z-buffer, shading, culling).",
+G_SETCOMBINE:"Programs the color/alpha combiner (translated to GameCube TEV stages).",
+G_SETPRIMCOLOR:"Primitive color register (RGBA).",G_VTX:"Loads N vertices into the vertex cache from a segmented address.",
+G_TRI1:"Draws one triangle from cached vertices.",G_DL:"Calls a display list — PUSH saves the return address on the 18-deep DL stack.",
+G_ENDDL:"Ends the current list; pops the DL stack if one was pushed.",G_SETENVCOLOR:"Environment color register.",
+G_TRIN:"Packed triangle list: 5-bit or 7-bit vertex indices, mode bit per word."};
+GFX.cmds.forEach((c,i)=>{const d=document.createElement("div");d.textContent=i+": "+c.op+"  (pc "+c.pc+", dl "+c.dl+")";
+  d.onclick=()=>{cur=i;show();};list.appendChild(d);});
+function show(){
+  list.querySelectorAll("div").forEach((d,i)=>d.classList.toggle("cur",i===cur));
+  const c=GFX.cmds[cur];
+  const prev=new Set();for(let k=0;k<cur;k++)GFX.cmds[k].dirty.forEach(d=>prev.add(d));
+  const dirty=c.dirty.length?c.dirty.map(d=>"<span class='badge'"+(prev.has(d)?"":" style='background:#3a5f2e;border-color:#7fd08a'")+">"+d+(prev.has(d)?"":" *")+"</span>").join(""):"<span class='note'>none</span>";
+  const p=c.prim,hex="#"+p.map(v=>v.toString(16).padStart(2,"0")).join("");
+  info.innerHTML="<h3 style='margin-top:0'>"+cur+": "+c.op+"</h3>"+
+    "<div class='note'>"+(DESC[c.op]||"")+"</div>"+
+    "<table class='data'><tbody>"+
+    "<tr><th>List</th><td>"+c.list+" · pc "+c.pc+"</td></tr>"+
+    "<tr><th>DL stack depth</th><td>"+c.dl+" / 18</td></tr>"+
+    "<tr><th>Dirty state</th><td>"+dirty+"<br><span class='note'>* newly dirtied by this command</span></td></tr>"+
+    "<tr><th>Geometry mode</th><td>"+c.geo+"</td></tr>"+
+    "<tr><th>Prim color</th><td><span class='swatch' style='background:"+hex+"'></span> "+hex+"</td></tr>"+
+    "</tbody></table>"+
+    "<div class='note'>"+GFX.tris+" triangle(s) reached the GX backend over the whole run.</div>";
+}
+document.getElementById("gfx-prev").onclick=()=>{cur=Math.max(0,cur-1);show();};
+document.getElementById("gfx-next").onclick=()=>{cur=Math.min(GFX.cmds.length-1,cur+1);show();};
+show();
+})();
+</script>
+
+<script>
+"use strict";
+/* ================= SOUND BOARD ================= */
+(function(){
+const bar=document.getElementById("snd-steps"),det=document.getElementById("snd-detail");
+SND.forEach((s,i)=>{const b=document.createElement("button");b.textContent=(i+1)+". "+s.label.split(" -> ")[0];
+  b.title=s.label;b.onclick=()=>{show(i);};bar.appendChild(b);});
+function show(i){
+  bar.querySelectorAll("button").forEach((b,j)=>b.classList.toggle("cur",i===j));
+  const s=SND[i];
+  let rows=s.slots.map((sl,k)=>"<tr><td>"+k+"</td><td>"+sl.id+"</td><td>"+sl.frames+"</td><td>"+sl.prio+"</td></tr>").join("");
+  det.innerHTML="<h3 style='margin-top:0'>"+s.label+"</h3>"+
+    "<table class='data'><thead><tr><th>Slot</th><th>SE id</th><th>Frames left</th><th>Priority</th></tr></thead><tbody>"+rows+"</tbody></table>"+
+    "<div class='note'>Deferred command ring: <b>"+s.ring+"</b> command(s) waiting for the JAudio engine.</div>";
+}
+show(0);
+})();
+</script>
+</body>
+</html>

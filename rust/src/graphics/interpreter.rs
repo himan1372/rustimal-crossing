@@ -36,6 +36,21 @@ pub trait GxBackend {
     fn cull_display_list(&mut self, v0: u8, vn: u8) -> bool;
 }
 
+/// One traced command: what ran and what state it left behind.
+/// Recorded by `taskstart` for demos/diagnostics.
+#[derive(Clone, Debug)]
+pub struct CmdTrace {
+    pub list_addr: u32,
+    pub pc: usize,
+    pub opcode: u8,
+    pub opcode_name: &'static str,
+    pub dl_level: usize,
+    pub dirty: Vec<&'static str>,
+    pub geometry_mode: u32,
+    pub prim_rgba: [u8; 4],
+    pub note: &'static str,
+}
+
 /// Return address on the DL stack: which list and where to resume.
 #[derive(Clone, Copy, Debug)]
 pub struct DlFrame {
@@ -67,6 +82,8 @@ pub struct Emu64 {
     pub emitted: Vec<EmittedTri>,
     /// Display-list return frames (retail's `DL_stack` raw pointers).
     dl_frames: Vec<DlFrame>,
+    /// Per-command trace (filled by `taskstart`).
+    pub trace: Vec<CmdTrace>,
 }
 
 impl Emu64 {
@@ -85,6 +102,7 @@ impl Emu64 {
             frame_cancel: false,
             emitted: Vec::new(),
             dl_frames: Vec::new(),
+            trace: Vec::new(),
         }
     }
 
@@ -118,7 +136,36 @@ impl Emu64 {
             // Dispatch: dl_func_tbl[opcode - G_FIRST_CMD].
             let idx = opcode.wrapping_sub(command::G_FIRST_CMD) as usize;
             if idx < command::NUM_COMMANDS {
+                let dl_level = stack.level;
                 self.dispatch(mem, backend, lists, gfx, &mut stack, &mut list_addr, &mut pc, &mut end_dl);
+                let dirty: Vec<&'static str> = self.state.dirty.all().iter().map(|d| match d {
+                    Dirty::Projection => "projection",
+                    Dirty::PrimColor => "prim",
+                    Dirty::EnvColor => "env",
+                    Dirty::FillColor => "fill",
+                    Dirty::Combine => "combine",
+                    Dirty::OthermodeH => "othermode_h",
+                    Dirty::OthermodeL => "othermode_l",
+                    Dirty::GeometryMode => "geomode",
+                    Dirty::Texture => "texture",
+                    Dirty::Texture1 => "texture1",
+                    Dirty::Texture2 => "texture2",
+                    Dirty::TextureMatrix => "texmtx",
+                    Dirty::Lighting => "lighting",
+                }).collect();
+                let p = self.state.prim_color;
+                self.trace.push(CmdTrace {
+                    list_addr,
+                    pc,
+                    opcode,
+                    opcode_name: opcode_name(opcode),
+                    dl_level,
+                    dirty,
+                    geometry_mode: self.state.geometry_mode,
+                    prim_rgba: [p.r, p.g, p.b, p.a],
+                    note: "",
+                });
+                let _ = dl_level;
             } else {
                 // Out-of-range opcode: retail logs and continues/aborts.
                 pc += 1;
@@ -588,6 +635,42 @@ impl Emu64 {
             self.state.dirty.mark(Dirty::Texture);
         }
         *pc += 1;
+    }
+}
+
+/// Human-readable opcode names for the trace.
+pub fn opcode_name(opcode: u8) -> &'static str {
+    match opcode {
+        op::G_VTX => "G_VTX",
+        op::G_TRI1 => "G_TRI1",
+        op::G_TRI2 => "G_TRI2",
+        op::G_QUAD => "G_QUAD",
+        op::G_TRIN => "G_TRIN",
+        op::G_MTX => "G_MTX",
+        op::G_DL => "G_DL",
+        op::G_ENDDL => "G_ENDDL",
+        op::G_GEOMETRYMODE => "G_GEOMETRYMODE",
+        op::G_TEXTURE => "G_TEXTURE",
+        op::G_SETTIMG => "G_SETTIMG",
+        op::G_SETTILE => "G_SETTILE",
+        op::G_LOADBLOCK => "G_LOADBLOCK",
+        op::G_LOADTILE => "G_LOADTILE",
+        op::G_LOADTLUT => "G_LOADTLUT",
+        op::G_SETCOMBINE => "G_SETCOMBINE",
+        op::G_SETCOMBINE_TEV => "G_SETCOMBINE_TEV",
+        op::G_SETCOMBINE_NOTEV => "G_SETCOMBINE_NOTEV",
+        op::G_SETOTHERMODE_H => "G_SETOTHERMODE_H",
+        op::G_SETOTHERMODE_L => "G_SETOTHERMODE_L",
+        op::G_TEXRECT => "G_TEXRECT",
+        op::G_SETPRIMCOLOR => "G_SETPRIMCOLOR",
+        op::G_SETENVCOLOR => "G_SETENVCOLOR",
+        op::G_SETFOGCOLOR => "G_SETFOGCOLOR",
+        op::G_SETFILLCOLOR => "G_SETFILLCOLOR",
+        op::G_SETBLENDCOLOR => "G_SETBLENDCOLOR",
+        op::G_SETSCISSOR => "G_SETSCISSOR",
+        op::G_CULLDL => "G_CULLDL",
+        op::G_SETTILE_DOLPHIN => "G_SETTILE_DOLPHIN",
+        _ => "?",
     }
 }
 

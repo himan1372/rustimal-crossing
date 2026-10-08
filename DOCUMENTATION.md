@@ -2411,7 +2411,13 @@ New module: `rust/src/graphics/` (registered as `pub mod graphics`).
   Real DL call stack (18 levels, overflow counted like retail),
   segmented-address resolution, `G_DL` with a native-GX-display-list
   target handed to the backend (`GXCallDisplayList`), `G_ENDDL`
-  pop-or-terminate semantics.
+  pop-or-terminate semantics. Dispatch index is the WRAPPING u8
+  subtraction `opcode - G_FIRST_CMD` (verified against retail
+  `dl_func_tbl`: indices 51-63 hold the RSP geometry handlers, so
+  `G_VTX` (0x01) lands at index 51, `G_TRI1` (0x05) at 55, `G_TRIN`
+  (0x09) at 59, `G_QUADN` (0x0B) at 63). Also exposes a `trace:
+  Vec<CmdTrace>` diagnostic (per-command opcode, DL level, dirty
+  flags, geometry mode, prim color) used by the showcase generator.
 - `segments.rs`: 16-entry segment table (`gSPSegment`), `seg2k0`
   resolver, DL stack.
 - `state.rs`: canonical N64-era GBI state (geometry mode, othermode
