@@ -636,6 +636,26 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 
 - mRF_MakeFlatPlaceInfomation classifications and mRF_FlatBlock2Unique selection not yet ported. Full grid-array passes (bridges/slopes) remain source-side; Rust has the per-cell resolvers. mRF_SelectBlock and data_combi resolution not yet ported.
 
+### Runtime Port Progress: Albumin Physical Collision Data
+
+### Source findings
+
+- src/data/field/bg/acre/bg_data.c contains the complete data_bgd array with real 16x16 mCoBG_Collision_u collision data for all 17 albumin BG assets. No disc extraction needed.
+- Unit layout (mCoBG_CollisionData_c): slate_flag:1, center:5, top_left:5, bot_left:5, bot_right:5, top_right:5, unit_attribute:6 - 32 bits total.
+- Height levels observed: 16 = cliff-top ground, 12 = mid/river-on-terrace, 4 = low ground, 0 = water. Attributes: GRASS0/GRASS2/SOIL/BUSH for land, RIVER_S/SE/SW/E + numbered bank/cliff variants (39-62) for water edges, WATERFALL where the drop is.
+- ASCII height maps confirm the physical reading: e.g. GRD_S_C1_R1_1 shows high ground north, a south-flowing river channel, a cliff-face band (height 12) where the river crosses the cliff, low ground south - the literal waterfall-over-cliff geometry. GRD_S_C3_R1_1 shows the cliff face running vertically with the river alongside.
+- Attribute enum: 64 values (0-24 named, 25-63 numbered with comments: wood/stone bridges, waves, river banks, grass cliff variants, slate).
+
+### Rust rewrite implementation
+
+- `rust/src/albumin_collision_data.rs`: full 17x256 collision tables extracted programmatically (source-verified spot checks), attribute name table, ColUnit type. ~35KB of real geometry data.
+- `rust/src/albumin_geometry.rs`: added albumin_unit / albumin_center_height / albumin_unit_world_y accessors. C ABI: pc_albumin_center_height, pc_albumin_unit_world_y.
+- `cargo check --lib` clean. Unit tests were written but NOT run, per the standing instruction.
+
+### Gaps
+
+- None on the collision data itself. Remaining: wiring these tables into the Rust runtime terrain-height queries used by gameplay.
+
 ### Runtime Port Progress: Albumin Outputs to BG Geometry/Collision/Height
 
 ### Source findings (all verified against the local decomp)
@@ -646,7 +666,7 @@ Per the brief's reclassification, Wave 1 was reorganized from "stateless functio
 - Per-unit geometry (mCoBG): 4-corner heights + center + attribute + slate_flag; mCoBG_GetUnitArea partitions each unit into 4 triangles; world Y = corner * 10.0 + acre base height. Flat units use center*10+base.
 - Acre base height is separate: mFM_combination_c = combination_type:14 + height:2, from mRF_GetBlockBase (cliff types increment per-column height); copied into save data.
 - Waterfall family: 7 of 17 outputs (22,23,26,30,31,37,38); the rest are RIVER_* non-waterfall hybrids.
-- RESOLVED LIMIT: the exact numeric 16x16 collision values live in the disc resource data_bgd, not in the decomp source. The architecture is fully traced; the per-unit numbers require game-disc extraction and are NOT reconstructed here.
+- CORRECTION (same day): the numeric 16x16 collision values ARE in the decomp source after all - src/data/field/bg/acre/bg_data.c carries full mCoBG_Collision_u arrays for every BG asset including all 17 GRD_S_C*_R* types. The "disc extraction" gap was wrong; see the Albumin Physical Collision Data section below.
 
 ### Rust rewrite implementation
 

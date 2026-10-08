@@ -76,6 +76,26 @@ pub fn world_y(corner: i8, base_height: f32) -> f32 {
     corner as f32 * COLLISION_HEIGHT_SCALE + base_height
 }
 
+/// Collision unit for one albumin asset (by ALBUMIN_ASSETS index 0..16)
+/// at unit (x, z), each 0..16. Returns (slate, center, tl, bl, br, tr, attr).
+pub fn albumin_unit(asset_idx: usize, x: usize, z: usize) -> Option<crate::albumin_collision_data::ColUnit> {
+    if asset_idx < 17 && x < 16 && z < 16 {
+        Some(crate::albumin_collision_data::ALBUMIN_COLLISION[asset_idx][z * 16 + x])
+    } else {
+        None
+    }
+}
+
+/// Center height of one unit of an albumin asset.
+pub fn albumin_center_height(asset_idx: usize, x: usize, z: usize) -> Option<u8> {
+    albumin_unit(asset_idx, x, z).map(|u| u.1)
+}
+
+/// World Y of a unit center: center * 10.0 + base height.
+pub fn albumin_unit_world_y(asset_idx: usize, x: usize, z: usize, base_height: f32) -> Option<f32> {
+    albumin_center_height(asset_idx, x, z).map(|c| c as f32 * COLLISION_HEIGHT_SCALE + base_height)
+}
+
 // ---- C ABI ----
 
 /// C ABI: returns the primary BG asset index (0..16) for an albumin
@@ -99,6 +119,20 @@ pub extern "C" fn pc_is_waterfall_output(block_type: u8) -> u8 {
 #[no_mangle]
 pub extern "C" fn pc_albumin_variants(block_type: u8) -> u8 {
     albumin_asset(block_type).map(|a| a.variants).unwrap_or(0)
+}
+
+/// C ABI: center collision height of one unit of an albumin asset
+/// (asset_idx 0..16, x/z 0..16). Returns 255 on bad input.
+#[no_mangle]
+pub extern "C" fn pc_albumin_center_height(asset_idx: u8, x: u8, z: u8) -> u8 {
+    albumin_center_height(asset_idx as usize, x as usize, z as usize).unwrap_or(255)
+}
+
+/// C ABI: world Y of a unit center (center*10 + base height).
+/// Returns -1.0 on bad input.
+#[no_mangle]
+pub extern "C" fn pc_albumin_unit_world_y(asset_idx: u8, x: u8, z: u8, base_height: f32) -> f32 {
+    albumin_unit_world_y(asset_idx as usize, x as usize, z as usize, base_height).unwrap_or(-1.0)
 }
 
 #[cfg(test)]
