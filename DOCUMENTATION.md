@@ -2312,6 +2312,84 @@ Wildcard palette support: `tex1_WxH_DATAHASH_$_FMT.dds` matches any palette vari
 
 Anti-aliasing via multisampled framebuffer. Configurable in `settings.ini` (0/2/4/8 samples).
 
+## Non-Letter NPC Mail (m_npc.c)
+
+Separate from normal letter replies (`npc_reply.rs`), retail has four
+independent NPC-generated mail systems plus the password-mail protocol,
+all hubbed through `m_npc.c`. New module: `rust/src/npc_event_mail.rs`.
+
+### Event (Valentine) mail
+
+- Relationship classifier (`mNpc_SendEventPresentMailSex`): the
+  villager's best friend vs best opposite-sex friend ->
+  BEST_FRIEND (0) / OK_FRIEND (1, friendship >= 80) / NOT_FRIEND (2).
+- Present tables: {RARE, UNCOMMON, COMMON} x {FURNITURE, FURNITURE,
+  CLOTH} indexed by class.
+- `mail_no = 0x60 + looks * 3 + type`; FREE_STR0 = player,
+  FREE_STR6 = NPC; random ABC paper.
+- Scheduler (`mNpc_SendVtdayMail`): classify all 15 villagers, then
+  process classes BEST -> OK -> NOT (not villager order). A
+  player-level bitfield (starts 0b1111) drops a player from all later
+  attempts after one failure; the routine ends when it hits 0.
+- Delivery: house mailbox preferred, post-office fallback.
+
+### Birthday mail
+
+- `mail_no = 0xEA + looks * 3 + RANDOM(3)`; FREE_STR0/1/2 =
+  player/NPC/item.
+- Present: RANDOM(5) over {FURNITURE, FURNITURE, CLOTH, CLOTH,
+  umbrella} = exactly 40/40/20; furniture/clothing via RARE list,
+  umbrella via `mSP_RandomUmbSelect`.
+- Eligibility: player must be the highest-friendship memory and not
+  the recorded `birthday_present_npc`; every eligible villager sends
+  (animals[] order), mailbox -> post-office fallback.
+
+### Christmas mail
+
+- Fixed: ROM handbill 0xD7, XMAS type, Famicom present, festive paper
+  22. No RNG, no personality lookup. Mailbox only — no post-office
+  fallback. Deliberately bypasses the common constructor.
+
+### Goodbye mail
+
+- Pending static record `{npc_id, deliver_to_bitfield}` survives the
+  villager's `Animal_c`; 4-bit recipient mask over active players.
+- `mail_no = 0x20E + looks * 3 + mQst_GetRandom(3)` (quest RNG, not
+  RANDOM); FREE_STR0/1/3 = player/NPC/town; no present.
+- Retry loop: bits clear on successful delivery, persist on failure.
+
+### Password (HP) mail
+
+- Per-villager `hp_mail[4]` slots `{receive_time, password[20]}`;
+  incoming NPC-addressed mail is intercepted by `mNpc_ReceiveHPMail`
+  before ordinary processing. Retail `@BUG`: the non-BUGFIX path
+  copies the full password-data length into the 20-byte field.
+- Responses delayed >= 1 day (interval-days); six generators
+  dispatched by password type (Famicom, Popular, Card E, Magazine,
+  User password, Card E mini).
+- Message ranges: Famicom 0x24A/0x250 + looks; Popular
+  0x256/0x25C/0x262/0x268+code/0x288 + looks; Magazine
+  0x2A0/0x2A6/0x2AC + looks with hit table {80,60,30,0,100};
+  Card-E hit table {80,60,40,20}. Invalid passwords still get
+  personality-specific mail. Popular/Card-E overwrite the displayed
+  sender with the password's NPC.
+- Slots clear only after successful post-office delivery.
+
+### Shared pieces
+
+- `load_npc_mail_data_common2` (font = received, normal type, NPC
+  sender, player recipient, present, paper), `mNpc_GetPaperType`
+  (random ABC paper), and the three delivery policies
+  (mailbox->PO / mailbox-only / PO-only). Generation and delivery
+  are separate types (`GeneratedMail` vs `DeliveryResult`).
+
+C ABI: `pc_npcmail_event_no`, `pc_npcmail_famicom_no`,
+`pc_npcmail_popular_no`, `pc_npcmail_magazine_no`,
+`pc_npcmail_goodbye_no`.
+
+`cargo check --lib` clean. Tests written but NOT run (standing rule).
+Second verification pass dispatched at implementation time.
+
 ## Graphics Pipeline (GBI / emu64)
 
 Retail Animal Crossing's renderer is a hybrid: the game keeps an

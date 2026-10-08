@@ -87,6 +87,7 @@ mod leaflet;
 mod mother_mail;
 mod mck_key_tables;
 mod npc_reply;
+mod npc_event_mail;
 mod save_format;
 mod audio;
 mod fish_tables;
