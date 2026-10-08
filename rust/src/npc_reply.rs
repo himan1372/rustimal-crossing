@@ -413,7 +413,7 @@ pub fn receive_friendship_delta(rank: u8, has_present: bool) -> i32 {
 /// mNpc_CheckLetterTime: eligible when the stored letter date is valid
 /// (day != 0xFF) and differs from today. No multi-day catch-up.
 pub fn letter_time_eligible(letter_date: (u16, u8, u8), today: (u16, u8, u8)) -> bool {
-    letter_date.0 != 0xFF && letter_date != today
+    letter_date.2 != 0xFF && letter_date != today
 }
 
 /// One NPC's pending reply as seen by the startup scan.
@@ -1033,10 +1033,17 @@ mod tests {
 
     #[test]
     fn runon_penalty() {
-        let mut raw = vec![b'a'; 80];
-        raw.extend_from_slice(b".");
+        // Separator first, then 80 non-separator chars -> -150.
+        let mut raw = vec![b'.'];
+        raw.extend(std::iter::repeat(b'a').take(80));
         let b = body_of(&raw);
         assert_eq!(key_type_f(&b, strlen_new(&b, MAIL_BODY_LEN)), -150);
+        // Retail quirk: the outer `while (len > 76)` bound means a separator
+        // at the very end is never reached -> no penalty.
+        let mut raw2 = vec![b'a'; 80];
+        raw2.push(b'.');
+        let b2 = body_of(&raw2);
+        assert_eq!(key_type_f(&b2, strlen_new(&b2, MAIL_BODY_LEN)), 0);
     }
 
     #[test]

@@ -456,7 +456,7 @@ mod tests {
         // Free a slot; next pass delivers.
         mailboxes[0].slots[0] = None;
         deliver_leaflets(&mut s, &houses, &mut mailboxes, -1);
-        assert_eq!(s.leaflet_flags, 0xF);
+        assert_eq!(s.leaflet_flags, 0x3); // both houses (2-house test)
     }
 
     #[test]
@@ -466,7 +466,7 @@ mod tests {
         let mut houses = vec![HouseInfo { land_id: UNCLAIMED_LAND_ID, ..Default::default() }];
         let mut mailboxes = vec![LeafletMailbox::default()];
         deliver_leaflets(&mut s, &houses, &mut mailboxes, -1);
-        assert_eq!(s.leaflet_flags, 0xF);
+        assert_eq!(s.leaflet_flags, 0x1); // single house
         assert!(mailboxes[0].slots.iter().all(|x| x.is_none()));
     }
 
@@ -494,7 +494,7 @@ mod tests {
         assert!(mailboxes[0].slots.iter().all(|x| x.is_none()));
         // Matching event: delivered.
         deliver_leaflets(&mut s, &houses, &mut mailboxes, event::SHOP_SALE);
-        assert_eq!(s.event_flags, 0xF);
+        assert_eq!(s.event_flags, 0x1); // single house
         assert_eq!(mailboxes[0].slots.iter().filter(|x| x.is_some()).count(), 1);
     }
 

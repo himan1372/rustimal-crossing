@@ -26,8 +26,6 @@ use crate::mail::{mtype, Mail, EMPTY_NO};
 pub const PLAYER_NUM: usize = 4;
 /// Normal-letter pool size (`mPr_MOTHER_MAIL_NORMAL_NUM` = 7 bytes).
 pub const NORMAL_NUM: usize = 56;
-pub const NORMAL_BYTES: usize = 7;
-pub const MONTHLY_BYTES: usize = 2;
 /// August has 8 monthly variants instead of 2.
 pub const AUGUST_VARIANTS: usize = 8;
 
@@ -97,15 +95,46 @@ pub struct RtcYmd {
 pub const CLEAR_DATE: RtcYmd = RtcYmd { year: 0xFFFF, month: 0xFF, day: 0xFF };
 
 /// `mPr_mother_mail_data_c`: the 10-byte persistent bitfield block.
+///
+/// Kept as raw bytes (not `normal[7]`/`monthly[2]`/`august` fields) because
+/// retail indexes it in a way that overflows: for September-December,
+/// `shift = (month-1)*2` gives slot 2, so `monthly[slot]` reads/writes one
+/// past the 2-byte `monthly` array — landing on the `august` byte by struct
+/// layout (`normal[7]`, `monthly[2]`, `august`, all u8, no padding).
+/// September-December monthly bits therefore alias August's 8 variant bits.
+/// This is source-proven retail behavior, preserved exactly.
+///
+/// Layout: bytes 0-6 = normal (56 bits), bytes 7-8 = monthly, byte 9 = august.
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct MotherMailData {
-    /// 56 normal letters, bit i = letter i sent.
-    pub normal: [u8; NORMAL_BYTES],
-    /// 2 bits per month (Jan-Jul, Sep-Dec packed).
-    pub monthly: [u8; MONTHLY_BYTES],
-    /// August's 8 variants get their own byte.
-    pub august: u8,
+    bytes: [u8; 10],
+}
+
+impl MotherMailData {
+    fn normal_pos(idx: usize) -> (usize, u8) {
+        (idx / 8, (idx % 8) as u8)
+    }
+
+    /// Byte/bit for a monthly entry. For Sep-Dec the slot arithmetic yields
+    /// byte 9 (the august byte) — the retail aliasing, not a bug in this
+    /// port.
+    fn monthly_pos(month: u8, idx: usize) -> (usize, u8) {
+        if month == month::AUGUST {
+            (9, idx as u8)
+        } else {
+            let shift = (month as usize - 1) * 2;
+            (7 + shift / 8, (shift % 8 + idx) as u8)
+        }
+    }
+
+    fn get(&self, byte: usize, bit: u8) -> bool {
+        (self.bytes[byte] >> bit) & 1 == 1
+    }
+
+    fn set(&mut self, byte: usize, bit: u8) {
+        self.bytes[byte] |= 1 << bit;
+    }
 }
 
 /// `mPr_mother_mail_info_c`: 14 bytes per player, in Save_t (not Private_c).
@@ -205,15 +234,13 @@ pub enum StepOutcome {
 
 /// mPr_CheckMotherMailNormal / mPr_SetMotherMailNormal.
 pub fn check_normal(data: &MotherMailData, idx: usize) -> bool {
-    let slot = idx / 8;
-    let bit = idx - slot * 8;
-    (data.normal[slot] >> bit) & 1 == 1
+    let (byte, bit) = MotherMailData::normal_pos(idx);
+    data.get(byte, bit)
 }
 
 pub fn set_normal(data: &mut MotherMailData, idx: usize) {
-    let slot = idx / 8;
-    let bit = idx - slot * 8;
-    data.normal[slot] |= 1 << bit;
+    let (byte, bit) = MotherMailData::normal_pos(idx);
+    data.set(byte, bit);
 }
 
 /// mPr_GetMotherMailNormalNotSendNum.
@@ -223,25 +250,13 @@ pub fn normal_not_send_num(data: &MotherMailData) -> usize {
 
 /// mPr_CheckMotherMailMonthly / mPr_SetMotherMailMonthly.
 pub fn check_monthly(data: &MotherMailData, month: u8, idx: usize) -> bool {
-    if month == month::AUGUST {
-        (data.august >> idx) & 1 == 1
-    } else {
-        let shift = (month - 1) as usize * 2;
-        let slot = shift / 8;
-        let bit = shift - slot * 8 + idx;
-        (data.monthly[slot] >> bit) & 1 == 1
-    }
+    let (byte, bit) = MotherMailData::monthly_pos(month, idx);
+    data.get(byte, bit)
 }
 
 pub fn set_monthly(data: &mut MotherMailData, month: u8, idx: usize) {
-    if month == month::AUGUST {
-        data.august |= 1 << idx;
-    } else {
-        let shift = (month - 1) as usize * 2;
-        let slot = shift / 8;
-        let bit = shift - slot * 8 + idx;
-        data.monthly[slot] |= 1 << bit;
-    }
+    let (byte, bit) = MotherMailData::monthly_pos(month, idx);
+    data.set(byte, bit);
 }
 
 /// mPr_GetMotherMailMonthlyNotSendNum.
@@ -321,8 +336,10 @@ pub fn monthly_letter_data(
     };
     let max = if month == month::AUGUST { AUGUST_VARIANTS } else { 2 };
     let event_no = select_unsent(max, &|i| check_monthly(data, month, i), rng);
-    let mail_no =
-        MAIL_START_NO_TABLE[mail_start_idx] + event_no as u16 + (month as u16 - 1 - mail_start_idx as u16 * 3) * 2;
+    // Signed arithmetic like retail: (month - 1 - idx*3) goes negative for Jan/Feb.
+    let mail_no = MAIL_START_NO_TABLE[mail_start_idx] as i32 + event_no as i32
+        + (month as i32 - 1 - mail_start_idx as i32 * 3) * 2;
+    let mail_no = mail_no as u16;
     let present = if month == month::MAY && event_no == 1 {
         let _ = rng(1); // RANDOM(1): kept, retail consumes RNG even for one entry
         PresentSpec::Item(present::CLOTH105)
@@ -537,7 +554,7 @@ pub extern "C" fn pc_mother_mail_monthly_no(month: u8, event_no: u8) -> i32 {
     } else {
         3
     };
-    (MAIL_START_NO_TABLE[idx] + event_no as u16 + (month as u16 - 1 - idx as u16 * 3) * 2) as i32
+    (MAIL_START_NO_TABLE[idx] as i32 + event_no as i32 + (month as i32 - 1 - idx as i32 * 3) * 2)
 }
 
 // ---------------------------------------------------------------------------
@@ -653,31 +670,36 @@ mod tests {
 
     #[test]
     fn normal_pool_no_duplicates() {
-        let today = RtcYmd { year: 2026, month: 10, day: 8 };
-        let mut info = MotherMailInfo {
-            date: RtcYmd { year: 2026, month: 10, day: 7 },
-            ..Default::default()
-        };
-        let mut c = ctx();
-        c.birthday = (3, 3);
-        // Force the 20% roll to succeed every day.
+        // Exercise the pool directly: uniform selection among unsent must
+        // cover all 56 letters exactly once.
+        let mut data = MotherMailData::default();
         let mut seen = [false; NORMAL_NUM];
-        let mut day = 8u8;
         for _ in 0..NORMAL_NUM {
-            let t = RtcYmd { year: 2026, month: 10, day };
             let mut r = rng0();
-            match send_mail_from_mother(&mut info, &t, &c, &mut r) {
-                StepOutcome::Normal(Some(m)) => {
-                    let idx = (m.mail_no - mail_no::NORMAL_BASE) as usize;
-                    assert!(!seen[idx], "duplicate normal letter {}", idx);
-                    seen[idx] = true;
-                }
-                o => panic!("unexpected {:?}", o),
-            }
-            day += 1;
-            info.date = RtcYmd { year: 2026, month: 10, day: day - 1 };
+            let (mail_no, _, event_no) = normal_letter_data(&data, &mut r);
+            assert!(!seen[event_no], "duplicate normal letter {}", event_no);
+            seen[event_no] = true;
+            assert_eq!(mail_no, mail_no::NORMAL_BASE + event_no as u16);
+            set_normal(&mut data, event_no);
         }
         assert!(seen.iter().all(|&s| s));
+        assert_eq!(normal_not_send_num(&data), 0);
+    }
+
+    #[test]
+    fn sep_dec_monthly_aliases_august_byte() {
+        // Retail quirk: Sep-Dec monthly bits live one past the 2-byte
+        // monthly array, i.e. on the august byte. Setting an October
+        // monthly bit flips an August variant bit and vice versa.
+        let mut data = MotherMailData::default();
+        set_monthly(&mut data, 10, 0); // October event 0 -> august bit 2
+        assert!(check_monthly(&data, month::AUGUST, 2));
+        assert!(!check_monthly(&data, month::AUGUST, 3));
+        set_monthly(&mut data, month::AUGUST, 7);
+        assert!(check_monthly(&data, 12, 1)); // December event 1 -> bit 7
+        // Jan-Aug still use their own bytes.
+        set_monthly(&mut data, 3, 1);
+        assert!(!check_monthly(&data, month::AUGUST, 0));
     }
 
     #[test]
@@ -748,8 +770,8 @@ mod tests {
     fn monthly_numbering() {
         // October seasonal: idx 2, event 0 -> 0x186 + 0 + (10-1-6)*2 = 0x18C
         assert_eq!(super::pc_mother_mail_monthly_no(10, 0), 0x18C);
-        // August: idx 1, event 7 -> 0x192 + 7 + (8-1-3)*2 = 0x19E + 1
-        assert_eq!(super::pc_mother_mail_monthly_no(8, 7), 0x19F);
+        // August: idx 1, event 7 -> 0x192 + 7 + (8-1-3)*2 = 0x1A1
+        assert_eq!(super::pc_mother_mail_monthly_no(8, 7), 0x1A1);
         // January: idx 3, event 0 -> 0x19E + 0 + (1-1-9)*2 = 0x18C
         assert_eq!(super::pc_mother_mail_monthly_no(1, 0), 0x18C);
     }
