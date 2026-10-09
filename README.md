@@ -51,6 +51,20 @@ cp -r pc/wiring/* src/
 
 Each wired file keeps the original C code as default. The Rust replacement only activates when you build with `-DUSE_RUST`.
 
+### Applying Bug Fixes
+
+The `fixes/` directory contains pure C bug fixes for the PC port (no Rust). Copy each file to its matching location under `src/`:
+
+```bash
+# From the ACGC-PC-Port directory:
+cp pc/fixes/m_trademark.c src/game/m_trademark.c
+cp pc/fixes/m_player_main_pickup.c_inc src/game/m_player_main_pickup.c_inc
+```
+
+Current fixes:
+- `m_trademark.c` → `src/game/m_trademark.c` — title demo was showing the player's save data instead of random villagers
+- `m_player_main_pickup.c_inc` → `src/game/m_player_main_pickup.c_inc` — removed the cash register ching when picking up money
+
 ### Compiling
 
 Build from the ACGC-PC-Port directory:
@@ -109,17 +123,6 @@ town_prototype/ ← Standalone town-gen prototype
 tools/          ← Build and utility scripts
 tests/          ← Rust test suite
 ```
-
-### Fixes
-
-The `fixes/` directory contains pure C bug fixes for the PC port — no Rust involved. Copy them to the matching path under the port's `src/` just like the wiring files:
-
-```bash
-cp -r pc/fixes/* src/
-```
-
-Current fixes:
-- `m_trademark.c` — title demo was showing the player's save data instead of random villagers (the PC port restored the save backup too early, wiping the demo randomization)
 
 ## Contributing
 
