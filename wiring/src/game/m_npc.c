@@ -1165,54 +1165,9 @@ static int mNpc_CheckMailChar(u8 c) {
     return FALSE;
 }
 
-extern int mNpc_CheckNormalMail_sub(int* char_num, u8* body) {
-    u8 last_char = CHAR_SPACE;
-    int run_len = 1;
-    int consecutive_chars = FALSE;
-    int t = 0;
-    int i;
-
-    char_num[0] = 0;
-
-    for (i = 0; i < MAIL_BODY_LEN; i++) {
-        if (body[0] != CHAR_SPACE) {
-
-            if (last_char == body[0]) {
-                run_len++;
-
-                if (run_len >= 3) {
-                    if (mNpc_CheckMailChar(body[0]) == TRUE) {
-                        if (run_len >= 8) {
-                            consecutive_chars = TRUE;
-                            break;
-                        }
-                    } else {
-                        consecutive_chars = TRUE;
-                        break;
-                    }
-                }
-            } else {
-                run_len = 0;
-                last_char = body[0];
-            }
-
-            char_num[0]++;
-        }
-
-        body++;
-        t++;
-    }
-
-    for (i = t; i < MAIL_BODY_LEN; i++) {
-        if (body[0] != CHAR_SPACE) {
-            char_num[0]++;
-        }
-
-        body++;
-    }
-
-    return consecutive_chars;
-}
+/* mNpc_CheckNormalMail_sub is provided by the Rust staticlib
+ * (rust/src/villager_mail.rs). The C version is omitted here to avoid
+ * a duplicate symbol at link time. */
 
 extern u8 mNpc_CheckNormalMail_length(int* len, u8* body) {
     int hit_chars;
