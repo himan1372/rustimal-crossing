@@ -201,8 +201,8 @@ u32 pc_house_next_loan(u8 size, int basement_ordered);
 
 /* mSP_GetRealShopLevel. disable_visitor_req mirrors the PC port's
  * g_pc_settings toggle (Nookington's without a foreign visitor). */
-int pc_shop_real_level(u32 sales_sum, int visitor_flag,
-                       int disable_visitor_req);
+u8 pc_shop_real_level(u32 sales_sum, int visitor_flag,
+                      int disable_visitor_req);
 
 /* mSP_PlusSales: clamped new sales sum. C writes it back to the save. */
 u32 pc_shop_plus_sales(u32 sales_sum, u8 tier, u32 sum);
@@ -214,7 +214,7 @@ u32 pc_shop_plus_sales(u32 sales_sum, u8 tier, u32 sum);
  * the static index. */
 int pc_scene_table_index(u8 table_index);
 
-/* game_dlftbls[] entry count (10). Low value — ARRAY_COUNT suffices. */
+/* game_dlftbls[] entry count (11 with TARGET_PC model viewer). Low value — ARRAY_COUNT suffices. */
 u32 pc_game_dlftbls_count(void);
 
 /* ---- Scene: m_scene.c ---- */

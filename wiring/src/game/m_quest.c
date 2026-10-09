@@ -927,6 +927,10 @@ extern int mQst_GetRandom(int max) {
 
 extern void mQst_GetGoods_common(mActor_name_t* item, AnmPersonalID_c* pid, int category, mActor_name_t* exist_table,
                                  int exist_num, int list) {
+#ifdef USE_RUST
+    /* Wave 2 plug: nonzero = "use the villager's own furniture". C keeps RANDOM(10). */
+    if (category != mSP_KIND_FURNITURE || pc_npc_house_goods((u32)RANDOM(10)) == 0) {
+#else
     int generate_random_item = 1;
 
     if (category == mSP_KIND_FURNITURE) {
@@ -935,6 +939,7 @@ extern void mQst_GetGoods_common(mActor_name_t* item, AnmPersonalID_c* pid, int 
 
     /* 1/10 chance to roll an item from the villager's house if the "goods" kind is furniture */
     if (generate_random_item != 0) {
+#endif
         mSP_SelectRandomItem_New(NULL, item, 1, exist_table, exist_num, category, list, FALSE);
     } else {
         *item = mNpc_GetNpcFurniture(pid);
