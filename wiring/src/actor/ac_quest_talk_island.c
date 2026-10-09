@@ -267,15 +267,44 @@ static u32 aQMgr_GetPossessionItemSumFGTypeWithCond_cancelSPFamicom(Private_c* p
 
 static int aQMgr_get_possession_ftr_cpt_wl_rnd(mActor_name_t* item_p) {
     u32 item_cnt;
-    int sel_idx;
-    mActor_name_t* pockets_p = Now_Private->inventory.pockets;
     int ret_idx = -1;
-    int i;
 
     item_cnt = aQMgr_GetPossessionItemSumFGTypeWithCond_cancelSPFamicom(Now_Private, NAME_TYPE_FTR0, mPr_ITEM_COND_NORMAL);
     item_cnt += aQMgr_GetPossessionItemSumFGTypeWithCond_cancelSPFamicom(Now_Private, NAME_TYPE_FTR1, mPr_ITEM_COND_NORMAL);
     item_cnt += mPr_GetPossessionItemSumItemCategoryWithCond(Now_Private, ITEM1_CAT_CARPET, mPr_ITEM_COND_NORMAL);
     item_cnt += mPr_GetPossessionItemSumItemCategoryWithCond(Now_Private, ITEM1_CAT_WALL, mPr_ITEM_COND_NORMAL);
+
+#ifdef USE_RUST
+    /* Wave 2B plug: C builds eligible flags and keeps RANDOM(item_cnt);
+       Rust picks the pocket index. */
+    if (item_cnt > 0) {
+        u8 eligible[mPr_POCKETS_SLOT_COUNT];
+        mActor_name_t* pp = Now_Private->inventory.pockets;
+        int i;
+        for (i = 0; i < mPr_POCKETS_SLOT_COUNT; i++, pp++) {
+            eligible[i] =
+                (mPr_GET_ITEM_COND(Now_Private->inventory.item_conditions, i) == mPr_ITEM_COND_NORMAL
+                 && !mSP_SearchItemCategoryPriority(*pp, mSP_KIND_FURNITURE, mSP_LISTTYPE_SPECIALPRESENT, NULL)
+                 && (ITEM_IS_FTR(*pp)
+                     || (ITEM_NAME_GET_TYPE(*pp) == NAME_TYPE_ITEM1
+                         && (ITEM_NAME_GET_CAT(*pp) == ITEM1_CAT_CARPET
+                             || ITEM_NAME_GET_CAT(*pp) == ITEM1_CAT_WALL))))
+                ? 1 : 0;
+        }
+        {
+            int idx = pc_request_pick_carried(Now_Private->inventory.pockets, eligible,
+                                              (size_t)mPr_POCKETS_SLOT_COUNT,
+                                              (u32)RANDOM(item_cnt));
+            if (idx >= 0) {
+                *item_p = Now_Private->inventory.pockets[idx];
+                ret_idx = idx;
+            }
+        }
+    }
+#else
+    int sel_idx;
+    mActor_name_t* pockets_p = Now_Private->inventory.pockets;
+    int i;
 
     if (item_cnt > 0) {
         sel_idx = RANDOM(item_cnt);
@@ -293,6 +322,7 @@ static int aQMgr_get_possession_ftr_cpt_wl_rnd(mActor_name_t* item_p) {
             pockets_p++;
         }
     }
+#endif
 
     return ret_idx;
 }

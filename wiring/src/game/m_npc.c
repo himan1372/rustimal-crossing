@@ -3056,6 +3056,31 @@ static mActor_name_t mNpc_DecideNpcFurniture(mFM_fg_data_c** fg_data_table, mNpc
 
     fg_items = fg_data_table[data_idx]->items[0];
 
+#ifdef USE_RUST
+    /* Wave 2B plug: C classifies 100 grid items into flags; Rust counts eligible.
+       C keeps RANDOM(num) and the second selection scan. */
+    {
+        u8 ftr_flags[100];
+        u8* fp = ftr_flags;
+        mActor_name_t* fi = fg_data_table[data_idx]->items[0];
+        int fz, fx;
+        for (fz = 0; fz < 10; fz++) {
+            for (fx = 0; fx < 10; fx++) {
+                u8 f = 0;
+                if (ITEM_IS_FTR(*fi)) {
+                    f |= 1;
+                    if (mNpc_CheckSelectFurniture(*fi) == TRUE) {
+                        f |= (7 << 1);
+                    }
+                }
+                *fp++ = f;
+                fi++;
+            }
+            fi += UT_X_NUM - 10;
+        }
+        num = (u8)pc_eligible_furniture_count(ftr_flags);
+    }
+#else
     for (ut_z = 0; ut_z < 10; ut_z++) {
         for (ut_x = 0; ut_x < 10; ut_x++) {
             if (ITEM_IS_FTR(*fg_items) && mNpc_CheckSelectFurniture(*fg_items) == TRUE) {
@@ -3067,6 +3092,7 @@ static mActor_name_t mNpc_DecideNpcFurniture(mFM_fg_data_c** fg_data_table, mNpc
 
         fg_items += UT_X_NUM - 10;
     }
+#endif
 
     if (num != 0) {
         num = RANDOM(num);
@@ -4896,6 +4922,17 @@ extern int mNpc_CheckOverImpatient(int animal_idx, int looks) {
 }
 
 extern int mNpc_GetOverImpatient(int animal_idx, int looks) {
+#ifdef USE_RUST
+    /* Wave 2B plug: patience class from Rust; C keeps array access and bounds check.
+       Retail quirk preserved: temper table indexed by looks. */
+    int patience = mNpc_PATIENCE_NORMAL;
+
+    if (animal_idx >= 0 && animal_idx < ARRAY_COUNT(l_npc_talk_info)) {
+        patience = (int)pc_npc_patience(l_npc_talk_info[animal_idx].talk_num, (u8)looks);
+    }
+
+    return patience;
+#else
     int patience = mNpc_PATIENCE_NORMAL;
 
     if (animal_idx >= 0 && animal_idx < ARRAY_COUNT(l_npc_talk_info)) {
@@ -4911,6 +4948,7 @@ extern int mNpc_GetOverImpatient(int animal_idx, int looks) {
     }
 
     return patience;
+#endif
 }
 
 extern int mNpc_CheckQuestRequest(int animal_idx) {
