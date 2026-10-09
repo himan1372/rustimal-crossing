@@ -157,8 +157,9 @@ static void aNPC_think_wander_decide_next(NPC_ACTOR* nactorx) {
         } else {
 #ifdef USE_RUST
             /* Wave 2 plug: wander action from personality + RANDOM(10) roll.
-               C keeps RANDOM(10) and the WALK_WANDER fast path. */
-            act_idx = pc_wander_choice(wander_personality, rng);
+               C keeps RANDOM(10) and the WALK_WANDER fast path.
+               Rust returns 0/1/2; C offsets by aNPC_ACT_WAIT. */
+            act_idx = aNPC_ACT_WAIT + pc_wander_choice(wander_personality, rng);
 #else
             for (act_idx = aNPC_ACT_WAIT; act_idx < aNPC_ACT_RUN; act_idx++) {
                 if (rng <= *boarder_p) {
