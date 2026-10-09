@@ -102,12 +102,24 @@ All waves playtest-validated. See `DOCUMENTATION.md` for per-module details.
 ```
 rust/           ← Rust modules (the rewrite)
 wiring/         ← C files with USE_RUST plugs (copy to ../src/)
+fixes/          ← PC-port C bug fixes, no Rust involved (copy to ../src/)
 include/        ← pc_rust.h and other headers
 src/            ← PC platform files (pc_audio.c, pc_gx.c, etc.)
 town_prototype/ ← Standalone town-gen prototype
 tools/          ← Build and utility scripts
 tests/          ← Rust test suite
 ```
+
+### Fixes
+
+The `fixes/` directory contains pure C bug fixes for the PC port — no Rust involved. Copy them to the matching path under the port's `src/` just like the wiring files:
+
+```bash
+cp -r pc/fixes/* src/
+```
+
+Current fixes:
+- `m_trademark.c` — title demo was showing the player's save data instead of random villagers (the PC port restored the save backup too early, wiping the demo randomization)
 
 ## Contributing
 
