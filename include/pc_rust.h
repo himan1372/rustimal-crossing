@@ -225,6 +225,31 @@ int pc_scene_word_type(u8 first_byte);
 /* goto_other_scene arithmetic: next_scene_id + 1. */
 int pc_door_next_scene(int next_scene_id);
 
+/* ---- Fishing (uki): src/actor/ac_uki_move.c_inc, ac_gyo_kaseki.c, ac_gyo_test.c ----
+ * All five are verbatim table lookups; C keeps every RNG roll, every actor
+ * mutation, and every side effect. (pc_uki_proc_count / pc_uki_status_count
+ * exist in Rust but have no C call sites, so they stay undeclared.) */
+
+/* BITE proc reel timer: trash gyo types -> 26, else REEL_TIMER[size] * 2.
+ * Takes the raw s16 gyo_type; out-of-range degrades safely. */
+s16 pc_uki_reel_timer(u8 gyo_type);
+
+/* Fish->item table index for aUKI_get_fish_type, or -1 when the C guard
+ * (0 <= gyo_type < aGYO_TYPE_EXTENDED_NUM) would have rejected it. */
+s8 pc_uki_fish_item(u8 gyo_type);
+
+/* Trash substitution on bite commit (gomi[size_type]); the 1/20 roll stays
+ * in C. Returns the replacement gyo type (41/42/43). */
+u8 pc_uki_trash_for_size(u8 size_type);
+
+/* Fish bite persistence in frames: aGYO_bite_time[rod][category] * 2.
+ * golden is 0/1 (from aGKK_get_uki_type()/aGYO_get_uki_type() == *_GOLDEN). */
+int pc_uki_bite_frames(u8 golden, u8 category);
+
+/* Fish approach half-angle in degrees: aGYO_search_angle[rod][area].
+ * C still applies DEG2SHORT_ANGLE2 and the search-distance table. */
+f32 pc_uki_search_angle(u8 golden, u8 area);
+
 #ifdef __cplusplus
 }
 #endif
