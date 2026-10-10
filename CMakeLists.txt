@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(ac_pc C CXX)
-
+add_compile_definitions(USE_RUST)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
@@ -219,11 +219,11 @@ list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_profiler\\.c$")
 # Matrix (rust/src/mtx.rs) -- enable only after the f32.to_bits()
 # differential suite passes (PSMTXConcat/Inverse/MultVec, C_MTX*,
 # gu*). The export lists already match 1:1.
-# list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_mtx\\.c$")
+ list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_mtx\\.c$")
 # VI (rust/src/vi.rs) -- wire last, after the full boot/game loop is
 # validated on the Rust profiler. Pair with the profiler exclusion
 # above (already active); only pc_vi.c remains.
-# list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_vi\\.c$")
+ list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/pc_vi\\.c$")
 
 # Exclude NPC anime data fragments (no headers, #included from other NPC files)
 list(FILTER GAME_C_SOURCES EXCLUDE REGEX ".*/actor/npc/.*_anime\\.c$")

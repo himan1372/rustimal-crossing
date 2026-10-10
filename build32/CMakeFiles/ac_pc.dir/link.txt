@@ -1,0 +1,3 @@
+C:\msys64\mingw32\bin\cmake.exe -E rm -f CMakeFiles\ac_pc.dir/objects.a
+C:\msys64\mingw32\bin\ar.exe qc CMakeFiles\ac_pc.dir/objects.a @CMakeFiles\ac_pc.dir\objects1.rsp @CMakeFiles\ac_pc.dir\objects2.rsp @CMakeFiles\ac_pc.dir\objects3.rsp @CMakeFiles\ac_pc.dir\objects4.rsp
+C:\msys64\mingw32\bin\c++.exe -static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive "C:/Users/phili/game c/shmanimal crossing/ACGC-PC-Port/pc/build32/libwinpthread_stripped.a" -Wl,-Bdynamic,--no-whole-archive -mwindows -Wl,--whole-archive CMakeFiles\ac_pc.dir/objects.a -Wl,--no-whole-archive -o bin\AnimalCrossing.exe -Wl,--out-implib,libAnimalCrossing.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\ac_pc.dir\linkLibs.rsp

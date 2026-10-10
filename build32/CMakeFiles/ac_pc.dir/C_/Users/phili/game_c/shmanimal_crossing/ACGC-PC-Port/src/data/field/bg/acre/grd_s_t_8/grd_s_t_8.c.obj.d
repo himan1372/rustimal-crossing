@@ -1,0 +1,65 @@
+CMakeFiles/ac_pc.dir/C_/Users/phili/game_c/shmanimal_crossing/ACGC-PC-Port/src/data/field/bg/acre/grd_s_t_8/grd_s_t_8.c.obj: \
+ C:\Users\phili\game\ c\shmanimal\ crossing\ACGC-PC-Port\src\data\field\bg\acre\grd_s_t_8\grd_s_t_8.c \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/libforest/gbi_extensions.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/types.h \
+ C:/msys64/mingw32/include/math.h C:/msys64/mingw32/include/crtdefs.h \
+ C:/msys64/mingw32/include/corecrt.h C:/msys64/mingw32/include/_mingw.h \
+ C:/msys64/mingw32/include/_mingw_mac.h \
+ C:/msys64/mingw32/include/_mingw_secapi.h \
+ C:/msys64/mingw32/include/vadefs.h C:/msys64/mingw32/include/string.h \
+ C:/msys64/mingw32/include/corecrt_memory.h \
+ C:/msys64/mingw32/include/corecrt_wstring.h \
+ C:/msys64/mingw32/include/malloc.h \
+ C:/msys64/mingw32/include/corecrt_malloc.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/mm_malloc.h \
+ C:/msys64/mingw32/include/stdlib.h \
+ C:/msys64/mingw32/include/corecrt_wstdlib.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/limits.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/syslimits.h \
+ C:/msys64/mingw32/include/limits.h C:/msys64/mingw32/include/errno.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/types.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/stdint.h \
+ C:/msys64/mingw32/include/stdint.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/stddef.h \
+ C:/msys64/mingw32/include/stddef.h C:/msys64/mingw32/include/stdio.h \
+ C:/msys64/mingw32/include/corecrt_wstdio.h \
+ C:/msys64/mingw32/include/corecrt_stdio_config.h \
+ C:/msys64/mingw32/include/_mingw_off_t.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/stdarg.h \
+ C:/msys64/mingw32/include/stdarg.h \
+ C:/msys64/mingw32/include/_mingw_stdarg.h \
+ C:/msys64/mingw32/include/ctype.h \
+ C:/msys64/mingw32/include/corecrt_wctype.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/macros.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/PR/mbi.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/PR/gbi.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/PR/ultratypes.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/PR/abi.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXEnum.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/stdbool.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXStruct.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/vi.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXRegs.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXBump.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXCommandList.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXCull.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXDispList.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXDraw.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXExtra.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXFifo.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/os/OSThread.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/os/OSContext.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXFrameBuffer.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXGeometry.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXGet.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXLighting.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXManage.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXMisc.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXPerf.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXPixel.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXTev.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXTexture.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXTransform.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXVerify.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/../include/dolphin/gx/GXVert.h

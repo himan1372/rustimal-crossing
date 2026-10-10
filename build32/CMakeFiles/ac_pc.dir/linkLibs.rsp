@@ -1,0 +1,1 @@
+ libglad.a C:/msys64/mingw32/lib/libSDL2.dll.a "rust-target/i686-pc-windows-gnu/release/libac_pc_rust.a" -lopengl32 -lwinmm -limm32 -lversion -lsetupapi -lkernel32 -lntdll -luserenv -lws2_32 -ldbghelp -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

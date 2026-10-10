@@ -1,0 +1,27 @@
+CMakeFiles/glad.dir/lib/glad/src/gl.c.obj: \
+ C:\Users\phili\game\ c\shmanimal\ crossing\ACGC-PC-Port\pc\lib\glad\src\gl.c \
+ C:/msys64/mingw32/include/stdio.h \
+ C:/msys64/mingw32/include/corecrt_wstdio.h \
+ C:/msys64/mingw32/include/corecrt.h C:/msys64/mingw32/include/_mingw.h \
+ C:/msys64/mingw32/include/_mingw_mac.h \
+ C:/msys64/mingw32/include/_mingw_secapi.h \
+ C:/msys64/mingw32/include/vadefs.h \
+ C:/msys64/mingw32/include/corecrt_stdio_config.h \
+ C:/msys64/mingw32/include/_mingw_off_t.h \
+ C:/msys64/mingw32/include/stdlib.h \
+ C:/msys64/mingw32/include/corecrt_malloc.h \
+ C:/msys64/mingw32/include/corecrt_wstdlib.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/limits.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/syslimits.h \
+ C:/msys64/mingw32/include/limits.h C:/msys64/mingw32/include/crtdefs.h \
+ C:/msys64/mingw32/include/malloc.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/mm_malloc.h \
+ C:/msys64/mingw32/include/errno.h C:/msys64/mingw32/include/string.h \
+ C:/msys64/mingw32/include/corecrt_memory.h \
+ C:/msys64/mingw32/include/corecrt_wstring.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/lib/glad/include/glad/gl.h \
+ C:/Users/phili/GAMEC~1/SHMANI~1/ACGC-P~1/pc/lib/glad/include/KHR/khrplatform.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/stdint.h \
+ C:/msys64/mingw32/include/stdint.h \
+ C:/msys64/mingw32/lib/gcc/i686-w64-mingw32/16.2.0/include/stddef.h \
+ C:/msys64/mingw32/include/stddef.h
