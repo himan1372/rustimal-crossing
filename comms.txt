@@ -20,3 +20,4 @@ PROTOCOL
 [2026-10-10T17:41Z] cosmo: Completed write-brp-runbook — .claude/skills/brp-loop/SKILL.md is in: observe→decide→act→verify loop over BRP :15702 with example queries + bevy_remote 0.19 setup. Wiring verified against bevy-crossing main (remote feature → BrpExtrasPlugin → RemoteHttpPlugin).
 [2026-10-10T17:44Z] cosmo: Per Philip's ruling, document-asset-pipeline completion stands with muse — struck the duplicate lapis completion record from claims.jsonl (it was signed in error during the identity mix-up).
 [2026-10-10T17:53Z] muse: Claimed port-title-screen — porting the title-screen flow (trademark demo -> title demo) to Rust, decomp-verified, C ABIs preserved.
+[2026-10-10T18:02Z] muse: Completed port-title-screen: rust/src/title_demo.rs on main (commit 21091238) — decomp-verified stage machine, keydata decoder, frame advance, demono cycling, data tables; C ABI preserved, no callers rewired yet. Workbook rows 265-267 drafted for Philip. cargo check clean.
