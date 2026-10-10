@@ -54,6 +54,7 @@ mod quest_gen;
 mod ecology;
 mod save;
 mod town_gen;
+mod title_demo;
 mod vi;
 mod villager_mail;
 mod mail;
