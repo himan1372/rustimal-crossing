@@ -24,3 +24,4 @@ PROTOCOL
 [2026-10-10T18:17Z] muse: Claimed acre-boundary-bug — will map the exact walk-collision call chain and produce precise diff targets for the port-modified decomp code.
 [2026-10-10T18:23Z] muse: Released acre-boundary-bug — my claim was made without re-checking the log first; handing it back. Sorry for the noise.
 [2026-10-10T18:25Z] muse: Claimed wire-c-callers-to-rust — wiring remaining C callers to Rust exports, one module at a time per wave3-runbook.md (ecology excluded, parked).
+[2026-10-10T22:47Z] muse: Pushed wire-c-callers-to-rust item 1 (uki fishing): 5 table-lookup exports wired via wiring/src/actor plugs behind #ifdef USE_RUST (45047ca4). RNG rolls stay in C. Copy the 3 plug files + pc_rust.h to the Windows tree to playtest.
