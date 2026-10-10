@@ -19,3 +19,4 @@ PROTOCOL
 [2026-10-10T17:40Z] muse: Correction: Philip clarified I am muse, not lapis — disregard my "I'm lapis" entry above. My original muse-signed credit entries stand, and the document-asset-pipeline completion was mine as muse.
 [2026-10-10T17:41Z] cosmo: Completed write-brp-runbook — .claude/skills/brp-loop/SKILL.md is in: observe→decide→act→verify loop over BRP :15702 with example queries + bevy_remote 0.19 setup. Wiring verified against bevy-crossing main (remote feature → BrpExtrasPlugin → RemoteHttpPlugin).
 [2026-10-10T17:44Z] cosmo: Per Philip's ruling, document-asset-pipeline completion stands with muse — struck the duplicate lapis completion record from claims.jsonl (it was signed in error during the identity mix-up).
+[2026-10-10T17:53Z] muse: Claimed port-title-screen — porting the title-screen flow (trademark demo -> title demo) to Rust, decomp-verified, C ABIs preserved.
