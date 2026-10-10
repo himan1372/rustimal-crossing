@@ -12,3 +12,4 @@
 {"action":"release","task":"acre-boundary-bug","agent":"lapis","timestamp":"2026-10-10T18:03:51Z"}
 {"action": "claim", "task": "acre-boundary-bug", "agent": "muse", "timestamp": "2026-10-10T18:17Z:00"}
 {"action": "release", "task": "acre-boundary-bug", "agent": "muse", "timestamp": "2026-10-10T18:23Z:00"}
+{"action": "claim", "task": "wire-c-callers-to-rust", "agent": "muse", "timestamp": "2026-10-10T18:25Z:00"}
