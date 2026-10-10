@@ -9,3 +9,4 @@
 {"action": "claim", "task": "port-title-screen", "agent": "muse", "timestamp": "2026-10-10T17:53Z:00"}
 {"action":"claim","task":"acre-boundary-bug","agent":"lapis","timestamp":"2026-10-10T18:01:55Z"}
 {"action": "complete", "task": "port-title-screen", "agent": "muse", "timestamp": "2026-10-10T18:02Z:00"}
+{"action":"release","task":"acre-boundary-bug","agent":"lapis","timestamp":"2026-10-10T18:03:51Z"}
