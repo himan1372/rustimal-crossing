@@ -2078,6 +2078,61 @@ but not reproduced.
 5 C ABI exports (`pc_audio_*`). cargo check --lib clean; tests written
 but not run per the standing rule. Second verification pass pending.
 
+### Runtime Port Progress: Title Screen (trademark demo -> title demo)
+
+New `rust/src/title_demo.rs`, verified against `src/game/m_trademark.c`,
+`src/game/m_titledemo.c`, `src/data/scene/title_demo.c`,
+`src/data/titledemo/pact0.c`..`pact4.c`, `include/m_titledemo.h`,
+`include/m_trademark.h`, `include/lb_rtc.h` (month enum), and
+`include/m_kankyo.h` (weather enum).
+
+Flow: `trademark_init` builds `GAME_TRADEMARK` (exec = `trademark_main`,
+fade starts opaque `alpha = 0xFF00`, `logo_timer = 60`, `move_timer = 16`,
+`stage = 0`; first boot forces `stage = 5` via `mTR_first_flag`) ->
+`trademark_main` per frame (`fqrand` seed, cancel check, stage machine,
+logo + fade draws; at stage 5 calls `trademark_goto_demo_scene`) ->
+demo scene plays 60 s of recorded input -> wipe to next demo.
+
+Ported (pure logic; display lists, fades, `GAME_PLAY`/`PLAYER_ACTOR`
+writes, and RTC/common-data calls stay in C):
+
+- Demo-id cycling (`mTD_demono_get`): `LOGO(-1) -> 1 -> 2 -> 3 -> 4 -> 5 -> 1...`;
+  zero-based index (`mTD_get_titledemo_no`); button-ok cutoff
+  (`mTD_tdemo_button_ok_check`: FALSE at frame >= 3530 = 3600 - 70).
+- Key-data decoder: bit layout documented in `pact0.c` itself
+  (`XXXXXXXB YYYYYYYA`: bit 0 = A, bits 7:1 = stick Y, bit 8 = B,
+  bits 15:9 = stick X); sign-extended halves / 512, truncation toward
+  zero — matches the C exactly.
+- Zero-order-hold frame advance (`set_player_demo_keydata_hold`):
+  `delta_time` clamped to [0, 1/30], converted to fractional 30 fps
+  frames, accumulated; index saturates at sample 1799. The interpolation
+  variant (`set_player_demo_keydata`) is `#if 0`'d out in source
+  ("@fakematch?") and was not ported.
+- Trademark stage machine as a pure step function
+  (`trademark_move_step`): stage 0 plays the lost-fanfare
+  (`s_titlebgm` = {83, 84, 85, 86, 87}), stage 1 waits `move_timer`,
+  stage 2 fades the Nintendo logo in (`alpha2 += 0x880*dt` to `0xFF00`),
+  stage 4 holds `logo_timer`, stage 3/cancel fades to black; returns
+  `PlayFanfare` / `GotoDemo` events for the C side effects.
+  START-cancel modeled (`trademark_cancel_check`: stage 4 + pad + START).
+- Data tables (verbatim): 5 demo door positions, 5 tradeday presets
+  (Apr 6 13:00 sakura, Jun 16 13:00 rain, Aug 1 6:00 clear,
+  Nov 1 16:00 clear, Feb 1 2:00 snow), 5 `pactN_head_table`s
+  (pos/angle/tool/size; tools: 0x2201 axe, 0x2203 rod, 0x2204 umbrella).
+- Verified no-op: `mTD_player_keydata_init`'s tool filter assigns every
+  branch back to itself, so the header tool id passes through unchanged.
+
+C ABI: `mTD_demono_get`, `mTD_get_titledemo_no`,
+`mTD_tdemo_button_ok_check` (stateful, Mutex-guarded),
+`pc_titledemo_decode_keydata`, `pc_titledemo_advance_frame`.
+`cargo check --lib` clean (only the crate-standard "never used"
+warnings); no C callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
+Gaps: `title_demo_move`'s settings-overlay hold and `mTD_rtc_set` /
+`mTD_rtc_reserve` need C-side state (`GAME_PLAY`, common data) and stay
+in C. The 1800-sample `pactN_key_data` tables stay in C as data.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
