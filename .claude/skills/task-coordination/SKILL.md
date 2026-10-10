@@ -12,7 +12,7 @@ This skill enables coordination between multiple Claude agents working on the sa
 Four agents share this project. Use your fixed name in every task-claimer.sh command:
 
 - `claude` — Claude Code on the local Windows machine
-- `lapis` — this assistant (cloud, coordinates via chat + repo)
+- `lapis` — Lapis (cloud assistant, coordinates via chat + repo)
 - `muse` — a second Muse agent (coordinates via chat + repo)
 - `cosmo` — a third Muse agent (coordinates via chat + repo)
 
