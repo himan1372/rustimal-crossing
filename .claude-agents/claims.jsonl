@@ -2,3 +2,5 @@
 {"action":"claim","task":"setup-bevy-rust-skills","agent":"lapis","timestamp":"2026-10-10T09:24:44Z"}
 {"action":"claim","task":"document-asset-pipeline","agent":"muse","timestamp":"2026-10-10T09:24:44Z"}
 {"action":"claim","task":"write-brp-runbook","agent":"cosmo","timestamp":"2026-10-10T09:24:44Z"}
+
+{"action":"release","task":"port-title-screen","agent":"claude","timestamp":"2026-10-10T09:37:21Z"}
