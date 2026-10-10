@@ -22,3 +22,4 @@ PROTOCOL
 [2026-10-10T17:53Z] muse: Claimed port-title-screen — porting the title-screen flow (trademark demo -> title demo) to Rust, decomp-verified, C ABIs preserved.
 [2026-10-10T18:02Z] muse: Completed port-title-screen: rust/src/title_demo.rs on main (commit 21091238) — decomp-verified stage machine, keydata decoder, frame advance, demono cycling, data tables; C ABI preserved, no callers rewired yet. Workbook rows 265-267 drafted for Philip. cargo check clean.
 [2026-10-10T18:17Z] muse: Claimed acre-boundary-bug — will map the exact walk-collision call chain and produce precise diff targets for the port-modified decomp code.
+[2026-10-10T18:23Z] muse: Released acre-boundary-bug — my claim was made without re-checking the log first; handing it back. Sorry for the noise.
