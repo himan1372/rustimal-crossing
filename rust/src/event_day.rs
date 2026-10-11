@@ -117,6 +117,12 @@ pub mod sched {
         WEEKLY | (((week & 0b111) << 3) | (weekday & 0b111))
     }
 
+    /// `mEv_SCHEDULE_DAY_AFTER | mEv_SCHEDULE_MAKE_WEEKLY_DATA(week, weekday)`:
+    /// schedules on the day after the Nth weekday (0x40 = DAY_AFTER).
+    pub fn day_after_weekly(week: u8, weekday: u8) -> u8 {
+        0x40 | weekly_data(week, weekday)
+    }
+
     pub fn weekly_week(day: u8) -> u8 {
         (day >> 3) & 0b111
     }
@@ -166,6 +172,7 @@ pub mod event {
     pub const RUMOR_HALLOWEEN: u16 = 48;
     pub const HALLOWEEN: u16 = 49;
     pub const FISHING_TOURNEY_2: u16 = 54;
+    pub const RUMOR_HARVEST_FESTIVAL: u16 = 55;
     pub const HARVEST_FESTIVAL: u16 = 56;
     pub const TOY_DAY_JINGLE: u16 = 61;
     pub const CHERRY_BLOSSOM_PETALS: u16 = 65;
@@ -330,6 +337,26 @@ pub mod schedule {
             end: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(4, rtc::weekday::THURSDAY), hour: 20 },
             event: event::HARVEST_FESTIVAL,
         },
+        ScheduleRow { // 4th Thursday of November, 15:00-20:00 (Tortimer harvest)
+            begin: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(4, rtc::weekday::THURSDAY), hour: 15 },
+            end: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(4, rtc::weekday::THURSDAY), hour: 20 },
+            event: event::SONCHO_HARVEST_FESTIVAL,
+        },
+        ScheduleRow { // 4th Thursday of November, 15:00-20:00 (Franklin)
+            begin: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(4, rtc::weekday::THURSDAY), hour: 15 },
+            end: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(4, rtc::weekday::THURSDAY), hour: 20 },
+            event: event::HARVEST_FESTIVAL_FRANKLIN,
+        },
+        ScheduleRow { // Harvest rumor: Nov 11 00:00 -> day after 1st Sunday 23:00
+            begin: DateSpec { month: rtc::month::NOVEMBER, day: 11, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::NOVEMBER, day: sched::day_after_weekly(1, rtc::weekday::SUNDAY), hour: 23 },
+            event: event::RUMOR_HARVEST_FESTIVAL,
+        },
+        ScheduleRow { // 4th Thursday of November, 00:00-23:00 (weather override)
+            begin: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(4, rtc::weekday::THURSDAY), hour: 0 },
+            end: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(4, rtc::weekday::THURSDAY), hour: 23 },
+            event: event::WEATHER_CLEAR,
+        },
         ScheduleRow { // Dec 24 20:00 -> Dec 25 00:00
             begin: DateSpec { month: rtc::month::DECEMBER, day: 24, hour: sched::MULTIDAY | 20 },
             end: DateSpec { month: rtc::month::DECEMBER, day: 25, hour: 0 },
@@ -438,6 +465,20 @@ pub mod franklin {
     /// then carpet 66 and wall 66.
     pub const CARPET66: u16 = 0x2600 + 66;
     pub const WALL66: u16 = 0x2700 + 66;
+
+    /// The 10 turkey furniture IDs in table order:
+    /// lamp, table, TV, bed, chair, watch, sofa, closet,
+    /// chest, mirror (`ac_ev_turkey.c:54-68`).
+    pub const TURKEY_FURNITURE: [u16; 10] = [
+        0x32D0, 0x32E0, 0x32E4, 0x32E8, 0x32EC, 0x32F0, 0x32F4, 0x3300, 0x3308, 0x3310,
+    ];
+
+    /// The full 12-entry present table: the 10 turkey pieces,
+    /// then carpet 66 and wall 66.
+    pub const PRESENT_TABLE: [u16; 12] = [
+        0x32D0, 0x32E0, 0x32E4, 0x32E8, 0x32EC, 0x32F0, 0x32F4, 0x3300, 0x3308, 0x3310,
+        0x2642, 0x2742,
+    ];
 
     /// `aETKY_DecidePresent`: when every bit is given, the
     /// bitfield resets to 0. (The RANDOM pick among ungiven bits

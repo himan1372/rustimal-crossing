@@ -109,6 +109,7 @@ mod countdown;
 mod halloween;
 mod fireworks;
 mod cherry_blossom;
+mod harvest;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

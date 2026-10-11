@@ -3485,6 +3485,57 @@ C ABI (all `pc_`-prefixed, 10 exports): `pc_cb_npc0_next`,
 `pc_cb_layout_pos`. No C callers rewired yet, per the usual
 pattern. No test runs, per the standing rule.
 
+### Runtime Port Progress: Harvest Festival NPCs
+
+New `rust/src/harvest.rs`, registered as `mod harvest` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_harvest_npc0.c`, `ac_harvest_npc0.c_inc`,
+`ac_harvest_npc1.c`, `ac_harvest_npc1.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`,
+`ac_event_manager.c`, `ac_ev_turkey.c` (GAFE01_00 Rev 0 USA).
+All 12 brief claims PROVEN.
+
+Ported (pure kernels; Franklin's save/common area and talk
+state machine, the tumbler tool actor, the event-manager
+handlers, and RNG calls stay in C):
+
+- NPC0: the think selection (`_998 != -1` → stored action,
+  otherwise `RANDOM(2) << (_9A4 & 1)` → even raw indices
+  choose WAIT/MERRY, odd choose WAIT/DRINK), the loop tables
+  (base {1,2,1,1}, rnd {0.0f,3.0f,1.0f,0.0f}), the four clap
+  sounds, the default angle via the masked index
+  (`raw_idx & 3` → {45°,270°,315°,90°}), the talk message
+  arithmetic (base[looks] + raw_idx * 3 + RANDOM(3)), and the
+  tumbler condition (odd raw index and a NULL right-hand
+  actor). The raw index and the masked angle index are kept
+  distinct — the fifth NPC (raw 4) has even parity but angle
+  index 0.
+- NPC1: the think (stored slot wins and clears; otherwise NO
+  action selection — only flag re-application, unlike NPC0),
+  the to-default handler (queues WAIT when the shape rotation
+  matches the zero default angle), the creation-time
+  `world.position.x += 20.0f` constant, and the talk message
+  arithmetic (base[looks] + RANDOM(3), no event-index offset).
+- The festival layout: nine slots (five harvest NPCs,
+  Tortimer, three tables) with their field-unit coordinates, a
+  single map variant on a shrine block, the five-NPC mask,
+  and the IDs (SP_NPC_EV_HARVEST_0..4 = 0xD082–0xD086,
+  SP_NPC_EV_SONCHO2 = 0xD074, HTABLE0..2 = 0x5846–0x5848,
+  SP_NPC_TURKEY = 0xD08D).
+- Also added to `event_day.rs`: RUMOR_HARVEST_FESTIVAL (55),
+  HARVEST_FESTIVAL_FRANKLIN (108), the
+  `sched::day_after_weekly` codec, the schedule rows (Tortimer
+  and Franklin at the same 4th-Thursday window, the Nov 11 →
+  day-after-1st-Sunday rumor, and the festival-day weather
+  override), and Franklin's full 12-entry present table IDs.
+
+C ABI (all `pc_`-prefixed, 8 exports): `pc_hv_npc0_next`,
+`pc_hv_npc0_msg`, `pc_hv_npc0_default_angle`,
+`pc_hv_npc0_make_tumbler`, `pc_hv_npc1_think`,
+`pc_hv_npc1_to_default`, `pc_hv_npc1_msg`, `pc_hv_layout_pos`.
+No C callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
