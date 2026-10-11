@@ -178,6 +178,7 @@ pub mod event {
     pub const RUMOR_HALLOWEEN: u16 = 48;
     pub const HALLOWEEN: u16 = 49;
     pub const FISHING_TOURNEY_2: u16 = 54;
+    pub const SNOWMAN_SEASON: u16 = 62;
     pub const RUMOR_FISHING_TOURNEY_2: u16 = 52;
     pub const TALK_FISHING_TOURNEY_2: u16 = 53;
     pub const SONCHO_FISHING_TOURNEY_2: u16 = 102;
@@ -262,7 +263,7 @@ pub struct ScheduleRow {
 pub mod schedule {
     use super::*;
 
-    pub const ROWS: [ScheduleRow; 32] = [
+    pub const ROWS: [ScheduleRow; 33] = [
         ScheduleRow { // Jan 1, 06:00-10:00
             begin: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 6 },
             end: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 10 },
@@ -477,6 +478,11 @@ pub mod schedule {
             begin: DateSpec { month: rtc::month::SEPTEMBER, day: 21, hour: 11 },
             end: DateSpec { month: rtc::month::SEPTEMBER, day: 23, hour: 12 },
             event: event::SPORTS_FAIR_FOOT_RACE,
+        },
+        ScheduleRow { // Snowman season: Dec 25 00:00 -> Feb 17 23:00
+            begin: DateSpec { month: rtc::month::DECEMBER, day: 25, hour: 0 },
+            end: DateSpec { month: rtc::month::FEBRUARY, day: 17, hour: 23 },
+            event: event::SNOWMAN_SEASON,
         },
     ];
 
@@ -710,7 +716,7 @@ mod tests {
 
     #[test]
     fn schedule_rows() {
-        assert_eq!(schedule::ROWS.len(), 32);
+        assert_eq!(schedule::ROWS.len(), 33);
         assert_eq!(schedule::ROW_COUNT, 134);
         let ny = &schedule::ROWS[0];
         assert_eq!((ny.begin.month, ny.begin.day, ny.begin.hour), (1, 1, 6));

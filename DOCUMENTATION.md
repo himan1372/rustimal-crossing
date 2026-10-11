@@ -4025,6 +4025,74 @@ C ABI (all `pc_`-prefixed, 22 exports):
 callers rewired yet, per the usual pattern. No test runs,
 per the standing rule.
 
+### Runtime Port Progress: Snowman Building
+
+New `rust/src/snowman.rs`, registered as `mod snowman` in
+`rust/src/lib.rs`. Decomp-verified against `m_snowman.c`,
+`ac_snowman.c`, `ac_psnowman.c`, `m_event_schedule.c_inc`,
+`ac_event_manager.c` (GAFE01_00 Rev 0 USA). All 12
+sections PROVEN with DIFFERS-level nuances (see below).
+
+Ported (pure kernels; actor lifecycle, collision
+ownership, the player-push demo calls, foreground
+placement, save-pointer access, date-growth integration,
+quest callbacks, dialogue/demo state, effects/audio, mail
+submission, RNG call order, and the event-manager birth
+orchestration stay in C):
+
+- The growth step (`aSMAN_calc_scale`): `attr ≤ 3` grows by
+  speed, otherwise shrinks at 75%; clamped to [0, 6400];
+  normalized = dist/6400; actor scale = normalized·0.02 +
+  0.01 capped at 0.03.
+- The proportion score from the ACTUAL actor scales (0.01
+  + 0.02·normalized — not the normalized values):
+  `|head/body − 0.85| ≤ 0.05/0.15/0.25` → PERFECT/GOOD/OK/
+  BAD, all boundaries inclusive.
+- The message arithmetic: completed-snowman `2209 +
+  ((msg_id + slot) % 3) + result·3`, assembly bases
+  {2197, 2200, 2203, 2206} + RANDOM(3) (sample in C).
+- The reward-index selection with exactly ONE re-roll (no
+  loop; samples and ownership check in C), the 12-item
+  table in source order (IDs computed from the X-macro
+  expansion — verify against the build before wiring),
+  and the mail base 0x202 + rnd.
+- The 4-byte record packing (exists, trunc(norm·255),
+  trunc(norm·255), score), the slot/sub-ID mapping
+  (`(id − 0xA008)/3`, `% 3`), the per-day melt step
+  (`trunc(0.8·size)` applied `days` times), the lifespan
+  check (winter && (sub_id + days) < 3), and the negative-
+  day normalization.
+- The push-gate predicate (normalized > 0.2, distance <
+  norm·20+25, timer saturating at 17 — not 16 — height gap
+  in (−10, 25), player moving, speed < 3, |angle| < 10012)
+  and the combine gate (different parts, both > 0.2, NOT
+  both stationary — the brief said "either").
+- The head selection (faster ball jumps; ties go to A).
+- Also added to `event_day.rs`: SNOWMAN_SEASON (62) with
+  the Dec 25 00:00 → Feb 17 23:00 row (plain range; ROWS
+  32→33).
+
+Deliberately NOT ported: the no-return function is
+`mSN_ClearSnowmanData`, not `mSN_ClearSnowman` (the brief
+mixed them up — documented); the registration gate
+(PART0 + COMBINED + HEAD_JUMP + nonzero fg_pos + !DELETE);
+the `move_dist` persistence through the event common area
+(accessor stays in C); the ball-part selection via the
+boolean-indexed `part_tbl`; the parabolic head-jump arc
+and landing rotation; the assembly dust effects; the
+`@BUG` NULL dereference in the foreground search.
+
+C ABI (all `pc_`-prefixed, 14 exports):
+`pc_snowman_scale_step`, `pc_snowman_score`,
+`pc_snowman_msg_no`, `pc_snowman_assembly_msg`,
+`pc_snowman_reward_index`, `pc_snowman_record_pack`,
+`pc_snowman_slot_from_id`, `pc_snowman_sub_id`,
+`pc_snowman_melt_step`, `pc_snowman_check_life`,
+`pc_snowman_melt_days`, `pc_snowman_push_ok`,
+`pc_snowman_combine_ok`, `pc_snowman_head_is_a`. No C
+callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
