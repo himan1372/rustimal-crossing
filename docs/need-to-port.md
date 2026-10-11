@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 167 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 168 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - 2026-10-11 (claude): marked birthdays, event NPC placement, holiday scenery, buildings & scenery,
   household radio, calendar overlay and the engine-level batch as ported.
@@ -110,9 +110,11 @@ effects, and event orchestration stay in C until differential tests pass. The ev
 - ✅ Sports fair ball toss: `ac_tamaire_npc0.c`, `ac_tamaire_npc1.c`, `ac_tama.c` → `tamaire.rs`
 - ✅ Field Day footrace: `ac_tokyoso_control.c`, `ac_tokyoso_npc0.c`, `ac_tokyoso_npc1.c` → `tokyoso.rs`
   (note: these files are the footrace, NOT summer festival stalls — the old label here was wrong)
-- Summer festival stalls (actual): `ac_yatai.c`, `ac_ev_yomise.c`
-  (the `ac_yatai.c` stall prop kernels are in `holiday_scenery.rs`; the `ac_ev_yomise.c` stall NPCs are still C)
-  (SP_NPC_EV_YOMISE, SP_NPC_EV_YOMISE2, FIREWORKS_STALL0, FIREWORKS_STALL1)
+- ✅ Summer festival stalls (actual): `ac_yatai.c`, `ac_ev_yomise.c` → `yomise.rs` (muse)
+  (stall *prop* kernels are in `holiday_scenery.rs`; the vendor purchase kernels — price/message table,
+  stock init, nonempty count, choice→stock resolution, page scan, next-action selection — are in `yomise.rs`;
+  SP_NPC_EV_YOMISE, SP_NPC_EV_YOMISE2, FIREWORKS_STALL0, FIREWORKS_STALL1;
+  save-area/RNG/inventory/Bells/demo/NPC-lifecycle/message/event-manager pieces stay in C)
 - ✅ April Fools: `ac_aprilfool_control.c` → `aprilfool.rs` (NPC→index table, message-ID table, per-player bitfields, talk-check/talk-set/get-message logic; actor lifecycle, event-manager activation, save-area allocation, and NPC talk state machines stay in C)
 - ✅ Birthdays: `m_birthday_ovl.c`, `ac_birth_control.c` → `birthday_ovl.rs`, `birth_control.rs` (claude)
 - ✅ Event NPC placement: `m_event_map_npc.c`, `ac_go_home_npc.c` → `event_map_npc.rs`, `go_home_npc.rs` (claude)
@@ -128,9 +130,13 @@ effects, and event orchestration stay in C until differential tests pass. The ev
 Small, bounded follow-ups identified during the 2026-10-11 event-port batch. Each is a
 candidate for a future pure-kernel port once its boundary is verified.
 
-- **Summer festival stalls (actual)** — the real stall behavior: `ac_yatai.c` (stall prop
-  actor), `ac_ev_yomise.c` (SP_NPC_EV_YOMISE, SP_NPC_EV_YOMISE2 stall NPCs),
-  FIREWORKS_STALL0/1. Talk scripts, inventory/item handoff, and scheduling not yet traced.
+- **Summer festival stalls (actual)** — vendor purchase kernels now in `yomise.rs`
+  (price/message table, 8-entry stock init from injected RNG kind, nonempty counting,
+  choice→stock resolution with the choice-3 sentinel, page scan with fallback literals,
+  next-talk-action selection; exact purchase side-effect order documented). Still in C:
+  talk scripts/message resources, inventory/Bells mutation, the mDemo_* handoff protocol,
+  NPC lifecycle, event scheduling/placement/manager callbacks, and the stall prop's
+  bg-offset/collision pieces.
 - **Ball-toss scoring** — `eEC_EFFECT_TAMAIRE` trajectory and basket collision after the
   throw effect; how baskets are counted and whether a numeric team score exists.
 - **Fishing record database** — persistent 5-slot DB insertion/recycling, the
@@ -345,16 +351,14 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 ## Suggested port order (opinionated)
 
 Philip asked "what's next" before — if he asks again, the high-value gameplay systems still in C are:
-1. **Summer festival stalls** — `ac_yatai.c` + `ac_ev_yomise.c` (stall *prop* kernels are in
-   `holiday_scenery.rs`; the `ac_ev_yomise.c` stall NPCs, talk scripts, and item handoff are still C)
-2. **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c`
+1. **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c`
    (the `ac_goza.c` mat is in `props.rs`)
-3. **Leftover event pieces** — ball-toss scoring, fishing record DB writes, footrace controller,
+2. **Leftover event pieces** — ball-toss scoring, fishing record DB writes, footrace controller,
    aerobics radio counter/group systems (see section above)
-4. **GBA Island** — needs link-cable hardware behavior; defer
+3. **GBA Island** — needs link-cable hardware behavior; defer
    (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
 
-Already done from the old list: Snowman ✅, April Fools ✅, Birthdays ✅, Passwords ✅, NES games ✅.
+Already done from the old list: Snowman ✅, April Fools ✅, Birthdays ✅, Passwords ✅, NES games ✅, Summer festival stalls ✅.
 
 - **Password follow-ups** — the stateful check-overlay pre-fill from
   `menu_info->data2` (not spaces); the POPULAR `hit_rate = 4` checksum-bit quirk;

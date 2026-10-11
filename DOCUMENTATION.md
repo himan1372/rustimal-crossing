@@ -5507,6 +5507,66 @@ C. Furniture and BGM ids were evaluated with gcc. `cargo check` is clean
 (host + i686, lib and tests), with no clippy findings in the new files.
 Tests are written but not run.
 
+### Runtime Port Progress: Fireworks stall vendor (yomise)
+
+New `rust/src/yomise.rs`, registered as `mod
+yomise` in `rust/src/lib.rs`. Decomp-verified
+against `ac_ev_yomise.c`,
+`ac_ev_yomise_move.c_inc`, and
+`include/ac_ev_yomise.h` (ACGC-PC-Port tree,
+GAFE01_00 Rev 0 USA base). 22/22 sections
+PROVEN, with corrections.
+
+The fireworks stalls are three connected
+systems: the stall prop actor (already in
+`holiday_scenery.rs`), the vendor NPC
+purchase state machine (this module — it had
+zero Rust equivalent), and the event
+scheduler/manager (stays in C).
+
+Ported (pure kernels; save-area
+reservation, RANDOM(), inventory/Bells
+mutation, the mDemo_* protocol,
+aNPC_DEMO_GIVE_ITEM, NPC lifecycle,
+placement/deletion, bg offsets, message
+resources, choice-window ops, and the
+event-manager callbacks stay in C):
+
+- Stock price/message table (780/680/480
+  Bells; 0x1758/0x1759/0x175A; 0x1757 when
+  empty).
+- Stock init from an injected RNG kind:
+  `goods[j] = base[kind] + j` over the three
+  8-contiguous families (0x2244/0x224C/
+  0x2254).
+- Nonempty-stock counting, choice-to-stock
+  index resolution (choice 3 is the
+  sentinel → -1), and the set_choise_data
+  page scan (max==3 fallback literals,
+  next-start return).
+- Next-talk-action selection
+  (TALK_END vs TALK_ADD_ACTION) and the
+  sentinel/page continuation messages
+  (0x1761/0x1762/0x1763/0x1767).
+
+Brief corrections: seven pule map
+variants (not three); 4 normal NPCs / 7
+variants / 7 total (not 5/1/8); block kind
+mRF_BLOCKKIND_POOL (not shrine).
+
+C ABI (all `pc_`-prefixed, 9 exports):
+`pc_yomise_stock_price`,
+`pc_yomise_opening_msg`,
+`pc_yomise_init_stock`,
+`pc_yomise_nonempty_count`,
+`pc_yomise_choice_to_stock`,
+`pc_yomise_next_after_purchase`,
+`pc_yomise_choice_scan`,
+`pc_yomise_sentinel_msg`,
+`pc_yomise_page_msg`. No C callers rewired
+yet, per the usual pattern. All 5 unit
+tests pass.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

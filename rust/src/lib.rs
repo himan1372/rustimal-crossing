@@ -136,6 +136,7 @@ mod notice_overlay;
 mod address_book;
 mod pause;
 mod choice;
+mod yomise;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
