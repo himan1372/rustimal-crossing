@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 131 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 133 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -184,6 +184,14 @@ candidate for a future pure-kernel port once its boundary is verified.
   first-introduction condition, `mNpc_CheckFreeAnimalInfo`, name conversion,
   the swap-and-restart villager sort); the `add_calc(0.7, 19.0, 1.8)` cursor
   easing; exit-door vs player-position selection in `mMP_set_init_data`.
+- **Diary follow-ups** — the card-load repair path (`mFRm_ReturnCheckSum`
+  gate) for a corrupt diary checksum; the `chase_f()` scroll easing and
+  distance-scaled speeds; the read→write scroll's quadratic `_28`
+  animation to exactly -100.0f; `mDI_Play_write`'s editor-state copy
+  (`_22 → _48`, `_24 → _46`) and `_18 = min(lines, _24)` clamp; the
+  `mDI_set_writing_body` end-of-text `i != 30` special case and
+  trailing-newline `line_len--` rules; the full 12-entry `month_tex_table`
+  texture references.
 - **Mushroom follow-ups** — the column-refill logic when `possible_cols` hits 0;
   the per-row candidate bitfields and the `mMsr_SetBlockMashroom` scan order
   (incl. the "bruh" early break); `lbRTC_IsOverTime` future-timestamp handling;
@@ -255,10 +263,13 @@ handbills, auto-post time) + `house_board.rs` (128-byte message line check)
 bridge substitution, layer conversion, house-pos match, building-label
 precedence, cursor selection/animation kernels). Interior is 5x6 = 30 acres.
 
-**Diary** — the player diary.
-`m_diary.c`, `m_diary_ovl.c`
+✅ **Diary** — the player diary.
+`m_diary.c`, `m_diary_ovl.c` → `diary.rs` (992-byte entries, backward
+length scan, space init, entry indexing, width-192 wrap scan,
+line-check state machine, scroll limits, input-repeat timing,
+month adjustments, confirmation branch).
 
-**Name editor** — the character-entry screen, including the NG-word filter (this is where 'phili' got rejected; fix options already offered to Philip).
+**Name editor** — the character-entry screen, including the NG-word filter (this is where 'phili' got rejected; fix options already offered to Philip). ✅ → `name_editor.rs`
 `m_editor_ovl.c`, `m_editEndChk_ovl.c`, `m_ledit_ovl.c`
 
 **Passwords** — secret codes (make/check).
@@ -324,7 +335,7 @@ Philip asked "what's next" before — if he asks again, the high-value gameplay 
 2. **Summer festival stalls** — `ac_yatai.c` + `ac_ev_yomise.c` (real stall behavior; the footrace files were a mislabel)
 3. **Groundhog Day / April Fools / Birthdays** — small bounded event sets
 4. **Leftover event pieces** — ball-toss scoring, fishing record DB, footrace controller (see section above)
-5. **Diary** — small UI overlay
+5. **Passwords** — secret codes (in progress)
 6. **NES games** — huge win if feasible, but the emulator core is the hard part
 7. **GBA Island** — needs link-cable hardware behavior; defer
 

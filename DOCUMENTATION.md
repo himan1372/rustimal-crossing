@@ -4789,6 +4789,90 @@ C ABI (all `pc_`-prefixed, 14 exports):
 callers rewired yet, per the usual pattern. No
 test runs, per the standing rule.
 
+### Runtime Port Progress: Diary
+
+New `rust/src/diary.rs`, registered as `mod
+diary` in `rust/src/lib.rs`. Decomp-verified
+against `m_diary.c`, `m_diary_ovl.c`,
+`include/m_diary.h`, and `include/m_card.h`
+(GAFE01_00 Rev 0 USA). 9/9 sections PROVEN.
+
+Key facts: entries are exactly 992 bytes of
+text with no date/player/checksum inside; the
+persistent container is `mCD_keep_diary_c`
+(`u16` checksum + `entries[4][12]`), 47,618
+bytes unpadded, `ALIGN_NEXT(..., 32)` = 47,648
+(0xBA20); the overlay selects
+`entries[data1][data3]` (player slot, month
+slot). Initialization is space-filled, not
+zero-filled (`bzero` then `mem_clear(...,
+CHAR_SPACE)`), because the editor measures
+text by trailing spaces.
+
+Ported (pure kernels; ARAM load/save, card
+serialization and checksums, `mFont_
+GetCodeWidth`, the shared editor and
+edit-end-check overlays, `chase_f()` easing,
+transitions, sounds, graphics, the static
+overlay object and its allocation, the
+calendar's open call, and controller polling
+stay in C):
+
+- `mDi_strlen`: the backward scan verbatim —
+  one-based position of the first byte
+  differing from `end_char`, 0 when all match,
+  never stopping at zero bytes.
+- `mDi_init_diary`: 992 bytes of `CHAR_SPACE`
+  (0x20).
+- Entry indexing: `2 + (player * 12 + month) *
+  992` byte offset within the diary structure.
+- `mDI_get_col_line_width`: the width-192 wrap
+  scan verbatim with the font-width lookup
+  injected — wrap on `width > 192` (strictly
+  greater), newline (205) consumed and tracked
+  separately, s16 counters, the 31→30 clamp
+  quirks (`cur_line_count = line_width + 1`).
+- `mDI_strLineCheck`: the 3/1/2/0 state
+  machine verbatim, including the
+  don't-advance-on-overflow rule.
+- Scroll limits: one-line ±1 within
+  `[0, line_count - 6]`; ten-line with the
+  strict `_18 - 10 > 0` test and clamping.
+- `mDI_Set_command_read`: the input-repeat
+  state machine as a pure step function —
+  fresh trigger sets delay 30 / repeat 26,
+  held input decrements and fires commands 2/3
+  (fast repeat `_30 = 3` when `_11 == 0`);
+  C-up/C-down edge triggers return commands
+  8/9.
+- The 12-entry month frame adjustment table
+  verbatim (0-based month: 0 = January, from
+  the calendar's `data3`).
+- The `mDI_move_Obey` confirmation branch:
+  `data1 == 0` writes the whole structure to
+  ARAM and opens the copy-warning overlay;
+  `data1 == 1` returns to editing with no
+  ARAM write.
+
+Brief nuances preserved: the `mDi_data_c`
+struct exists only as a comment in the decomp;
+`mCD_DIARY_SAVE_SIZE` (0xC000) is the card-
+file size, larger than the 0xBA20 structure;
+destruct frees through the static
+`diary_ovl_data.data`; the read→write scroll
+animates `_28` quadratically to exactly
+-100.0f.
+
+C ABI (all `pc_`-prefixed, 11 exports):
+`pc_di_strlen`, `pc_di_init_entry`,
+`pc_di_entry_offset`, `pc_di_wrap_scan`,
+`pc_di_line_check`, `pc_di_scroll_one`,
+`pc_di_scroll_ten`, `pc_di_repeat_step`,
+`pc_di_ten_line_cmd`, `pc_di_month_adjust`,
+`pc_di_confirm_branch`. No C callers rewired
+yet, per the usual pattern. No test runs, per
+the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
