@@ -109,6 +109,7 @@ mod countdown;
 mod halloween;
 mod fireworks;
 mod name_editor;
+mod groundhog;
 mod cherry_blossom;
 mod harvest;
 mod moon_viewing;

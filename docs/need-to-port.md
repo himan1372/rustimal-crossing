@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 168 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 169 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - 2026-10-11 (claude): marked birthdays, event NPC placement, holiday scenery, buildings & scenery,
   household radio, calendar overlay and the engine-level batch as ported.
@@ -101,8 +101,10 @@ effects, and event orchestration stay in C until differential tests pass. The ev
 - ✅ Cherry blossom festival: `ac_hanami_npc0.c`, `ac_hanami_npc1.c` → `cherry_blossom.rs`
 - ✅ Harvest Festival: `ac_harvest_npc0.c`, `ac_harvest_npc1.c` → `harvest.rs`
 - ✅ Moon viewing: `ac_tukimi.c`, `ac_tukimi_npc0.c`, `ac_tukimi_npc1.c` → `moon_viewing.rs`
-- Groundhog Day: `ac_groundhog_control.c`, `ac_groundhog_npc0.c`, `ac_goza.c`
-  (only the `ac_goza.c` mat prop is ported, in `props.rs`; the groundhog controller/NPC are still C)
+- ✅ Groundhog Day: `ac_groundhog_control.c`, `ac_groundhog_npc0.c` → `groundhog.rs`
+  (time terms, clock predicates, message-index math, animation timing, spawn gates,
+  event-manager return trees; the controller/NPC lifecycles stay in C; there is no
+  `props.rs` anywhere in the repo — the brief's goza-mat claim was unfounded)
 - ✅ First shrine visit: `ac_hatumode_control.c`, `ac_hatumode_npc0.c` → `hatsumode.rs`
 - ✅ Morning aerobics: `ac_taisou_npc0.c` → `taisou.rs`
 - ✅ Tug of war: `ac_tunahiki_control.c`, `ac_tunahiki_npc0.c`, `ac_tunahiki_npc1.c` → `tunahiki.rs`
@@ -195,7 +197,17 @@ candidate for a future pure-kernel port once its boundary is verified.
 - **Hatsumode open question** — `root_table`/`proc_idx_table` have 4 entries but 5 NPCs
   can spawn (possible retail out-of-bounds read at index 4); needs assembly-level
   confirmation before porting.
-- **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c` (not started; the `ac_goza.c` mat is ported in `props.rs`).
+- **Groundhog Day** — RESOLVED: pure controller/NPC kernels are in `groundhog.rs`
+  (time-term buckets, TIME_CHECK predicate, initial-action selection, message-index
+  computation with the term-decrement order, discrete frame-speed values, event-idx
+  tables, Tortimer's think tree, `groundhog_start`/`stop`/`in` return trees).
+  Still in C: controller lifecycle + scene/fade, common-area allocation, NPC clip,
+  the MAJIN actor + retire handshake, Tortimer's speech machine, BGM/camera, all
+  spawning, event-manager callbacks. Corrections: `RANDOM(3.0f)` ∈ {0,1,2} so the
+  frame speed takes only {0.4, 0.65, 0.9}; Tortimer's think DEFAULT is 4, not 0;
+  the NPC reads the term from the controller clip; `groundhog_in` re-creates the
+  controller when the common word == 1. The brief's `props.rs`/goza-mat premise
+  was unfounded — no such file exists in the repo.
 - ✅ **Birthdays** — `m_birthday_ovl.c`, `ac_birth_control.c` → `birthday_ovl.rs`, `birth_control.rs` (claude; April Fools control kernels are in `aprilfool.rs`).
 - ✅ **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` → `event_map_npc.rs`, `go_home_npc.rs` (claude).
 - **Bulletin-board follow-ups** — the complete automatic-post batch trigger and its
@@ -389,10 +401,10 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 ## Suggested port order (opinionated)
 
 Philip asked "what's next" before — if he asks again, the high-value gameplay systems still in C are:
-1. **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c`
-   (the `ac_goza.c` mat is in `props.rs`)
-2. **Leftover event pieces** — ball-toss scoring, fishing record DB writes, footrace controller,
-   aerobics radio counter/group systems (see section above)
+1. **Bulletin-board follow-ups** — the complete automatic-post batch trigger and its
+   scheduling (see section above)
+2. **Hatsumode open question** — `root_table`/`proc_idx_table` have 4 entries but 5 NPCs
+   (possible retail out-of-bounds read at index 4); needs assembly-level confirmation
 3. **GBA Island** — needs link-cable hardware behavior; defer
    (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
 

@@ -4191,6 +4191,53 @@ animation/effects, RNG, the BUGFIXES branch, and the double setupAction
 stay in C. All 5 module tests pass (run per Philip's 2026-10-11
 authorization).
 
+### Runtime Port Progress: Groundhog Day
+
+New `rust/src/groundhog.rs`, registered as `mod groundhog` in
+`rust/src/lib.rs`. Decomp-verified 16/16 against
+`src/actor/ac_groundhog_control.c`, `include/ac_groundhog_control.h`,
+`include/ac_groundhog_control_h.h`,
+`src/actor/npc/ac_groundhog_npc0.c`,
+`src/actor/npc/ac_groundhog_npc0_talk.c_inc`,
+`src/actor/npc/ac_groundhog_npc0_anime.c_inc`,
+`src/actor/npc/event/ac_ev_majin.c`,
+`src/actor/npc/event/ac_ev_speech_soncho_talk.c_inc`,
+`src/actor/ac_event_manager.c`, `src/game/m_event_schedule.c_inc`,
+and `src/game/m_event.c` (GAFE01_00 Rev 0 USA).
+
+Ported (pure kernels; the controller lifecycle, scene/fade
+transitions, common-area allocation, NPC clip, the MAJIN actor and its
+retire handshake, Tortimer's speech machine, BGM/camera calls, all
+actor spawning, and the event-manager callbacks stay in C):
+
+- `pc_ghc_now_term`: the descending time-term buckets (07:30/07:45/
+  07:55/07:59/08:00 → terms 1–5).
+- `pc_ghc_time_check`: the `aGHC_TIME_CHECK` clock threshold predicate.
+- `pc_ghc_initial_action`: ≥ 08:00 → AFTER_800; existing area with
+  `awaiting_birth` → BIRTH_RESET_WAIT; else BEFORE_800.
+- `pc_ghc_msg_no`: `msg_base[looks] + now_term*3 + RANDOM(3)` with the
+  term decremented FIRST when `now_term >= TERM_1_MIN`.
+- `pc_ghc_frame_speed`: `(rand3*0.5)/2.0 + 0.4` — only {0.4, 0.65,
+  0.9}, because `RANDOM(3.0f)` ∈ {0, 1, 2}.
+- `pc_ghc_event_idx`, `pc_ghc_wait_frame`, `pc_ghc_talk_allowed`
+  (talk disabled in the one-minute term).
+- `pc_ghc_soncho_think`: Tortimer's think tree — the DEFAULT is 4,
+  not 0; ≥ 08:00 with the common word == 1 → 2.
+- `pc_ghc_start` / `pc_ghc_stop` / `pc_ghc_in` /
+  `pc_ghc_in_recreate`: the event-manager return trees (including the
+  re-creation when the common word == 1).
+
+Corrections: the brief's "`ac_goza.c` mat is ported in `props.rs`"
+premise is unfounded — no `props.rs` exists anywhere in the repo;
+`RANDOM(n)` is `(int)RANDOM_F(n)`, so the animation speed is discrete,
+not continuous; the NPC reads the time term from the controller clip
+rather than computing it; the brief's open question is closed —
+MAJIN_DONE is set in `aEMJ_retire` on retire-animation stop and
+SONCHO_DONE in `aESS_force_talk_end_chk`. The MAJIN/NPC0 naming trap
+is documented: the controller spawns `Ev_Majin_Profile` (0xD081); the
+groundhog NPC (0xD088+) comes from the special-NPC scheduler. All 3
+module tests pass (run per Philip's 2026-10-11 authorization).
+
 ### Runtime Port Progress: Snowman Building
 
 New `rust/src/snowman.rs`, registered as `mod snowman` in
