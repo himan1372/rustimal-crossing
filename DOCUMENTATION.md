@@ -3068,6 +3068,54 @@ C ABI (all `pc_`-prefixed, 11 exports): `pc_ml_unpack`,
 callers rewired yet, per the usual pattern. No test runs, per the
 standing rule.
 
+### Runtime Port Progress: Museum Building & Exhibit Actors
+
+New `rust/src/museum_display.rs`, registered as `mod museum_display`
+in `rust/src/lib.rs`. Decomp-verified against
+`m_museum_display.h`, `m_museum_display.c`, `ac_museum_fossil.c`,
+`ac_museum_picture.c`, `ac_museum_fish.c`, `ac_museum_insect.c`,
+`ac_museum_indoor.c`, `ac_museum.c`, `m_name_table.h`,
+`m_room_type.h` (GAFE01_00 Rev 0 USA). All 12 brief claims checked;
+no behavioral corrections.
+
+Ported (pure state/table/mapping kernels; species simulation,
+rendering, camera, player rotation, and the save stay in C):
+
+- The 63-byte nibble-packed display record: even/odd nibble
+  read/write, bounds-checked queries, the donor predicates.
+- The fossil floor-placement table (25 entries) and the
+  donated-fossil item formula (`0x1EEC + (idx << 2) + (rotation &
+  3)`); the dummy items stay C-side symbols.
+- The fossil talk-position table (25 entries) — a SEPARATE table
+  from the floor placement; never derived from it.
+- The 15 artwork positions with the draw offsets and the DIFFERENT
+  talk-check offsets plus the 16-entry facing-direction gate.
+- The donor-sensitive talk messages (12191/12192/12193) and the
+  fish/insect continuation pair (12194/12195).
+- The fish tank centers, the aquarium light-power formula, the
+  five fish info stations with their resolved species-index lists,
+  and the six insect stations with their lists.
+- The station filtered-list construction (fixed ordering,
+  nonzero-donor filter).
+- The room wall alpha transitions (±24, clamped) and the
+  camera-state fade sets.
+- The exterior: entrance door data, exit rewrite values, the night
+  light expression (06:00 boundary — not the police station's
+  05:00), and the front-door check.
+
+Deliberately NOT ported: the species-specific fish/insect
+simulation, the skeleton animation, the point-light reservation
+lifecycle, the rendering and display lists, the camera API, the
+player-rotation checks, the shop-sales-adjacent assessment (owned
+by the sibling `museum` module), and the save mutations.
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_md_query`,
+`pc_md_bit_store`, `pc_md_talk_msg`, `pc_md_station_msg`,
+`pc_md_alpha_on`, `pc_md_alpha_off`, `pc_md_fade_out`,
+`pc_md_light_power`, `pc_md_museum_light_on`,
+`pc_md_fossil_display_item`. No C callers rewired yet, per the
+usual pattern. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

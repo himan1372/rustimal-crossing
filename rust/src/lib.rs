@@ -101,6 +101,7 @@ mod bank;
 mod catalog;
 mod design;
 mod melody;
+mod museum_display;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
