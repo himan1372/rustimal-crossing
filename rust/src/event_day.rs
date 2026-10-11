@@ -158,6 +158,7 @@ pub mod event {
     pub const NATURE_DAY: u16 = 21;
     pub const FATHERS_DAY: u16 = 26;
     pub const FISHING_TOURNEY_1: u16 = 29;
+    pub const RUMOR_FIREWORKS_SHOW: u16 = 31;
     pub const FIREWORKS_SHOW: u16 = 32;
     pub const MORNING_AEROBICS: u16 = 35;
     pub const METEOR_SHOWER: u16 = 37;
@@ -168,6 +169,7 @@ pub mod event {
     pub const HARVEST_FESTIVAL: u16 = 56;
     pub const TOY_DAY_JINGLE: u16 = 61;
     pub const NEW_YEARS_EVE_COUNTDOWN: u16 = 64;
+    pub const WEATHER_CLEAR: u16 = 116;
     pub const HANDBILL_BROKER: u16 = 72;
     pub const HANDBILL_SHOP_SALE: u16 = 73;
     pub const ARTIST: u16 = 74;
@@ -178,6 +180,7 @@ pub mod event {
     pub const CARPET_PEDDLER: u16 = 79;
     pub const SONCHO_NEW_YEARS_DAY: u16 = 80;
     pub const SONCHO_HALLOWEEN: u16 = 99;
+    pub const SONCHO_FIREWORKS_SHOW: u16 = 97;
     pub const SONCHO_HARVEST_FESTIVAL: u16 = 103;
     pub const SONCHO_BRIDGE_MAKE: u16 = 113;
 
@@ -270,6 +273,21 @@ pub mod schedule {
             begin: DateSpec { month: rtc::month::JUNE, day: sched::weekly_data(3, rtc::weekday::SUNDAY), hour: 0 },
             end: DateSpec { month: rtc::month::JUNE, day: sched::weekly_data(3, rtc::weekday::SUNDAY), hour: 23 },
             event: event::FATHERS_DAY,
+        },
+        ScheduleRow { // Jul 4, 19:00-20:00 (Tortimer fireworks)
+            begin: DateSpec { month: rtc::month::JULY, day: 4, hour: 19 },
+            end: DateSpec { month: rtc::month::JULY, day: 4, hour: 20 },
+            event: event::SONCHO_FIREWORKS_SHOW,
+        },
+        ScheduleRow { // Fireworks rumor: Jun 25 00:00 -> Jul 3 23:00
+            begin: DateSpec { month: rtc::month::JUNE, day: 25, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::JULY, day: 3, hour: 23 },
+            event: event::RUMOR_FIREWORKS_SHOW,
+        },
+        ScheduleRow { // Jul 4, 00:00-23:00 (weather override)
+            begin: DateSpec { month: rtc::month::JULY, day: 4, hour: 0 },
+            end: DateSpec { month: rtc::month::JULY, day: 4, hour: 23 },
+            event: event::WEATHER_CLEAR,
         },
         ScheduleRow { // Jul 4, 19:00-20:00
             begin: DateSpec { month: rtc::month::JULY, day: 4, hour: 19 },

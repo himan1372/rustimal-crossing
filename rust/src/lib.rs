@@ -107,6 +107,7 @@ mod house_interior;
 mod event_day;
 mod countdown;
 mod halloween;
+mod fireworks;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

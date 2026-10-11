@@ -3386,6 +3386,56 @@ C ABI (all `pc_`-prefixed, 5 exports): `pc_hwn_trick_candidates`,
 rewired yet, per the usual pattern. No test runs, per the
 standing rule.
 
+### Runtime Port Progress: Fireworks Show NPCs
+
+New `rust/src/fireworks.rs`, registered as `mod fireworks` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_hanabi_npc0.c`, `ac_hanabi_npc0_talk.c_inc`,
+`ac_hanabi_npc0_anime.c_inc`, `ac_hanabi_npc1.c`,
+`ac_hanabi_npc1_talk.c_inc`, `ac_hanabi_npc1_anime.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`,
+`ac_event_manager.c` (GAFE01_00 Rev 0 USA). All 13 brief claims
+PROVEN.
+
+Ported (pure kernels; the fan tool actor, the event-manager
+handlers, the talk state machine, and RNG calls stay in C):
+
+- NPC0: the 100.0f radius with home-angle projection, the
+  0.0f/319.0f block-edge offsets, the walk-end rule (ANY
+  collision flag, not just wall flags, or move_timer > 60),
+  the think selection with the attention-gated banzai
+  thresholds (0.05f / 0.3f) and the 135° turn test
+  (DEG2SHORT_ANGLE2(135.0f) = 24576), and the message bases
+  (base[looks] + RANDOM(3)).
+- NPC1: the def_angle[4][7] table converted via
+  DEG2SHORT_ANGLE into s16 units, the destination one
+  field-unit base size (40.0f) from home along the angle,
+  the action selection (no attention → fan; otherwise
+  `action[(cur == FAN ? 1 : 0) + (npc_idx & 1)]`), the loop
+  tables (base {0,1,3,3}, rnd {0.0,2.0,4.0,4.0}), the four
+  clap sounds, and the message arithmetic
+  (base[looks] + RANDOM(3) + npc_idx * 3).
+- The seven pool layouts with the seven actor slots (the
+  vendor and stall share coordinates in each layout,
+  preserved verbatim), the two rosters (layouts 2/4/7 use
+  YOMISE + FIREWORKS_STALL0, the rest use YOMISE2 +
+  FIREWORKS_STALL1), the five-NPC mask, and the pool block
+  kind.
+- The actor IDs: SP_NPC_EV_HANABI_0..4 = 0xD027–0xD02B,
+  SP_NPC_EV_YOMISE = 0xD02C, SP_NPC_EV_YOMISE2 = 0xD039.
+- Also added to `event_day.rs`: RUMOR_FIREWORKS_SHOW (31),
+  SONCHO_FIREWORKS_SHOW (97), and WEATHER_CLEAR (116) with
+  their schedule rows (July 4 19:00–20:00 Tortimer, June 25 →
+  July 3 23:00 rumor, July 4 00:00–23:00 weather override).
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_fw_npc0_next`,
+`pc_fw_npc0_out_of_range`, `pc_fw_npc0_project_radius`,
+`pc_fw_npc1_next`, `pc_fw_npc1_default_angle`,
+`pc_fw_npc1_dst_pos`, `pc_fw_layout_pos`,
+`pc_fw_layout_roster`, `pc_fw_npc0_msg`, `pc_fw_npc1_msg`. No
+C callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
