@@ -2222,6 +2222,47 @@ mask-NPC clothing fallback) needs actor pointers + save; the
 `aSNMgr` manager, `mNpc_GetSameEventNpc`/`mNpc_GetSameMaskNpc`
 record lookups, and all visitor scheduling stay in C.
 
+### Runtime Port Progress: Wisp the Ghost (ac_ev_ghost.c)
+
+New `rust/src/wisp.rs`, registered as `mod wisp` in `rust/src/lib.rs`.
+Decomp-verified against `ac_ev_ghost_talk.c_inc`,
+`ac_ev_ghost_schedule.c_inc`, `ac_ev_ghost.c`, `ac_event_manager.c`,
+`m_event.c`, `m_event.h`, `m_name_table.h`, `ac_ev_ghost.h`
+(GAFE01_00 Rev 0 USA). All 9 brief claims verified verbatim against the
+decomp before porting; the one correction is that the reschedule window
+is [today−7, today+4], not "previous Monday to upcoming Friday" (the
+variable names are reused from the Gulliver block).
+
+Ported (pure kernels; scheduler, event manager, actor lifecycle, spirit
+spawn overrides, RNG, inventory mutation, and reward selection stay
+in C):
+
+- Spirit items `ITM_SPIRIT0..4` = 0x2D28..0x2D2C (stack-encoding 1..5
+  spirits; they begin exactly where the exclusive-end insect range
+  stops). `ITEM_IS_WISP`, `WISP_COUNT` preserved.
+- `aEGH_hitodama_num`: weighted total `sum(count[i] * (i+1))` over the
+  five per-id inventory counts.
+- Weed-favor thresholds: strict `<50/<150/<450/<900` → 0x2EF1..0x2EF5.
+- Greeting: 0 → `0x2EE7 + RANDOM(5)` (roll stays in C, passed in);
+  1..4 → `0x2EEB + num`; >= 5 → 0x2EF0.
+- `aEGH_time_over`: strict `now_sec > 4 * 3600`.
+- Found alpha: 140 if found, 0 if hidden (`aEGH_actor_ct`).
+- Flags: `ACTIVE` 0x4000, `RETURNED_SPIRITS` 0x8000,
+  `COMMON_SPAWNED_SPIRITS` 0x8000, `SP_NPC_EV_GHOST` 0xD06F,
+  `MINIMUM_GRASS_COUNT` 8.
+
+C ABI (all `pc_`-prefixed): `pc_wisp_item_is_spirit`,
+`pc_wisp_stack_count`, `pc_wisp_spirit_count`, `pc_wisp_weed_msg`,
+`pc_wisp_greet_msg`, `pc_wisp_time_over`, `pc_wisp_found_alpha`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `init_weekly_event` date math + `RANDOM(3)`,
+`ghost_start` placement (`bx = 1+RANDOM(5)`, `bz = 2+RANDOM(4)`,
+uniqueness retry), the insect-spawn spirit override, `aEGH_not_collect_get`
+reward selection (22 collection lists + RNG), weed-clear/roof-paint
+side effects, and the handover choreography.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

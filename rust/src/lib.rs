@@ -84,6 +84,7 @@ mod species;
 mod uki;
 mod museum;
 mod visitors;
+mod wisp;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
