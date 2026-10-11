@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 124 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 125 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -146,6 +146,11 @@ candidate for a future pure-kernel port once its boundary is verified.
 - **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
   `ac_birth_control.c` (not started).
 - **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
+- **Gyroid follow-ups** — HANIWA_START/END numerics (verify against the build);
+  `FTR_NO_2_IDX` mapping for `mSP_RandomHaniwaSelect`; the `mHW_MSG_DOREWO`
+  interruption special case; `mAGrw_SetDigItem` running `mAGrw_SpoilKabu` over the
+  stored haniwa slots; inventory-transfer semantics (`m_tag_ovl`/`m_hand_ovl`/
+  `m_inventory_ovl`).
 - **Cockroach follow-ups** — the house-entry → infestation-update → actor-spawn →
   stomp/death → saved-count-update call chain (does stomping decrement the saved
   count?); `aMR_CLIP->check_danna_kill_proc()` implementation and registration;
@@ -184,8 +189,8 @@ candidate for a future pure-kernel port once its boundary is verified.
 ✅ **Cockroaches** — infestation when away, stomping. → `cockroach.rs`
 `m_cockroach.c`, `ac_house_goki.c` (growth/clamp, visible count, house index, stomp/proximity predicates, wait/move decision, jump-angle bug, timers/fades)
 
-**Gyroids** — digging them up, the gyroid household items.
-`m_haniwa_ovl.c`, `m_haniwaPortrait_ovl.c`, `ac_haniwa.c`
+✅ **Gyroids** — digging them up, the gyroid household items. → `haniwa.rs`
+`m_haniwa_ovl.c`, `m_haniwaPortrait_ovl.c`, `ac_haniwa.c`, `m_all_grow.c`, `m_all_grow_ovl.c` (item range, storage messages, house idx, bell bags, dialogue category, dig-direct predicate)
 
 **Insect actors** — the 14 individual bug actors (spawn *tables* are ported in `insect_tables.rs`/`species.rs`; the per-bug behavior actors are not).
 `ac_insect.c`, `ac_ins_amenbo.c`, `ac_ins_batta.c`, `ac_ins_chou.c`, `ac_ins_dango.c`, `ac_ins_goki.c`, `ac_ins_hitodama.c`, `ac_ins_hotaru.c`, `ac_ins_ka.c`, `ac_ins_kabuto.c`, `ac_ins_kera.c`, `ac_ins_mino.c`, `ac_ins_semi.c`, `ac_ins_tentou.c`, `ac_ins_tonbo.c`
