@@ -2351,6 +2351,49 @@ mask-cat events, `make_actor_in_seaside_block` placement,
 `mSP_SelectRandomItem_New` reward distribution (JONASON list),
 `mPr_SetFreePossessionItem`, and the boat-demo castaway path.
 
+### Runtime Port Progress: Kapp'n's Boat Ferry (ac_boat.c)
+
+New `rust/src/boat.rs`, registered as `mod boat` in `rust/src/lib.rs`.
+Decomp-verified against `ac_boat.c`, `ac_boat_move.c_inc`,
+`ac_boat_demo.c`, `ac_boat_demo_move.c_inc`, `ac_boat_demo.h`,
+`m_name_table.h`, `m_lib.h`, `types.h` (GAFE01_00 Rev 0 USA). All 10
+brief claims checked verbatim; only two precision nuances, no
+corrections: the rudder-step halving is `(s16)(step * 0.5f)` (float
+multiply-then-truncate), not `/ 2.0f`; and the vertical "reversal"
+sets the velocity *cap* (`max_velocity_y` ±0.1f) and re-rolls gravity,
+it does not flip the current velocity. Bonus find: a fourth song
+table the brief missed — `sing_dialogue_msg_base_no[4]`.
+
+Ported (pure data/kernels; the boat actor, demo controller, Kapp'n
+NPC, player demo requests, frame-driven handshakes, GBA transfer, and
+the island data transition all stay in C):
+
+- Fixed 8-point route table with the source's F/G/H-5 unit comments.
+- Direction data: `block_z == 6` → to-island; last-point {7, 0},
+  first-checkpoint {1, 6}; init angles 0xE000/0x6000;
+  checkpoint-advance rule (sign of dZ only, no distance threshold).
+- Song tables and message math: `player_pattern_table`,
+  first-part BGM/message tables, dialogue message base (bonus),
+  second-part BGM (0x70–0x79) and message base; repeat-rejection
+  acceptance test (the `do/while(TRUE)` rolls stay in C, passed per
+  roll); `last_song_*` init 0xFF.
+- Constants: `SP_NPC_SENDO` 0xD072, GBA loader 0xC83C / program
+  0x15244 (+4 on Aus), USA FRAMERATE identity values.
+
+C ABI (all `pc_`-prefixed): `pc_boat_to_island`,
+`pc_boat_should_advance_checkpoint`, `pc_boat_player_pattern`,
+`pc_boat_song_accepted`, `pc_boat_first_part_bgm`,
+`pc_boat_first_part_msg`, `pc_boat_dialogue_msg`,
+`pc_boat_second_part_bgm`, `pc_boat_second_part_msg`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: steering (frame-rate-accumulator-coupled),
+rocking/vertical motion, passenger attachment, the action state
+machines and handshakes, Kapp'n's talk state machine, the island
+environment transition, the GBA transfer routines, and the castaway
+cameo lifecycle.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

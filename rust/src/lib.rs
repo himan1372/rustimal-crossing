@@ -87,6 +87,7 @@ mod visitors;
 mod wisp;
 mod blanca;
 mod gulliver;
+mod boat;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
