@@ -3943,6 +3943,88 @@ C ABI (all `pc_`-prefixed, 17 exports):
 callers rewired yet, per the usual pattern. No test runs,
 per the standing rule.
 
+### Runtime Port Progress: Field Day Footrace (Tokyoso)
+
+New `rust/src/tokyoso.rs`, registered as `mod tokyoso` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_tokyoso_control.c`, `ac_tokyoso_clip.c_inc`,
+`ac_tokyoso_npc0.c`, `ac_tokyoso_npc0_schedule.c_inc`,
+`ac_tokyoso_npc0_talk.c_inc`, `ac_tokyoso_npc1.c`,
+`ac_tokyoso_npc1_schedule.c_inc`, `ac_tokyoso_npc1_talk.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`
+(GAFE01_00 Rev 0 USA). All 11 sections PROVEN with
+DIFFERS-level nuances (see below).
+
+Naming note: the request title said "summer festival
+stalls," but these files are the Field Day Footrace (the
+save area is keyed to mEv_EVENT_SPORTS_FAIR_FOOT_RACE; the
+map setup calls it fdd_tokyoso). They are ported as the
+footrace, not stalls. Real stall behavior lives under the
+Fireworks Show's YOMISE/FIREWORKS_STALL actors — a separate
+future commission.
+
+Ported (pure kernels; the controller state machine, the
+shared save area at slot 8, NPC clip/action requests,
+animation frame control, all RNG call order, the eEC
+effects, sounds, talk/demo, and the map placement stay in
+C):
+
+- The ID decomposition: index, raw team (0/1), raw role
+  (0/2, never normalized), and NPC1's birth role test with
+  the brief-missed −1 shift — `aTKC_NPCID2ROLE(npc_id − 1)`
+  makes TOKYOSO_0/3/4 spectators and TOKYOSO_1/2 runners.
+- The flag-bit shifts (delete/stretch/ready/kansen/goal)
+  from the verbatim `NPCIDX2*FLG` macros, including the
+  source-misspelled READYLFG.
+- The lap-crossing test (odd lap: angle < −4000; even:
+  angle > 4000), the goal decision (`lap > 8` with no goal
+  → WON if the other has none, else LOSE), the angular
+  target with C's truncating f32→s16 conversion, the run
+  speed (`(4 + dist/90) − idx·0.5`, −1 when ahead), and the
+  run destination — X = origin + dist·cos_s but Z = origin
+  − dist·sin_s (the brief said "cos/sin" without the sign).
+- The finish-line target with centered `(RANDOM_F(10) − 5)`
+  draws (samples in C), the retail run-check (`angle >
+  −1000 && angle < 4096` — the BUGFIXES variant differs),
+  the ahead test (laps first, then positive angle diff),
+  and the warmup destination math.
+- Dialogue: NPC0's literal bases {6621, 6637, 6605, 6653,
+  6669, 6685}, NPC1's 13-entry offsets
+  {14,2,14,4,6,8,8,10,10,12,12,12,12}, message = base +
+  offset + rand2 (RNG in C).
+- The 6-slot shrine layout (TOKYOSO_0..4 = 0xD02D–0xD031,
+  Tortimer), mask 0b0011111.
+- Also added to `event_day.rs`: the two verified footrace
+  windows (Mar 19 11:00 → Mar 21 12:00, Sep 21 11:00 → Sep
+  23 12:00; plain ranges; event 15 already existed; ROWS
+  30→32).
+
+Deliberately NOT ported: the `@BUG` double
+`setupAction(GO)` (documented; the C keeps it), the
+`aTKC_set` gate `(flags & READY_ALL) == 0` (mask EMPTY,
+not "incomplete"), the controller's `_00 == 3` move
+override, NPC0's destructor ASSIGNING `flags =
+DELETE_NPC0` (wipes other bits — not "fixed" to OR),
+NPC1's `_00 == 3` self-delete living in the move callback
+rather than the destructor, the `aTKC_FLAG_15` bit and the
+full `_01` semantics (unresolved), and the eEC effect
+trajectories.
+
+C ABI (all `pc_`-prefixed, 22 exports):
+`pc_tokyoso_npc_index`, `pc_tokyoso_team`,
+`pc_tokyoso_role`, `pc_tokyoso_birth_role`,
+`pc_tokyoso_delete_flag`, `pc_tokyoso_stretch_flag`,
+`pc_tokyoso_ready_flag`, `pc_tokyoso_kansen_flag`,
+`pc_tokyoso_goal_flag`, `pc_tokyoso_lap_advance`,
+`pc_tokyoso_goal_decision`, `pc_tokyoso_next_angle`,
+`pc_tokyoso_run_speed`, `pc_tokyoso_run_target`,
+`pc_tokyoso_finish_target`, `pc_tokyoso_run_check`,
+`pc_tokyoso_is_ahead`, `pc_tokyoso_warmup_target`,
+`pc_tokyoso_talk_msg`, `pc_tokyoso_npc0_msg_base`,
+`pc_tokyoso_npc1_msg_offset`, `pc_tokyoso_spawn_pos`. No C
+callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
