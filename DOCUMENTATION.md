@@ -2894,6 +2894,48 @@ Gaps / do-not-port: the save mutations, the bulk acre collection, the
 random generation, the display draw calls, the door transitions, and
 the item-name decoding.
 
+### Runtime Port Progress: ABD Bank
+
+New `rust/src/bank.rs`, registered as `mod bank` in
+`rust/src/lib.rs`. Decomp-verified against `m_bank_ovl.c`,
+`m_bank_ovl.h`, `m_private.h`, `m_mail.c`, `ac_npc_post_girl.c`,
+`ac_npc_post_girl.c_inc`, `save_check_NSW.c_inc` (GAFE01_00 Rev 0
+USA). All 13 brief claims checked; no behavioral corrections. Two
+brief imprecisions carried: the smallest place value is 1, not 10
+(keta table 100000/10000/1000/100/10/1, cursor 6 = OK); and
+`player_max_bell` is exactly
+`99999 + 30000 × (money bags of any denomination) + 30000 × (empty
+slots)`, valuing every existing bag at the largest bag size.
+
+Ported (pure amount-editing arithmetic; the wallet/bag inventory, the
+save writes, and the submenu input machine stay in C):
+
+- Cursor-to-place-value and the displayed cash change (ABS of the
+  proposed-minus-opening difference).
+- The deposit branch verbatim: cash clamp → bank-max clamp → zero
+  check (buzzer, return before the crossing check) → the
+  opening-cash crossing cap.
+- The withdrawal branch verbatim: bank clamp → capacity clamp →
+  zero check → the mirrored crossing cap.
+- Pelly's bank-account eligibility (native, loan == 0, house size ≥ 3,
+  not mid-renewal).
+- The four milestone tiers with the ascending first-eligible
+  selection and the per-player claimed flags.
+- The save-validation comparison, preserved literally (signed).
+
+Deliberately NOT ported: `mBN_bank_ovl_init`, `mBN_bank_ok` (the
+Bell-bag removal/upgrade/creation loops), the submenu input state
+machine, Pelly's dialogue, and the mail send. Confirmed: the overlay
+computes NO interest — `bank_account` is referenced only in the
+overlay, the milestone mail, Pelly's balance message, and save
+validation.
+
+C ABI (all `pc_`-prefixed, 7 exports): `pc_bn_deposit`,
+`pc_bn_withdraw`, `pc_bn_keta`, `pc_bn_bell_change`,
+`pc_bn_has_bank_account`, `pc_bn_milestone`,
+`pc_bn_deposit_save_error`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
