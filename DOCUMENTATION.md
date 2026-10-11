@@ -5203,6 +5203,33 @@ pass.
 
 ### Runtime Port Progress: Notice-board overlay & scheduler
 
+Batch-trigger follow-ups (2026-10-11): `mNtc_set_auto_nwrite_data` runs
+only when no title demo is active and the field is foreground, behind the
+nonzero `auto_nwrite_year` guard; the cursor/checkpoint update
+(`Common_Set` year/count/set/time, `Save_Set` saved time, `mFR_fishmail()`,
+treasure flag/time) happens AFTER the write-vs-treasure decision EVEN WHEN
+NO POSTS WERE WRITTEN — a Rust port must not move it inside the write
+branch. Handbill numbers: standard `0x1A4 + announcement_id`; fishing-day
+`0x242 + ((candidate.day / 7) & 3)` (day-of-month of the fishing-day
+candidate). Post timestamps stamp sec/min = 0, hour = 6, then
+year/month/day/weekday (`lbRTC_Week`). `mNtc_notice_write_num` counts the
+used prefix via field-wise `lbRTC_IsEqualTime(..., lbRTC_CHECK_ALL)` against
+the clear code — not a raw byte compare; `mNtc_notice_write` shifts all
+posts down one (oldest dropped) when the 15 slots are full, else writes the
+lowest unused slot; `mNtc_ClearPage` assigns the clear-code struct and fills
+the message with CHAR_SPACE. `sChk_board_save_check` fails the save on a bad
+post timestamp or any message byte equal to 127 (`CHAR_CONTROL_CODE`) or
+128 (`CHAR_MESSAGE_TAG`). House message (`homes[].haniwa.message`, 128
+bytes): NO save-time validator or normalizer exists anywhere in the tree —
+`save_check_take.c_inc` has only four validators and no `*save_data_check*`
+touches the field; the editor (`mED_TYPE_HBOARD`) constrains newly entered
+text only. Do not add a Rust-side sanitizer. Ported pure kernels (8 new
+exports): `pc_notice_monthday`, `pc_notice_handbill_no`,
+`pc_notice_fishing_handbill_no`, `pc_notice_write_num`,
+`pc_notice_write_slot`, `pc_notice_shift_posts`, `pc_notice_clear_page`,
+`pc_notice_font_char_bad`. C keeps: gating, RTC reads, Common/Save writes,
+ROM loading, mail delivery, treasure state, editor buffer ownership.
+
 New `rust/src/notice_overlay.rs`, registered as
 `mod notice_overlay` in `rust/src/lib.rs`.
 Decomp-verified against `m_notice_ovl.c`,

@@ -557,6 +557,147 @@ pub extern "C" fn pc_notice_treasure_pick(rng: f32) -> c_int {
 }
 
 #[cfg(test)]
+/// Bulletin-board batch-trigger, board-write, and save-check kernels
+/// (`m_notice.c`, `save_check_take.c_inc`).
+///
+/// Ported pure pieces: `mNtc_TO_MONTHDAY` date packing, the two handbill
+/// number formulas, the used-prefix scan (`mNtc_notice_write_num`), the
+/// overflow shift (`mNtc_notice_write`), `mNtc_ClearPage` semantics, and
+/// the save-check byte predicate. Stays in C: the batch-trigger gating
+/// (`mEv_CheckTitleDemo() == mEv_TITLEDEMO_NONE` and foreground field),
+/// RTC reads, all `Common_Set`/`Save_Set` checkpoint writes (which run
+/// AFTER the write decision even when nothing was posted), ROM handbill
+/// loading, `mFR_fishmail()` mail delivery, treasure state, and the
+/// editor's ownership of the house-message buffer.
+///
+/// House-message validation: NOTHING validates or normalizes
+/// `homes[].haniwa.message` at save time. `save_check_take.c_inc` has only
+/// four validators (board, weather, snowman, save-take) and no
+/// `*save_data_check*` touches the field anywhere in the tree. The editor
+/// constrains newly entered text (`mED_TYPE_HBOARD`), and `m_home.c`
+/// rebuilds the default from four ROM strings, but no universal save-time
+/// validator exists — do not add a Rust-side sanitizer for it.
+
+/// Standard announcement handbill base (`mNtc_set_auto_nwrite`): the real
+/// handbill is `0x1A4 + announcement_id`.
+pub const NOTICE_HANDBILL_BASE: i32 = 0x1A4;
+/// Fishing-day handbill base: the real handbill is
+/// `0x242 + ((fishing_day_candidate.day / 7) & 3)`. The day is the
+/// day-of-month of the fishing-day candidate ymd, not a post date.
+pub const NOTICE_FISHING_HANDBILL_BASE: i32 = 0x242;
+/// Auto-post timestamp hour (`mNtc_set_auto_nwrite`): sec/min are 0,
+/// hour is 6; year/month/day/weekday are populated per post.
+pub const NOTICE_POST_HOUR: i32 = 6;
+/// Board capacity (`mNtc_BOARD_POST_COUNT`).
+pub const NOTICE_BOARD_POST_COUNT: i32 = 15;
+/// Saved post stride in bytes (`mNtc_board_post_c` is 0xC8: 192-byte
+/// message at 0x00, 8-byte RTC time at 0xC0).
+pub const NOTICE_BOARD_POST_STRIDE: usize = 0xC8;
+/// Board message body length (`MAIL_BODY_LEN`).
+pub const NOTICE_MAIL_BODY_LEN: usize = 192;
+/// Rejected message bytes (`mFont_char_save_data_check`): control code
+/// and message tag.
+pub const NOTICE_FONT_CHAR_CONTROL_CODE: u8 = 127;
+pub const NOTICE_FONT_CHAR_MESSAGE_TAG: u8 = 128;
+/// House gyroid default message is rebuilt from this many ROM strings
+/// (`HANIWA_MSG_LINES` in `m_home.c`); no save-time validator exists for
+/// the 128-byte house message (see module docs).
+pub const HANIWA_MSG_LINE_COUNT: i32 = 4;
+
+/// `mNtc_TO_MONTHDAY(mo, day)`: packs month/day as `(month << 8) | day`.
+#[no_mangle]
+pub extern "C" fn pc_notice_monthday(month: c_int, day: c_int) -> c_int {
+    ((((month & 0xFF) << 8) | (day & 0xFF)) as u16) as c_int
+}
+
+/// Standard announcement handbill number: `0x1A4 + announcement_id`.
+#[no_mangle]
+pub extern "C" fn pc_notice_handbill_no(announcement_id: c_int) -> c_int {
+    NOTICE_HANDBILL_BASE + announcement_id
+}
+
+/// Fishing-day handbill number: `0x242 + ((post_day / 7) & 3)`, where
+/// `post_day` is the day-of-month of the fishing-day candidate.
+#[no_mangle]
+pub extern "C" fn pc_notice_fishing_handbill_no(post_day: c_int) -> c_int {
+    NOTICE_FISHING_HANDBILL_BASE + ((post_day / 7) & 3)
+}
+
+/// `mNtc_notice_write_num`: counts the used prefix of the board.
+/// `is_clear` points at 15 bytes, one per post, nonzero when that post's
+/// timestamp equals the RTC clear code (the C side computes each flag
+/// with `lbRTC_IsEqualTime(..., lbRTC_CHECK_ALL)`, not a raw byte
+/// compare). Returns the number of leading non-clear posts.
+#[no_mangle]
+pub extern "C" fn pc_notice_write_num(is_clear: *const u8) -> c_int {
+    if is_clear.is_null() {
+        return 0;
+    }
+    let flags = unsafe { std::slice::from_raw_parts(is_clear, NOTICE_BOARD_POST_COUNT as usize) };
+    let mut n = 0;
+    for &f in flags {
+        if f != 0 {
+            break;
+        }
+        n += 1;
+    }
+    n
+}
+
+/// `mNtc_notice_write` destination slot: the lowest unused slot, or the
+/// last slot (14) when the board is full — the C side then shifts posts
+/// down one (dropping the oldest) before writing there.
+#[no_mangle]
+pub extern "C" fn pc_notice_write_slot(write_num: c_int) -> c_int {
+    if write_num >= NOTICE_BOARD_POST_COUNT {
+        NOTICE_BOARD_POST_COUNT - 1
+    } else {
+        write_num
+    }
+}
+
+/// `mNtc_notice_write` overflow shift: moves posts 1..15 down to 0..14
+/// over a flat 15-entry board with stride 0xC8 (memmove semantics; the
+/// caller then writes the new post into slot 14).
+#[no_mangle]
+pub extern "C" fn pc_notice_shift_posts(board: *mut u8) {
+    if board.is_null() {
+        return;
+    }
+    unsafe {
+        let dst = board;
+        let src = board.add(NOTICE_BOARD_POST_STRIDE);
+        let n = NOTICE_BOARD_POST_STRIDE * (NOTICE_BOARD_POST_COUNT as usize - 1);
+        std::ptr::copy(src, dst, n);
+    }
+}
+
+/// `mNtc_ClearPage`: fills `message[..192]` with `CHAR_SPACE` and copies
+/// the 8-byte RTC clear code into `time_out`. (The C side assigns the
+/// clear-code struct; it does not zero the timestamp.)
+#[no_mangle]
+pub extern "C" fn pc_notice_clear_page(message: *mut u8, clear_time: *const u8, time_out: *mut u8) {
+    if !message.is_null() {
+        unsafe {
+            std::slice::from_raw_parts_mut(message, NOTICE_MAIL_BODY_LEN).fill(32);
+        }
+    }
+    if !clear_time.is_null() && !time_out.is_null() {
+        unsafe {
+            std::ptr::copy_nonoverlapping(clear_time, time_out, 8);
+        }
+    }
+}
+
+/// `mFont_char_save_data_check`: nonzero when a message byte is rejected
+/// (`CHAR_CONTROL_CODE` = 127 or `CHAR_MESSAGE_TAG` = 128). Used by
+/// `sChk_board_save_check` on each used board post's message bytes —
+/// bulletin-board posts only, not the house message.
+#[no_mangle]
+pub extern "C" fn pc_notice_font_char_bad(c: u8) -> c_int {
+    (c == NOTICE_FONT_CHAR_CONTROL_CODE || c == NOTICE_FONT_CHAR_MESSAGE_TAG) as c_int
+}
+
 mod tests {
     use super::*;
 
@@ -715,6 +856,58 @@ mod tests {
         // cursor Dec 30 -> latest entry Dec 28 (idx 40 in sorted order)
         pc_notice_near_old_cursor(dates.as_ptr(), 12, 30, 12, 6, &mut yo, &mut idx);
         assert_eq!((yo, idx), (0, 40));
+    }
+
+    #[test]
+    fn batch_trigger_kernels() {
+        // mNtc_TO_MONTHDAY: (month << 8) | day, masked to bytes.
+        assert_eq!(pc_notice_monthday(1, 1), 0x0101);
+        assert_eq!(pc_notice_monthday(12, 25), 0x0C19);
+        assert_eq!(pc_notice_monthday(0x1FF, 0x1FF), 0xFFFF);
+        // Standard handbill: 0x1A4 + id.
+        assert_eq!(pc_notice_handbill_no(0), 0x1A4);
+        assert_eq!(pc_notice_handbill_no(0x27), 0x1CB);
+        // Fishing handbill: 0x242 + ((day / 7) & 3).
+        assert_eq!(pc_notice_fishing_handbill_no(1), 0x242);
+        assert_eq!(pc_notice_fishing_handbill_no(7), 0x243);
+        assert_eq!(pc_notice_fishing_handbill_no(25), 0x245);
+        assert_eq!(pc_notice_fishing_handbill_no(30), 0x242);
+        // write_num: leading non-clear count.
+        let clear = [1u8; 15];
+        assert_eq!(pc_notice_write_num(clear.as_ptr()), 0);
+        let mut flags = [1u8; 15];
+        flags[0] = 0;
+        flags[1] = 0;
+        flags[2] = 0;
+        assert_eq!(pc_notice_write_num(flags.as_ptr()), 3);
+        let used = [0u8; 15];
+        assert_eq!(pc_notice_write_num(used.as_ptr()), 15);
+        // write_slot: lowest unused, or last slot when full.
+        assert_eq!(pc_notice_write_slot(0), 0);
+        assert_eq!(pc_notice_write_slot(14), 14);
+        assert_eq!(pc_notice_write_slot(15), 14);
+        // shift: posts 1..15 move down to 0..14.
+        let mut board = vec![0u8; 15 * NOTICE_BOARD_POST_STRIDE];
+        for i in 0..15 {
+            board[i * NOTICE_BOARD_POST_STRIDE] = i as u8;
+        }
+        pc_notice_shift_posts(board.as_mut_ptr());
+        for i in 0..14 {
+            assert_eq!(board[i * NOTICE_BOARD_POST_STRIDE], (i + 1) as u8);
+        }
+        // clear_page: message -> CHAR_SPACE, time <- clear code.
+        let mut msg = [0xFFu8; 192];
+        let clear_time = [9u8; 8];
+        let mut time_out = [0u8; 8];
+        pc_notice_clear_page(msg.as_mut_ptr(), clear_time.as_ptr(), time_out.as_mut_ptr());
+        assert!(msg.iter().all(|&b| b == 32));
+        assert_eq!(time_out, clear_time);
+        // font_char_bad: only 127 and 128 rejected.
+        assert_eq!(pc_notice_font_char_bad(127), 1);
+        assert_eq!(pc_notice_font_char_bad(128), 1);
+        assert_eq!(pc_notice_font_char_bad(32), 0);
+        assert_eq!(pc_notice_font_char_bad(0), 0);
+        assert_eq!(pc_notice_font_char_bad(205), 0);
     }
 
     #[test]

@@ -215,9 +215,20 @@ candidate for a future pure-kernel port once its boundary is verified.
   was unfounded — no such file exists in the repo.
 - ✅ **Birthdays** — `m_birthday_ovl.c`, `ac_birth_control.c` → `birthday_ovl.rs`, `birth_control.rs` (claude; April Fools control kernels are in `aprilfool.rs`).
 - ✅ **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` → `event_map_npc.rs`, `go_home_npc.rs` (claude).
-- **Bulletin-board follow-ups** — the complete automatic-post batch trigger and its
-  saved-time update; the 43-entry announcement date table and five-post batch
-  selection; whether other code validates or normalizes the house message.
+- **Bulletin-board follow-ups** — RESOLVED 2026-10-11: batch trigger gates on
+  title-demo-none + foreground field, then the nonzero auto_nwrite_year guard; the
+  cursor/checkpoint update runs AFTER the write decision EVEN WHEN NO POSTS WERE
+  WRITTEN (do not move it inside the write branch). `mNtc_TO_MONTHDAY` proven
+  verbatim; handbill formulas proven (standard `0x1A4 + id`, fishing-day
+  `0x242 + ((candidate.day / 7) & 3)`); post timestamp sec/min=0, hour=6 proven;
+  `mNtc_notice_write_num` uses field-wise `lbRTC_IsEqualTime(..., CHECK_ALL)`,
+  not a raw byte compare; `mNtc_notice_write` shifts posts down one when full;
+  `mNtc_ClearPage` assigns the clear-code struct and fills the message with
+  CHAR_SPACE; `sChk_board_save_check` rejects message bytes 127/128
+  (control code / message tag). House message: NO save-time validator or
+  normalizer exists anywhere in the tree (settled NOT FOUND) — editor
+  constrains new input only; do not add a Rust sanitizer. All pure kernels
+  ported into `notice_overlay.rs` (+8 exports).
 - **NES follow-ups** — the nesinfo tag-stream parser for all 19 titles; the
   `special_zelda()` BBRAM repair; exact acquisition conditions for every NES
   furniture item; the scene.rs FamicomEmu `cleanup_fn: None` wiring gap vs C's
@@ -406,8 +417,8 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 ## Suggested port order (opinionated)
 
 Philip asked "what's next" before — if he asks again, the high-value gameplay systems still in C are:
-1. **Bulletin-board follow-ups** — the complete automatic-post batch trigger and its
-   scheduling (see section above)
+1. **Bulletin-board follow-ups** — RESOLVED 2026-10-11 (batch trigger, board
+   writes, save-check, house-message validation all proven; pure kernels ported)
 2. **Hatsumode open question** — RESOLVED 2026-10-11 (retail OOB read at index 4 proven)
 3. **GBA Island** — needs link-cable hardware behavior; defer
    (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
