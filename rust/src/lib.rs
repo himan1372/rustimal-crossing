@@ -114,6 +114,7 @@ mod moon_viewing;
 mod hatsumode;
 mod tunahiki;
 mod taisou;
+mod fishing_tourney;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

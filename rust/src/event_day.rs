@@ -165,6 +165,9 @@ pub mod event {
     pub const NATURE_DAY: u16 = 21;
     pub const FATHERS_DAY: u16 = 26;
     pub const FISHING_TOURNEY_1: u16 = 29;
+    pub const RUMOR_FISHING_TOURNEY_1: u16 = 27;
+    pub const TALK_FISHING_TOURNEY_1: u16 = 28;
+    pub const SONCHO_FISHING_TOURNEY_1: u16 = 90;
     pub const RUMOR_FIREWORKS_SHOW: u16 = 31;
     pub const FIREWORKS_SHOW: u16 = 32;
     pub const RUMOR_MORNING_AEROBICS: u16 = 33;
@@ -175,6 +178,9 @@ pub mod event {
     pub const RUMOR_HALLOWEEN: u16 = 48;
     pub const HALLOWEEN: u16 = 49;
     pub const FISHING_TOURNEY_2: u16 = 54;
+    pub const RUMOR_FISHING_TOURNEY_2: u16 = 52;
+    pub const TALK_FISHING_TOURNEY_2: u16 = 53;
+    pub const SONCHO_FISHING_TOURNEY_2: u16 = 102;
     pub const RUMOR_HARVEST_FESTIVAL: u16 = 55;
     pub const HARVEST_FESTIVAL: u16 = 56;
     pub const TOY_DAY_JINGLE: u16 = 61;
@@ -256,7 +262,7 @@ pub struct ScheduleRow {
 pub mod schedule {
     use super::*;
 
-    pub const ROWS: [ScheduleRow; 20] = [
+    pub const ROWS: [ScheduleRow; 28] = [
         ScheduleRow { // Jan 1, 06:00-10:00
             begin: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 6 },
             end: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 10 },
@@ -411,6 +417,46 @@ pub mod schedule {
             begin: DateSpec { month: rtc::month::JULY, day: 26, hour: sched::MULTIDAY | 0 },
             end: DateSpec { month: rtc::month::AUGUST, day: 30, hour: 23 },
             event: event::TALK_MORNING_AEROBICS,
+        },
+        ScheduleRow { // Fishing Tourney 1: every Sunday of June, 06:00-17:00
+            begin: DateSpec { month: rtc::month::JUNE, day: sched::weekly_data(7, rtc::weekday::SUNDAY), hour: 6 },
+            end: DateSpec { month: rtc::month::JUNE, day: sched::weekly_data(7, rtc::weekday::SUNDAY), hour: 17 },
+            event: event::FISHING_TOURNEY_1,
+        },
+        ScheduleRow { // Fishing Tourney 1 (Tortimer): same window
+            begin: DateSpec { month: rtc::month::JUNE, day: sched::weekly_data(7, rtc::weekday::SUNDAY), hour: 6 },
+            end: DateSpec { month: rtc::month::JUNE, day: sched::weekly_data(7, rtc::weekday::SUNDAY), hour: 17 },
+            event: event::SONCHO_FISHING_TOURNEY_1,
+        },
+        ScheduleRow { // Fishing Tourney 1 rumor: May 15 00:00 -> May 31 23:00
+            begin: DateSpec { month: rtc::month::MAY, day: 15, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::MAY, day: 31, hour: 23 },
+            event: event::RUMOR_FISHING_TOURNEY_1,
+        },
+        ScheduleRow { // Fishing Tourney 1 talk: Jun 1 00:00 -> last Sunday of June
+            begin: DateSpec { month: rtc::month::JUNE, day: 1, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::JUNE, day: sched::weekly_data(6, rtc::weekday::SUNDAY), hour: 0 },
+            event: event::TALK_FISHING_TOURNEY_1,
+        },
+        ScheduleRow { // Fishing Tourney 2: every Sunday of November, 06:00-17:00
+            begin: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(7, rtc::weekday::SUNDAY), hour: 6 },
+            end: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(7, rtc::weekday::SUNDAY), hour: 17 },
+            event: event::FISHING_TOURNEY_2,
+        },
+        ScheduleRow { // Fishing Tourney 2 (Tortimer): same window
+            begin: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(7, rtc::weekday::SUNDAY), hour: 6 },
+            end: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(7, rtc::weekday::SUNDAY), hour: 17 },
+            event: event::SONCHO_FISHING_TOURNEY_2,
+        },
+        ScheduleRow { // Fishing Tourney 2 rumor: Oct 15 00:00 -> Oct 31 23:00
+            begin: DateSpec { month: rtc::month::OCTOBER, day: 15, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::OCTOBER, day: 31, hour: 23 },
+            event: event::RUMOR_FISHING_TOURNEY_2,
+        },
+        ScheduleRow { // Fishing Tourney 2 talk: Nov 1 00:00 -> last Sunday of November
+            begin: DateSpec { month: rtc::month::NOVEMBER, day: 1, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::NOVEMBER, day: sched::weekly_data(6, rtc::weekday::SUNDAY), hour: 0 },
+            event: event::TALK_FISHING_TOURNEY_2,
         },
     ];
 
@@ -644,7 +690,7 @@ mod tests {
 
     #[test]
     fn schedule_rows() {
-        assert_eq!(schedule::ROWS.len(), 20);
+        assert_eq!(schedule::ROWS.len(), 28);
         assert_eq!(schedule::ROW_COUNT, 134);
         let ny = &schedule::ROWS[0];
         assert_eq!((ny.begin.month, ny.begin.day, ny.begin.hour), (1, 1, 6));

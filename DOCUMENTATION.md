@@ -3802,6 +3802,74 @@ C ABI (all `pc_`-prefixed, 18 exports):
 rewired yet, per the usual pattern. No test runs, per the
 standing rule.
 
+### Runtime Port Progress: Fishing Tourney (Turi)
+
+New `rust/src/fishing_tourney.rs`, registered as
+`mod fishing_tourney` in `rust/src/lib.rs`. Decomp-verified
+against `ac_turi.c`, `ac_turi_npc0.c`,
+`ac_turi_npc0_move.c_inc`, `ac_turi_npc0_anime.c_inc`,
+`ac_ev_angler.c`, `ac_ev_angler_move.c_inc`,
+`ac_turi_clip.c_inc`, `m_fishrecord.c`, `m_event_schedule.c_inc`,
+`m_event_map_npc_data.c_inc`, `ac_event_manager.c`
+(GAFE01_00 Rev 0 USA). All 7 sections PROVEN with one
+DIFFERS-level correction: the stand's self-deletion test is
+`ABS(block diff) > 1` in either axis, NOT `!=` — adjacent
+blocks do NOT delete the stand (same pattern as the
+Hatsumode brief fix).
+
+Ported (pure kernels; the structure-actor framework, actor
+lifecycle, NPC clip/schedule/demo/talk, the rod tool-actor,
+the save/common areas, the record database
+insertion/recycling, mail, and the event-manager pool
+orchestration stay in C):
+
+- The fish-size formulas: `pc_fish_size_from_rank` with f32
+  arithmetic and truncation — LARGE `(50+20·rng²)/2.54`,
+  MEDIUM `(30+20·rng)/2.54`, SMALL `(30−20·rng²)/2.54` — plus
+  the hour-driven rank branch (`<9` → fixed small, `<15` →
+  C draws RANDOM(2), else C draws RANDOM(3)).
+- The strict record comparison (`current < submitted` — ties
+  do not beat), the host's time gate (`hour < 6 ||
+  hour >= 18`), the measurement rank (FISH07 → large, FISH06
+  → medium, else small), the item classification (FISH05–07
+  → bass), and the 40-entry fish→message-number table with
+  its two out-of-order entries (FISH16 → 0x110C, FISH33 →
+  0x2FAF) copied verbatim.
+- The stand variant (`npc_id − 0x5838`), the corrected
+  block-deletion rule, the 5×7 participant facing-angle table
+  (degrees converted with C's wrapping `(s16)` semantics, so
+  180° yields −32768), the participant dialogue
+  (`base + rand3 + idx*3` with the six 0x1F0A-based bases),
+  the looks-based animation frame speeds, the entry bit
+  (`1 << player_no`), and the clothing/furniture reward
+  branch.
+- Also added to `event_day.rs`: RUMOR/TALK/SONCHO consts for
+  both tournaments (27/28/90 and 52/53/102) and all eight
+  schedule rows — every Sunday of June/November 06:00–17:00
+  via `weekly_data(7, SUNDAY)`, the May/October rumor rows,
+  and the June/November talk rows ending on the last Sunday
+  (`weekly_data(6, SUNDAY)`). ROWS 20→28.
+
+Deliberately NOT ported: all RNG call order (including the
+extra apparently-unused fqrand() in `mEv_fishRecord_local`
+and the RANDOM-before-fqrand order in `mFR_make_NpcRecord`),
+PersonalID handling, the five-slot record database, mail,
+the stand's 3×3 background-offset tables (structure-actor
+territory), the 7 pool layouts (event-manager territory),
+and the host's save-area lifecycle (including its
+NULL-check-free teardown).
+
+C ABI (all `pc_`-prefixed, 15 exports):
+`pc_fish_size_from_rank`, `pc_fish_npc_rank_branch`,
+`pc_fish_record_beaten`, `pc_fish_time_open`,
+`pc_fish_measure_rank`, `pc_angler_item_type`,
+`pc_angler_fish_msgno`, `pc_fish_entry_bit`,
+`pc_fish_reward_is_cloth`, `pc_turi_stand_variant`,
+`pc_turi_should_delete`, `pc_turi_npc_index`,
+`pc_turi_def_angle`, `pc_turi_msg_no`,
+`pc_turi_frame_speed`. No C callers rewired yet, per the
+usual pattern. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
