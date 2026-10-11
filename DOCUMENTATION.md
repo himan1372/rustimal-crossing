@@ -2122,8 +2122,9 @@ writes, and RTC/common-data calls stay in C):
 - Verified no-op: `mTD_player_keydata_init`'s tool filter assigns every
   branch back to itself, so the header tool id passes through unchanged.
 
-C ABI: `mTD_demono_get`, `mTD_get_titledemo_no`,
-`mTD_tdemo_button_ok_check` (stateful, Mutex-guarded),
+C ABI: `pc_title_demono_get`, `pc_title_get_titledemo_no`,
+`pc_title_tdemo_button_ok_check` (stateful, Mutex-guarded; pc_-prefixed
+so they don't collide with `m_titledemo.c` while it's still compiled),
 `pc_titledemo_decode_keydata`, `pc_titledemo_advance_frame`.
 `cargo check --lib` clean (only the crate-standard "never used"
 warnings); no C callers rewired yet, per the usual pattern. No test
