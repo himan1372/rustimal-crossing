@@ -4152,6 +4152,70 @@ C ABI (all `pc_`-prefixed, 8 exports):
 No C callers rewired yet, per the usual pattern. No test
 runs, per the standing rule.
 
+### Runtime Port Progress: Mushrooms
+
+New `rust/src/mushroom.rs`, registered as `mod mushroom`
+in `rust/src/lib.rs`. Decomp-verified against
+`m_mushroom.c`, `m_mushroom.h`,
+`m_event_schedule.c_inc`, `m_name_table.h` (GAFE01_00 Rev
+0 USA). 16/16 sections PROVEN with DIFFERS-level nuances
+(see below).
+
+Ported (pure kernels; save-pointer access, the foreground
+grid and deposit data, the `mFI_*` queries, RTC access,
+all `fqrand()` call order, `mFI_SetFGUpData()`, and the
+`lbRTC_*` time helpers stay in C):
+
+- The target count (`mMsr_GetMushroomNum`): hour 8 →
+  `5 − min/15`, hour 9 with min < 15 → 1, otherwise 0,
+  gated on `active || saved date != today`.
+- The time conversions: `Rtc2MushTime` (quarter =
+  `min/15`, does not touch `active`) and `Mushtime2Rtc`
+  (min = quarter × 15, sec = 0), the quarter-hour
+  rounding table {45, 30, 15, 0} (rounds DOWN despite
+  the source comment), and the all-zero timestamp check
+  (the two init paths — previous day vs current time —
+  stay in C).
+- Tree eligibility (the 14 accepted ids), the five
+  placement offsets {-1, 1, 15, 16, 17}, the boundary
+  `ut_x < 15 && ut_z < 15`, and the hierarchical index
+  selection (`(fqrand() * count)` as i32, sample in C).
+- The two player exclusions as SEPARATE kernels:
+  placement excludes the whole X column AND Z row
+  (`bx != pbx − 1 && bz != pbz − 1`), cleanup excludes
+  only the single player acre.
+- Cleanup eligibility (mushroom item AND not buried),
+  the clear-all decision (strict `total < clear_num`),
+  and the `mMsr_SetShareNum` distribution verbatim: the
+  deterministic spread phase, plus one random-
+  allocation step per call with the sampled block index
+  supplied by C.
+- Also added to `event_day.rs`: MUSHROOM_SEASON (48)
+  with the Oct 15 00:00 → Oct 25 23:00 row (plain range;
+  ROWS 34→35).
+
+Deliberately NOT ported: there is NO mushroom furniture
+mechanism — `m_mushroom.c` only ever writes
+ITM_FOOD_MUSHROOM, no mushroom-series furniture ids
+exist in the decomp, and the mother's mail uses the
+mushroom as a food present, not furniture. The pickup
+path needs no furniture branch from this system. Also
+not ported: the startup cleanup's (0, 0) player acre, its
+lack of an event-status check, the column-refill logic,
+and the per-row candidate bitfields.
+
+C ABI (all `pc_`-prefixed, 14 exports):
+`pc_mushroom_target_count`, `pc_mushroom_rtc_to_time`,
+`pc_mushroom_time_to_rtc`, `pc_mushroom_round_quarter`,
+`pc_mushroom_is_zero_time`, `pc_mushroom_tree_eligible`,
+`pc_mushroom_boundary_ok`, `pc_mushroom_select_index`,
+`pc_mushroom_placement_excluded`,
+`pc_mushroom_cleanup_excluded`, `pc_mushroom_clearable`,
+`pc_mushroom_clear_all`, `pc_mushroom_share_spread`,
+`pc_mushroom_share_random_step`. No C
+callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

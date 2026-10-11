@@ -119,6 +119,7 @@ mod tamaire;
 mod tokyoso;
 mod snowman;
 mod kamakura;
+mod mushroom;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
