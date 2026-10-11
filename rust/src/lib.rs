@@ -95,6 +95,7 @@ mod majin;
 mod post_office;
 mod police;
 mod event_visitors;
+mod stalk_market;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

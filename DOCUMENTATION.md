@@ -2792,6 +2792,63 @@ mutations, the item-generation item tables, the tent actor's
 merchandise code, the message formatting, and the event-controller
 checks.
 
+### Runtime Port Progress: Stalk Market (Turnips)
+
+New `rust/src/stalk_market.rs`, registered as `mod stalk_market` in
+`rust/src/lib.rs`. Decomp-verified against `m_kabu_manager.c`,
+`ac_ev_kabuPeddler_move.c_inc`, `ac_npc_shop_common.c`,
+`m_all_grow_ovl.c`, `ac_event_manager.c` (GAFE01_00 Rev 0 USA). All 13
+brief claims checked verbatim; no corrections. Nuances carried: trend
+B has an EXTRA probability clamp the brief missed — after the ×0.3
+drop, `price_decrease_percent` is clamped to ≤ 0.1 (fires whenever the
+pre-drop chance exceeded 1/3); the trend-B minimum comparison is
+literally `>` (not `<`) — do not "fix" it; trend C keeps
+`0.14999998f` verbatim; the `Kabu_manager()` week window is
+bidirectional (±1 week); the typeB decomp comment has a typo
+(`//0.1f` labeled `(20%)`) but the behavior is residual 20%. Bonus
+resolutions: the spoilage timing the brief called unresolved is partly
+answered in code — `mAGrw_CheckSpoilKabuTime` spoils when the coming
+Sunday is overdue, inventory/house/haniwa turnips ARE converted via
+`mAGrw_SpoilAllPossession` (the unconditional null-`grow_info` path),
+and `mAGrw_ZuruSpoilKabu` is the anti-time-travel path.
+
+Ported as a deterministic differential harness (every kernel takes the
+roll results as inputs; nothing rolls):
+
+- The Sunday price formula (`1.0 + (r − 0.5) × 0.6`, ×100, truncated
+  to u16 → 70–129).
+- Trend selection with the single-draw subtract-select and the
+  previous-trend tables.
+- Trend A: the ×8.0 spike and the Mon–Fri spike day.
+- Trend B: the full six-day state machine with the exact operation
+  order, the literal `>` minimum comparison, and the probability
+  clamp.
+- Trend C: the chained factor with the verbatim constant.
+- Joan: purchase/sale tables, transaction totals, sale messages,
+  greetings, identity D007, the turnip item IDs.
+- Nook: the quest → spoiled → Sunday → ordinary branch order and
+  the payout formula.
+- Spoilage: the spoil decision (flag vs unconditional null path) and
+  the coming-Sunday weekday offset.
+
+Constants: weekdays, trends A/B/C, the 0x18-byte save layout, the
+turnip IDs (ITM_KABU_START 0x2F00), price bounds 10/2000.
+
+C ABI (all `pc_`-prefixed, 14 exports): `pc_kabu_sunday_price`,
+`pc_kabu_next_trend`, `pc_kabu_spike_price`, `pc_kabu_spike_day`,
+`pc_kabu_trend_b_init`, `pc_kabu_trend_b_min_price`,
+`pc_kabu_trend_b_step`, `pc_kabu_trend_c_factor`,
+`pc_kabu_joan_total`, `pc_kabu_joan_sale_msg`,
+`pc_kabu_nook_payout`, `pc_kabu_nook_turnip_branch`,
+`pc_kabu_spoil_kabu`, `pc_kabu_spoil_weekday_offset`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the schedule generation driver, the date-window
+logic, Joan's actor and transaction, Nook's shop transaction, the
+field-growth spoilage passes, the event-manager callbacks, and the
+RNG.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
