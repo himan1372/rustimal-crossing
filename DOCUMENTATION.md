@@ -2448,6 +2448,63 @@ state, Porter's think table, the intro-demo choreography, and the
 SCENE_START_DEMO3 Rover/Blanca selection (covered by the Blanca
 module's travel-scene kernels).
 
+### Runtime Port Progress: Tortimer the Mayor (ac_ev_soncho.c)
+
+New `rust/src/tortimer.rs`, registered as `mod tortimer` in
+`rust/src/lib.rs`. Decomp-verified against `m_event.c`,
+`ac_event_manager.c`, `ac_ev_soncho.c`, `ac_ev_soncho_talk.c_inc`,
+`ac_ev_soncho2.c`, `ac_ev_soncho2_think.c_inc`,
+`ac_ev_speech_soncho_talk.c_inc`, `m_name_table.h`, `m_event.h`,
+`m_kankyo.h`, `ac_groundhog_control.h` (GAFE01_00 Rev 0 USA). 10 of 11
+brief claims checked verbatim; 1 headline correction — the brief
+assigned the bridge dialogue backwards: the FIRST conversation shows
+the time-of-day greeting, SUBSEQUENT conversations show the proposal
+0x2F3E (the talk-info callback checks the first-talk bit while
+`aESC_talk_init` sets it, the same pattern as Blanca's mask-cat
+actor). The decline path was backwards too: first-conversation
+declines play the rotating follow-up, later declines use the
+secondary dialogue. A port following the brief would show the
+proposal on the wrong conversation. Other nuances: the villager gate
+is `>= ANIMAL_NUM_MAX` (15), not `==`; the `1<<7` high bit is the top
+bit of the 7-bit `locations_used` field; the speech actor has a
+Groundhog Day pre-branch before the weather switch; the brief's event
+list omitted `mEv_EVENT_SONCHO_METEOR_SHOWER`. The `// Tortimer`
+comment in `m_npc.c` proves the English name.
+
+Ported (pure data/kernels; the three actor paths, calendar/event
+scheduler, bridge candidate generation, bridge acceptance writes,
+NPC state machines, dialogue, and save mutations all stay in C):
+
+- Six identities (EV_SONCHO D06E, EV_SONCHO2 D074, D078, D079,
+  SONCHO D07F, EV_SPEECH_SONCHO D087) with shared metadata; kept
+  separate — profiles and callers differ.
+- Bridge weekday gate (Saturday, or non-Sunday with a stale weekly
+  date); candidate index `remain = (spots-1) - used`; final-candidate
+  high-bit rule.
+- Time-of-day greeting with verbatim hour boundaries; initial-message
+  and decline-path selection with the CORRECTED first/repeat
+  semantics; pending message `0x2F44 + roll` (roll in C); follow-up
+  rotation `0x2F47`/`0x2F39 + msg_no` with wrap at 5.
+- Speech message: Groundhog pre-branch, then clear/snow/other weather
+  branches off `mString_SPEECH_SONCHO_START` 0x3DB5 (rolls in C);
+  forced-speech base.
+- Constants: ANIMAL_NUM_MAX 15, tug-of-war timer 0x12C,
+  FIRST_TALK_BIT 5.
+
+C ABI (all `pc_`-prefixed): `pc_tortimer_bridge_day_eligible`,
+`pc_tortimer_bridge_remain`, `pc_tortimer_time_talk_msg`,
+`pc_tortimer_initial_msg`, `pc_tortimer_pending_msg`,
+`pc_tortimer_followup_msg`, `pc_tortimer_next_followup_msg`,
+`pc_tortimer_speech_msg`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `mSC_get_soncho_event()` date rules,
+`mSC_trophy_item()` mappings, event-day spawn locations,
+`river_stream`/`bridge_stand_river` geometry, the full
+`mEv_EVENT_BRIDGE_MAKE` construction lifecycle, and the Groundhog
+Day control clip.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
