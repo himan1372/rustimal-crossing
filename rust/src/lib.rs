@@ -135,6 +135,7 @@ mod password;
 mod notice_overlay;
 mod address_book;
 mod pause;
+mod choice;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

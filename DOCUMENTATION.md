@@ -5169,6 +5169,63 @@ C ABI: `pc_pause_init`, `pc_pause_proc`. No C
 callers rewired yet, per the usual pattern.
 All 7 unit tests pass.
 
+### Runtime Port Progress: Selection/choice UI
+
+New `rust/src/choice.rs`, registered as `mod
+choice` in `rust/src/lib.rs`. Decomp-verified
+against `m_choice.c` (+ its `.c_inc` state
+files), `m_msg_cursol.c_inc`, `m_select.c`,
+and their headers (ACGC-PC-Port tree,
+GAFE01_00 Rev 0 USA base). 14/14 sections
+PROVEN, with corrections.
+
+Key distinction: `m_choice.c` is the shared
+dialogue/prompt widget; `m_select.c`
+("FOREST MAP SELECT") is a separate debug
+scene launcher, not the generic list UI. Only
+its index wraparound is ported.
+
+Ported (pure kernels; message-window
+embedding, font widths, ROM/ARAM loading,
+control-code substitution, the `mMsg`
+dispatch, sounds, graphics, easing, and all
+of `m_select.c`'s scene launching stay in C):
+
+- Option admission (`Set`/`Add_choice_data`):
+  non-null, 0 < len <= 16, free slot;
+  trailing-space effective length; exactly
+  `len` bytes copied with no row clearing.
+- Cursor step with verbatim clamping (no
+  wrap; empty list yields -1).
+- The 5-state auto-repeat machine with float
+  dt (18.0 wait, 9.0 repeat), fresh-direction
+  immediate move, release reset, and cursor-
+  sound suppression on clamping.
+- B-flag rules (`no_b_flag` enables the
+  B-to-last-option shortcut) and close-path
+  selection (confirm vs short/long zoom-down
+  + `NO_ZOOMDOWN` flag).
+- Determination commit (16-byte copy +
+  recorded length + confirmed index; cursor
+  and result stay separate fields).
+- Debug-selector wraparound.
+
+Brief corrections: constructor sets
+`choice_num = 6` (zero reset only in the Set
+path); D-pad Up/Down also drive the cursor;
+repeat uses dt accumulation; appear/
+disappear animate via dt to 10.2f.
+
+C ABI (all `pc_`-prefixed, 8 exports):
+`pc_choice_begin`, `pc_choice_add_option`,
+`pc_choice_cursor_step`,
+`pc_choice_repeat_step`,
+`pc_choice_b_shortcut`,
+`pc_choice_determination`,
+`pc_choice_close_kind`, `pc_select_wrap`. No
+C callers rewired yet, per the usual pattern.
+All 6 unit tests pass.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
