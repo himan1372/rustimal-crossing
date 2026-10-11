@@ -3870,6 +3870,34 @@ C ABI (all `pc_`-prefixed, 15 exports):
 `pc_turi_frame_speed`. No C callers rewired yet, per the
 usual pattern. No test runs, per the standing rule.
 
+#### Addendum 2026-10-11 (muse): Chip's host kernels
+
+Extended `rust/src/fishing_tourney.rs` with the
+`ac_ev_angler.c` host kernels, decomp-verified 16/16.
+The two event structs are separate stores and stay
+separate: `aEANG_event_data_c` (size, pID, pos[2] s16,
+talk_flag, flag) in the save area (ID 0) vs
+`aEANG_event_common_c` (foreigner) in the common area
+(ID 13).
+
+New `pc_`-prefixed exports (7): `pc_angler_talk_init_action`
+(the three-way tree — time-over → END_WAIT, entered →
+SAY_TURETA, first eligible → END_WAIT + record entry; the
+first eligible talk ends instead of proceeding),
+`pc_angler_initial_msg` (0x10EE/0x10EF/0x10E8),
+`pc_angler_entry_check` (foreigner reads the common byte,
+locals test their `talk_flag` bit), `pc_angler_entry_set`
+(`talk_flag |= bit`), `pc_angler_save_pos` (C
+float→int truncation toward zero, then s16 narrowing; Y
+never saved), `pc_angler_tourney_event` (June → 29, else
+54), plus the 10 talk-action enum constants and the
+event/area-ID constants. Area allocation/zeroing/lifetime,
+NPC lifecycle, demo/talk, inventory/Bells, RNG, and
+message resources stay in C. Corrections: bass = three
+items (FISH05/06/07 — FISH05 measures SMALL); the
+`flag` field has zero references anywhere. All 8 module
+tests pass (run per Philip's 2026-10-11 authorization).
+
 ### Runtime Port Progress: Sports Fair Ball Toss (Tamaire)
 
 New `rust/src/tamaire.rs`, registered as `mod tamaire` in

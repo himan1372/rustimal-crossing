@@ -280,6 +280,115 @@ pub extern "C" fn pc_turi_frame_speed(looks: i32) -> f32 {
     }
 }
 
+
+/// Chip's talk actions (`ac_ev_angler.c` talk enum, in order).
+pub const ANGLER_TALK_END_WAIT: i32 = 0;
+pub const ANGLER_TALK_MENU_OPEN_WAIT: i32 = 1;
+pub const ANGLER_TALK_MENU_CLOSE_WAIT: i32 = 2;
+pub const ANGLER_TALK_MSG_WIN_OPEN_WAIT: i32 = 3;
+pub const ANGLER_TALK_SAY_TURETA: i32 = 4;
+pub const ANGLER_TALK_DEMO_GIVE_ME: i32 = 5;
+pub const ANGLER_TALK_DEMO_HENKYAKU: i32 = 6;
+pub const ANGLER_TALK_DEMO_HOUBI: i32 = 7;
+pub const ANGLER_TALK_MSG_TO_MENU: i32 = 8;
+pub const ANGLER_TALK_DEMO_MEASURE: i32 = 9;
+/// Chip's initial messages (`aEANG_set_talk_info`).
+pub const ANGLER_MSG_FIRST: i32 = 0x10E8;
+pub const ANGLER_MSG_TIMEOVER: i32 = 0x10EE;
+pub const ANGLER_MSG_ENTERED: i32 = 0x10EF;
+/// Fishing-tourney event IDs (`m_event.h`).
+pub const ANGLER_EVENT_TOURNEY_1: i32 = 29;
+pub const ANGLER_EVENT_TOURNEY_2: i32 = 54;
+/// Event-area IDs used by the host.
+pub const ANGLER_SAVE_AREA_ID: i32 = 0;
+pub const ANGLER_COMMON_AREA_ID: i32 = 13;
+
+/// `aEANG_talk_init` decision tree (`ac_ev_angler_move.c_inc`):
+/// time over → END_WAIT; already entered → SAY_TURETA; first
+/// eligible → END_WAIT *and* record entry (sets `*call_entry_on`
+/// to 1). The first eligible talk ends instead of proceeding to
+/// the submission flow. Returns the talk action.
+#[no_mangle]
+pub extern "C" fn pc_angler_talk_init_action(
+    time_over: i32,
+    entered: i32,
+    call_entry_on: *mut i32,
+) -> i32 {
+    let entry = if time_over != 0 {
+        ANGLER_TALK_END_WAIT
+    } else if entered != 0 {
+        ANGLER_TALK_SAY_TURETA
+    } else {
+        ANGLER_TALK_END_WAIT
+    };
+    unsafe {
+        if !call_entry_on.is_null() {
+            *call_entry_on = (time_over == 0 && entered == 0) as i32;
+        }
+    }
+    entry
+}
+
+/// `aEANG_set_talk_info` initial message: 0x10EE when time is
+/// over, 0x10EF when the player already entered, 0x10E8 on the
+/// first eligible talk. Chosen before talk init resolves.
+#[no_mangle]
+pub extern "C" fn pc_angler_initial_msg(time_over: i32, entered: i32) -> i32 {
+    if time_over != 0 {
+        ANGLER_MSG_TIMEOVER
+    } else if entered != 0 {
+        ANGLER_MSG_ENTERED
+    } else {
+        ANGLER_MSG_FIRST
+    }
+}
+
+/// `entry_check` (`ac_ev_angler_move.c_inc`): the foreign visitor
+/// reads the common-area `foreigner` byte; local players test
+/// their bit in the save area's `talk_flag`. Returns nonzero
+/// when entered.
+#[no_mangle]
+pub extern "C" fn pc_angler_entry_check(
+    is_foreigner: i32,
+    talk_flag: u8,
+    entry_bit: u8,
+    foreigner_flag: u8,
+) -> i32 {
+    if is_foreigner != 0 {
+        (foreigner_flag != 0) as i32
+    } else {
+        (talk_flag & entry_bit != 0) as i32
+    }
+}
+
+/// `entry_on` for a local player: `talk_flag |= b`
+/// (`pc_fish_entry_bit` computes `b = 1 << player_no`).
+#[no_mangle]
+pub extern "C" fn pc_angler_entry_set(talk_flag: u8, entry_bit: u8) -> u8 {
+    talk_flag | entry_bit
+}
+
+/// Chip's position persistence (`fish_save_area_dt`):
+/// `save_p->pos[i] = (int)world.position` — C float-to-int
+/// truncation toward zero, then s16 narrowing. Y is never saved.
+/// (Rust `as` saturates on overflow where C is UB; game world
+/// coordinates are far inside i16 range, so both truncate.)
+#[no_mangle]
+pub extern "C" fn pc_angler_save_pos(world_coord: f32) -> i16 {
+    (world_coord as i32) as i16
+}
+
+/// June-vs-fall event selection in the host's get/ct/dt helpers:
+/// June → FISHING_TOURNEY_1, any other month → _2.
+#[no_mangle]
+pub extern "C" fn pc_angler_tourney_event(is_june: i32) -> i32 {
+    if is_june != 0 {
+        ANGLER_EVENT_TOURNEY_1
+    } else {
+        ANGLER_EVENT_TOURNEY_2
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +487,36 @@ mod tests {
         assert_eq!(pc_fish_entry_bit(3), 0x08);
         assert!(pc_fish_reward_is_cloth(0.6));
         assert!(!pc_fish_reward_is_cloth(0.5));
+    }
+
+    #[test]
+    fn angler_host() {
+        let mut e = 0;
+        // time over -> END_WAIT, no entry
+        assert_eq!(pc_angler_talk_init_action(1, 0, &mut e), ANGLER_TALK_END_WAIT);
+        assert_eq!(e, 0);
+        // entered -> SAY_TURETA, no entry
+        assert_eq!(pc_angler_talk_init_action(0, 1, &mut e), ANGLER_TALK_SAY_TURETA);
+        assert_eq!(e, 0);
+        // first eligible -> END_WAIT + record entry
+        assert_eq!(pc_angler_talk_init_action(0, 0, &mut e), ANGLER_TALK_END_WAIT);
+        assert_eq!(e, 1);
+        // initial messages
+        assert_eq!(pc_angler_initial_msg(1, 0), 0x10EE);
+        assert_eq!(pc_angler_initial_msg(0, 1), 0x10EF);
+        assert_eq!(pc_angler_initial_msg(0, 0), 0x10E8);
+        // entry check: foreigner reads the common byte
+        assert_eq!(pc_angler_entry_check(1, 0x00, 0x01, 1), 1);
+        assert_eq!(pc_angler_entry_check(1, 0x00, 0x01, 0), 0);
+        // locals test their talk_flag bit
+        assert_eq!(pc_angler_entry_check(0, 0x04, 0x04, 0), 1);
+        assert_eq!(pc_angler_entry_check(0, 0x02, 0x04, 0), 0);
+        assert_eq!(pc_angler_entry_set(0x02, 0x04), 0x06);
+        // position: truncation toward zero, then s16
+        assert_eq!(pc_angler_save_pos(123.9), 123);
+        assert_eq!(pc_angler_save_pos(-45.7), -45);
+        // June vs fall
+        assert_eq!(pc_angler_tourney_event(1), 29);
+        assert_eq!(pc_angler_tourney_event(0), 54);
     }
 }

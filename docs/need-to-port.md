@@ -147,8 +147,13 @@ candidate for a future pure-kernel port once its boundary is verified.
   `mEv_fishRecord_local` NPC simulation, `mFR_fishmail` prize mail (the pure record
   kernels are in `fishrecord.rs`; the stateful DB writes, RTC scheduling, and reward
   mail stay in C). RNG order (including the extra unused `fqrand()`) must be preserved.
-- **Fishing tourney host & save areas** — `ac_ev_angler.c` talk flow, entry flags, the
-  `aEANG_event_data_c` / `aEANG_event_common_c` ownership, Chip's position persistence.
+- **Fishing tourney host & save areas** — RESOLVED: Chip's host kernels are now in
+  `fishing_tourney.rs` (talk-init tree, initial messages, entry check/set with the
+  foreigner-vs-local split, float→int→s16 position conversion, June-vs-fall event
+  selection, 10 talk-action constants). Still in C: area allocation/zeroing/lifetime,
+  NPC lifecycle, demo/talk framework, inventory/Bells mutation, RNG, message resources.
+  Open: the `flag` field's purpose (zero references); the area-clearing lifecycle
+  (generic 5-slot recycling only).
 - **Tug-of-war rope actor & orchestration** — rope prop actor (offset kernel now in `props.rs`), NPC clip, the
   `fdtug_start`/`fdtug_stop`/`fdtug_in` event-manager handlers.
 - **Morning aerobics radio & group systems** — radio counter (`sAdos_GetRadioCounter`),
