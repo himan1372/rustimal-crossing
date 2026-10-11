@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 126 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 127 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -146,6 +146,10 @@ candidate for a future pure-kernel port once its boundary is verified.
 - **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
   `ac_birth_control.c` (not started).
 - **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
+- **Fish follow-ups** — the full test/kaseki state machines and their complete transition
+  tables; exact UKI_ACTOR status synchronization around the catch animation
+  (`aGTT_comeback`/`aGKK_comeback`); the species-indexed `aGYO_hosei_y[]` and
+  animation-pattern tables; `aGYO_overlay_entry_c` (0x1C08) model tables.
 - **Insect follow-ups** — per-family transition tables for the 14 behavior programs;
   exact net-hit/inventory handoff; per-family work-slot and flag semantics;
   how the Rust spawn tables pass type/position/release metadata into the C controller;
@@ -201,8 +205,9 @@ candidate for a future pure-kernel port once its boundary is verified.
 controller kernels: 41-type program dispatch, catch range, stress band, patience,
 fade/alpha, despawn predicate, shadow sizes; the 14 family state machines stay in C)
 
-**Fish actors** — shadows, release behavior (the *float* is ported in `uki.rs`; these are the fish themselves).
-`ac_gyo_kage.c`, `ac_gyoei.c`, `ac_gyo_release.c`
+✅ **Fish actors** — shadows, release behavior. → `fish_actor.rs` (gyoei controller
+kernels: size/search/bite tables, behavior dispatch, release math, kage alpha/ripple,
+flee predicate; test/kaseki state machines stay in C)
 
 **Fish & bug records** — the encyclopedia/collection tracking.
 `m_fishrecord.c`
