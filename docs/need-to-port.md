@@ -143,10 +143,16 @@ candidate for a future pure-kernel port once its boundary is verified.
   (launch velocity, ground-outcome classifier, DUMMY_TURI attraction expiry, `powf(0.5f,dt)`
   bounce damping, 0x155 loud-bounce gate, basket variant). Sounds, RNG, trig tables,
   ground queries, and the effect lifecycle stay in C.
-- **Fishing record database** — persistent 5-slot DB insertion/recycling, the
-  `mEv_fishRecord_local` NPC simulation, `mFR_fishmail` prize mail (the pure record
-  kernels are in `fishrecord.rs`; the stateful DB writes, RTC scheduling, and reward
-  mail stay in C). RNG order (including the extra unused `fqrand()`) must be preserved.
+- **Fishing record database** — RESOLVED: pure record kernels are in `fishrecord.rs`
+  (formulas, class selection, strict winner compare, discarded-draw passthrough,
+  sim loop continue/step-count/hour, sort-swap decision, oldest-date recycle,
+  first-fit free slot, same-date search, mail-template index, save-validation
+  predicate, NPC land-name bytes). Still in C: 5-slot insert/cleanup/recycle
+  against save storage, `mEv_fishRecord_local` orchestration, holder1/2
+  (slot-zero behavior), `last_holder`, `mFR_fishmail`, mail construction/delivery
+  with delete-on-success, the notice-scheduler call site. Verified 12/13; one
+  DIFFERS correction: the sort is OLDEST-first (not newest-first), which explains
+  the slot-zero winner anomaly. Future: `mEv_fishday` contest-date arithmetic.
 - **Fishing tourney host & save areas** — RESOLVED: Chip's host kernels are now in
   `fishing_tourney.rs` (talk-init tree, initial messages, entry check/set with the
   foreigner-vs-local split, float→int→s16 position conversion, June-vs-fall event

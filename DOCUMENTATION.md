@@ -3898,6 +3898,51 @@ items (FISH05/06/07 — FISH05 measures SMALL); the
 `flag` field has zero references anywhere. All 8 module
 tests pass (run per Philip's 2026-10-11 authorization).
 
+### Runtime Port Progress: Fishing-Contest Record Database (Fishrecord)
+
+`rust/src/fishrecord.rs` (lapis's module, registered as `mod fishrecord` in
+`rust/src/lib.rs` by muse 2026-10-11 — the registration was missing), extended
+2026-10-11 with the pure record/simulation/table kernels. Decomp-verified
+12/13 against `src/game/m_fishrecord.c`, `include/m_fishrecord.h`,
+`src/actor/npc/event/ac_turi_clip.c_inc`, `src/game/m_notice.c`, and
+`src/save_check_NSW.c_inc` (GAFE01_00 Rev 0 USA); one DIFFERS correction: the
+brief claimed the sort puts newer records first — the code is an ascending
+selection sort, so the OLDEST records end up at index 0, which explains
+`holder1`'s slot-zero winner read.
+
+Ported (pure kernels; the 5-slot save-storage writes, the `local` orchestration,
+`holder1/2`, `last_holder`, the fishmail pipeline, mail construction/delivery,
+and the notice-scheduler call site stay in C):
+
+- `pc_fr_npc_beats_player`: strict `best > player` — a tie does not beat.
+- `pc_fr_discarded_draw`: identity passthrough pinning the discarded
+  `fqrand(); /* unused call to fqrand..? */` (m_fishrecord.c:163) — the caller
+  must draw once before the timestamp copy; the value feeds nothing.
+- `pc_fr_sim_continue` / `pc_fr_sim_step_count` / `pc_fr_sim_hour`: the
+  half-hour candidate loop runs while the cursor is strictly before 17:50:00
+  (`lbRTC_IsOverTime` is called with inverted args); 06:00 yields 24 candidates
+  (06:00 through 17:30); the caller's timestamp is forced to 18:00:00
+  unconditionally afterwards.
+- `pc_fr_date_after`, `pc_fr_sort_swap`: the sort-swap decision with the
+  redundant `records[j].size == 0` arm documented as a verbatim quirk.
+- `pc_fr_recycle_index`: oldest-dated slot, strict-OVER replacement (slot 0
+  wins ties).
+- `pc_fr_free_slot`: first-fit free slot, -1 when full.
+- `pc_fr_find_same_date`: exact y/m/d search, first index, else -1.
+- `pc_fr_mail_template`: `0x23E + (((day - 1) / 7) & 3)` — wraps every 4 weeks.
+- `pc_fr_save_valid`: negative sizes fail; nonzero + invalid date fails.
+- Constants: `NPC_LAND_NAME` = `{0x98, 0xA6, 0x8F, 0xA1, 0x20}` (untranslated
+  JP クニッチ — do not transliterate), sim endpoints, mail template base,
+  deep-sea paper 15.
+
+Proven stateful facts kept in C: the slot-zero anomaly
+(`Save_GetPointer(fishRecord[0])` on player win), the `&record->time` → 18:00
+mutation even on NPC loss, the delete-on-success-only mail delivery (home
+mailbox → post office → retain), the possession-dependent reward selection,
+the genuinely misspelled `mMl_TYPE_FISHING_CONTENST`, and the
+`mNtc_set_auto_nwrite_data` (m_notice.c:790) scheduling. All 5 module tests
+pass (run per Philip's 2026-10-11 authorization).
+
 ### Runtime Port Progress: Sports Fair Ball Toss (Tamaire)
 
 New `rust/src/tamaire.rs`, registered as `mod tamaire` in
