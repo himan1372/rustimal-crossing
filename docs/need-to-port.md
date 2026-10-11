@@ -1,0 +1,228 @@
+# Need to Port — Animal Crossing GameCube Rust Rewrite
+
+**Status as of 2026-10-11**
+
+- **Ported to Rust:** 92 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Still in C:** everything below — grouped into game systems with plain-English names.
+
+A "system" here means a chunk of gameplay Philip would recognize. Filenames are
+the decomp sources (`src/game/`, `src/actor/`, `src/actor/npc/`) that implement it.
+
+Legend: ✅ = ported (Rust module named). Entries without ✅ still need porting.
+
+---
+
+## Special visitors (characters who aren't villagers)
+
+✅ **Wisp the ghost** — appears at night, grants wishes. → `wisp.rs`
+`ac_npc_majin.c`, `ac_npc_majin2.c`, `ac_npc_majin3.c`, `ac_npc_majin4.c`, `ac_npc_majin5.c`
+
+✅ **Blanca the faceless cat** — draws a face on her, she returns wearing it. → `blanca.rs`
+`ac_npc_mask_cat.c`, `ac_npc_mask_cat2.c`
+
+✅ **Gulliver the seagull** — washes up on the beach, wake him for furniture. → `gulliver.rs`
+(Event flags exist in `m_event.h`; his actor/beach logic is ported.)
+
+✅ **Kapp'n's boat** — the boat ride to the island (songs, island trips). → `boat.rs`
+`ac_boat.c`, `ac_boat_demo.c`
+
+✅ **Train arrival/departure** — Rover intro, Porter at the station, train scenes. → `train.rs`
+`m_train_control.c`, `ac_train0.c`, `ac_train1.c`, `ac_train_door.c`, `ac_train_window.c`, `ac_station.c`, `ac_npc_station_master.c`, `ac_npc_depart_master.c`, `ac_npc_depart_master_anime.c`, `ac_depart.c`, `ac_shasho.c`
+
+✅ **Tortimer the mayor** — event-day speeches and gifts. → `tortimer.rs`
+`m_soncho.c`, `ac_npc_soncho.c`
+
+✅ **K.K. Slider** — Saturday night concerts, song requests, airchecks. → `totakeke.rs`
+`ac_npc_totakeke.c`, `m_music_ovl.c`, `ac_radio.c`
+
+✅ **Mr. Resetti** — the reset lecture. → `majin.rs`
+`ac_reset_demo.c`
+
+✅ **Post office clerks** — Pelly/Phyllis/Pete counter interactions. → `post_office.rs`
+`ac_npc_post_girl.c`, `ac_npc_post_man.c`, `ac_post_office.c`
+
+✅ **Police officers** — Copper/Booker at the police station. → `police.rs`
+`ac_npc_police.c`, `ac_npc_police2.c`
+
+✅ **Fortune teller, wallpaper sellers, fashionista** — Katrina, Saharah, Wendell, Gracie, Redd tent events. → `event_visitors.rs`
+(The actors use Japanese identifiers; they were traced and ported.)
+
+---
+
+## Shops & services
+
+✅ **Stalk market (turnips)** — Joan's Sunday turnip sales, Nook's daily prices, spoilage. → `stalk_market.rs`
+`m_kabu_manager.c`
+
+✅ **Police station lost-and-found** — lost items, pickup logic. → `lost_found.rs`
+`m_police_box.c`, `ac_police_box.c`
+
+✅ **ABD bank** — deposit/withdraw/balance machine. → `bank.rs`
+`m_bank_ovl.c`
+
+✅ **Catalog ordering** — Nook's catalog kiosk (ties into `special_delivery.rs` mail path, but the kiosk UI isn't ported). → `catalog.rs`
+`m_catalog_ovl.c`
+
+✅ **Able Sisters design patterns** — the design editor, pattern slots, Mabel/Sable. → `design.rs`
+`m_needlework.c`, `m_needlework_ovl.c`, `m_cpedit_ovl.c`, `m_cporiginal_ovl.c`, `m_design_ovl.c`, `ac_needlework_indoor.c`, `ac_needlework_shop.c`, `ac_npc_needlework.c`, `ac_broker_design.c`
+
+✅ **Town tune composer** — the melody board at the post office. → `melody.rs`
+`m_melody.c`, `m_mscore_ovl.c`, `ac_mscore_control.c`
+
+✅ **Museum building exhibits** — fish/insect/picture rooms and the fossil hall actors. → `museum_display.rs`
+(the fossil *assessment* kernels are in `museum.rs`; the building, tanks, and exhibit actors are now ported too)
+`ac_museum.c`, `ac_museum_fish.c`, `ac_museum_fossil.c`, `ac_museum_indoor.c`, `ac_museum_insect.c`, `ac_museum_picture.c`
+
+✅ **Shop interiors & fitting rooms** — Nook's store rooms, mannequins, umbrella stand, shop levels. → `shop_interior.rs`
+(the shop *logic* is in `shop.rs`; the interior actors are now ported too)
+`ac_shop_indoor.c`, `ac_shop_manekin.c`, `ac_shop_umbrella.c`, `ac_shop_level.c`, `ac_shop_goods.c`, `ac_shop_design.c`
+
+✅ **Player house interiors** — rooms, clock, furniture arranging. → `house_interior.rs`
+(the furniture placement judge, switch bitfields, and haniwa steps are in `furniture.rs`; `ac_arrange_ftr.c` is an empty stub with nothing to port)
+`ac_my_house.c`, `ac_my_indoor.c`, `ac_my_room.c`, `ac_house_clock.c`, `ac_arrange_ftr.c`, `ac_arrange_room.c`
+
+---
+
+## Holidays & events
+
+**Event-day NPCs and controllers** — each holiday has dedicated actor files; none are ported. The event *scheduler* bits exist in `leaflet.rs`/`mother_mail.rs`, but the events themselves don't.
+- New Year countdown: `ac_countdown.c`, `ac_countdown_npc0.c`, `ac_countdown_npc1.c`, `ac_count02.c`
+- Halloween: `ac_halloween_npc.c`
+- Fireworks: `ac_hanabi_npc0.c`, `ac_hanabi_npc1.c`
+- Cherry blossom festival: `ac_hanami_npc0.c`, `ac_hanami_npc1.c`
+- Harvest Festival: `ac_harvest_npc0.c`, `ac_harvest_npc1.c`
+- Moon viewing: `ac_tukimi.c`, `ac_tukimi_npc0.c`, `ac_tukimi_npc1.c`
+- Groundhog Day: `ac_groundhog_control.c`, `ac_groundhog_npc0.c`, `ac_goza.c`
+- First shrine visit: `ac_hatumode_control.c`, `ac_hatumode_npc0.c`
+- Morning aerobics: `ac_taisou_npc0.c`
+- Tug of war: `ac_tunahiki_control.c`, `ac_tunahiki_npc0.c`, `ac_tunahiki_npc1.c`
+- Fishing tourney: `ac_turi.c`, `ac_turi_npc0.c`
+- Sports fair: `ac_tamaire_npc0.c`, `ac_tamaire_npc1.c`
+- Summer festival stalls: `ac_tokyoso_control.c`, `ac_tokyoso_npc0.c`, `ac_tokyoso_npc1.c`
+- April Fools: `ac_aprilfool_control.c`
+- Birthdays: `m_birthday_ovl.c`, `ac_birth_control.c`
+- Event NPC placement: `m_event_map_npc.c`, `ac_go_home_npc.c`
+
+**Holiday scenery actors** — carp streamers, festival stalls, shrine, lotus.
+`ac_koinobori.c`, `ac_yatai.c`, `ac_shrine.c`, `ac_lotus.c`, `ac_tukimi.c`
+
+---
+
+## Nature & seasonal
+
+**Snowman building** — snowballs, snowman moods and rewards.
+`m_snowman.c`, `ac_snowman.c`, `ac_psnowman.c`
+
+**Igloo** — the winter igloo interior and camper.
+`ac_kamakura.c`, `ac_kamakura_indoor.c`, `ac_kamakura_npc0.c`
+
+**Mushrooms** — fall mushroom spawning and furniture.
+`m_mushroom.c`
+
+**Balloon presents** — floating balloon gifts.
+`m_fuusen.c`, `ac_fuusen.c`, `ac_balloon.c`
+
+**Cockroaches** — infestation when away, stomping.
+`m_cockroach.c`, `ac_house_goki.c`
+
+**Gyroids** — digging them up, the gyroid household items.
+`m_haniwa_ovl.c`, `m_haniwaPortrait_ovl.c`, `ac_haniwa.c`
+
+**Insect actors** — the 14 individual bug actors (spawn *tables* are ported in `insect_tables.rs`/`species.rs`; the per-bug behavior actors are not).
+`ac_insect.c`, `ac_ins_amenbo.c`, `ac_ins_batta.c`, `ac_ins_chou.c`, `ac_ins_dango.c`, `ac_ins_goki.c`, `ac_ins_hitodama.c`, `ac_ins_hotaru.c`, `ac_ins_ka.c`, `ac_ins_kabuto.c`, `ac_ins_kera.c`, `ac_ins_mino.c`, `ac_ins_semi.c`, `ac_ins_tentou.c`, `ac_ins_tonbo.c`
+
+**Fish actors** — shadows, release behavior (the *float* is ported in `uki.rs`; these are the fish themselves).
+`ac_gyo_kage.c`, `ac_gyoei.c`, `ac_gyo_release.c`
+
+**Fish & bug records** — the encyclopedia/collection tracking.
+`m_fishrecord.c`
+
+**Bees** — the bee-tree shake behavior (spawn side is in `bee_ant.rs`; hive/attack actors partially).
+`ac_ghog.c` (check against `bee_ant.rs` before porting)
+
+---
+
+## Big-ticket systems
+
+**NES games** — the Famicom emulator and unlockable NES titles.
+`famicom_emu.c`, `m_fbdemo.c`, `m_fbdemo_fade.c`, `m_fbdemo_triforce.c`, `m_fbdemo_wipe1.c`
+
+**GBA Island** — link-cable island, minigames, islanders.
+`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`
+
+**Bulletin boards** — town board and house board posts.
+`m_board_ovl.c`, `m_hboard_ovl.c`
+
+**Town map** — the map overlay UI.
+`m_map_ovl.c`
+
+**Diary** — the player diary.
+`m_diary.c`, `m_diary_ovl.c`
+
+**Name editor** — the character-entry screen, including the NG-word filter (this is where 'phili' got rejected; fix options already offered to Philip).
+`m_editor_ovl.c`, `m_editEndChk_ovl.c`, `m_ledit_ovl.c`
+
+**Passwords** — secret codes (make/check).
+`m_passwordChk_ovl.c`, `m_passwordMake_ovl.c`
+
+**Notices & handbills UI** — notice overlays (the handbill *composer* is ported in `npc_reply.rs`).
+`m_notice.c`, `m_notice_ovl.c`
+
+**Address book** — the contacts UI.
+`m_address_ovl.c`
+
+**Pause menu** — pause overlay.
+`m_pause.c`
+
+**Selection/choice UI** — generic list and yes/no prompts.
+`m_select.c`, `m_choice.c`
+
+**Calendar overlay** — the calendar UI.
+`m_calendar_ovl.c`
+
+---
+
+## Buildings & scenery actors (not yet ported)
+
+Town structures and decorative actors. None of these have Rust modules.
+`ac_conveni.c` (convenience store), `ac_cottage.c`, `ac_tent.c`, `ac_toudai.c` (lighthouse), `ac_lighthouse_switch.c`, `ac_windmill.c`, `ac_douzou.c` (statues), `ac_mikanbox.c` (orange box), `ac_mikuji.c` (fortune), `ac_nameplate.c`, `ac_sign.c`, `ac_mailbox.c`, `ac_structure.c`, `ac_mural.c`, `ac_kago.c` (palanquin), `ac_dump.c` (dump), `ac_tama.c`, `ac_rope.c`, `ac_ball.c`, `ac_goza.c`, `ac_garagara.c`, `ac_misin.c`, `ac_mbg.c`, `ac_pterminal.c`, `ac_reserve.c`, `ac_sample.c`, `ac_super.c`, `ac_dummy.c`, `ac_flag.c`, `ac_htable.c`, `ac_animal_logo.c`, `ac_animal_logo_misc.c`
+
+**Household actors** — radio, etc.
+`ac_radio.c` (also plays K.K. songs — see K.K. Slider above)
+
+---
+
+## Engine-level (ported only in part, or intentionally C-side)
+
+These are partially covered (`frame_loops.rs`, `scene.rs`, `graphics.rs`) but the files below have no direct Rust equivalent. Most should stay in C unless there's a reason.
+- Camera: `m_camera2.c`, `m_view.c`
+- Lighting: `m_lights.c`
+- Controller/rumble: `m_controller.c`, `m_vibctl.c`
+- Actor shadows: `m_actor_shadow.c`
+- Actor/game tables: `m_actor_dlftbls.c`, `m_game_dlftbls.c`
+- BG items/textures: `m_bg_item.c`, `m_bg_tex.c`, `m_land.c`
+- Clipping: `m_clip.c`
+- String/font core: `m_string.c` (font tables are ported in `npc_reply.rs`)
+- Intro demo: `ac_intro_demo.c`, `ac_present_demo.c`, `ac_ride_off_demo.c`
+- Field drawing: `ac_field_draw.c`, `ac_fieldm_draw.c`, `ac_effectbg.c`
+- Misc: `m_watch_my_step.c`, `m_eappli.c`, `m_prenmi.c`, `m_banti.c`, `m_hand_ovl.c`, `m_huusui_room.c`, `m_huusui_room_ovl.c`, `m_mark_room.c`, `m_mark_room_ovl.c`, `m_tag_ovl.c`, `m_timeIn_ovl.c`, `m_warning_ovl.c`, `m_cpmail_ovl.c`, `m_cpwarning_ovl.c`, `ac_handOverItem.c`, `ac_boxManager.c`, `ac_boxMove.c`, `ac_boxTrick01.c`, `ac_buggy.c`, `ac_fallS.c`, `ac_fallSESW.c`, `ac_set_manager.c`
+
+---
+
+## Explicitly NOT porting (excluded)
+
+- Debug builds: `m_debug.c`, `m_debug_display.c`, `m_debug_hayakawa.c`, `m_debug_mode.c`, `m_item_debug.c`
+- System/boot: `main.c`, `game.c`, `graph.c`, `irqmgr.c`, `padmgr.c`, `executor.c`, `gamealloc.c`, `gfxalloc.c`, `m_malloc.c`
+- Region variants: everything under `src/AUS/`
+- Player select / save menu shells: `player_select.c`, `save_menu.c`, `first_game.c`, `second_game.c`, `zurumode.c`, `s_cpak.c`, `lb_reki.c`, `lb_rtc.c`, `c_keyframe.c`, `PreRender.c`, `THA_GA.c`, `TwoHeadArena.c`, `ev_cherry_manager.c`
+
+---
+
+## Suggested port order (opinionated)
+
+Philip asked "what's next" before — if he asks again, the high-value gameplay systems still in C are:
+1. **Snowman** — seasonal, well-bounded (`m_snowman.c`)
+2. **Event-day NPCs** — fan-favorite content, each holiday a bounded actor set
+3. **Bulletin boards / town map / diary** — small UI overlays
+4. **NES games** — huge win if feasible, but the emulator core is the hard part
+5. **GBA Island** — needs link-cable hardware behavior; defer
