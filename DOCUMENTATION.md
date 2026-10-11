@@ -2664,6 +2664,66 @@ and the delivery procs, Pete's route tables and mailbox animation,
 the April Fools dialogue overrides, and the loan-balance font
 formatting.
 
+### Runtime Port Progress: Police Officers (Copper / Booker)
+
+New `rust/src/police.rs`, registered as `mod police` in
+`rust/src/lib.rs`. Decomp-verified against `ac_npc_police.c`,
+`ac_npc_police_move.c_inc`, `ac_npc_police2.c`,
+`ac_npc_police2_move.c_inc`, `m_police_box.c`, `m_npc.c`,
+`ac_aprilfool_control.c` (GAFE01_00 Rev 0 USA). All 20 brief claims
+checked verbatim; no corrections. Nuances carried: the movement
+thresholds are kept as written — `dist < (SQ(50.0f)−50.0f)` = 2450.0
+and `dist < (SQ(70.0f)+100.0f)` = 5000.0 on the SQUARED distance, do
+not simplify; the zone `ux` comparisons are strict `>` at 7/4/1 with
+`uz` clamped 2–6; the same-zone far case returns
+RUN_PL_OTHER_ZONE (verbatim retail quirk, RUN_PL_SAME_ZONE is never
+produced by the decider); the sleepy branch is an `else if` on the
+aerobics condition; the talk-request gate checks `last_field_id`
+while talk-init checks `last_scene_no`; the ticket branch is
+`TYPE == NAME_TYPE_ITEM1 && CAT == ITEM1_CAT_TICKET` specifically;
+the 0xF128 constant is shared with DUMMY_BOAT (per the decomp's own
+comment); the init uses `mSP_LISTTYPE_ABC`, not "common-priority";
+the `(int)qrand() >= 0` expression is preserved without resolving
+its semantics; clearing in `mPB_keep_all_item_in_block` is
+unconditional for every accepted item and the RANDOM(20) overwrite
+hits the temp array.
+
+Ported (pure data/kernels; both actors, the PoliceBox_c store, the
+field-item relocation, the item-generation tables, the message
+formatting, and the April Fools overrides all stay in C):
+
+- Copper: time-of-day talk index and message (+4 on the
+  player-kind/map-flag test), entrance greeting 0x0771, choice
+  messages (hint path stays in C), the three event-hint tables with
+  per-state selectors and the 0x2C2D/0x2C37 fallbacks, the aerobics
+  entry gate (06:00–07:00, not rain, outside 67.5°) with its
+  animation loops {2,4,1} and exit test, and the sleepy gate
+  (02:00–04:00, ≥60 units) with its morph/loop sequencing.
+- Booker: zone math, movement decision with speeds, slot index from
+  the reserved prop, greeting/talk messages by store count and
+  `_99C`, item-name and inventory-full messages, the dummy pickup
+  position, and the station-exit constants.
+- Lost-and-found: storage constants, forced-generation category and
+  goods sub-category from the roll (rolls in C), the grow eligibility
+  gate, the FIFO append index, and the acre-cleanup merge math.
+- Constants: POLICE D00D, POLICE2 D010, name indices 0x210/0x6D9,
+  April Fools 0x0005/0x0006, RSV_POLICE_ITEM_0 0xF128.
+
+C ABI (all `pc_`-prefixed, 15 exports): `pc_police_copper_talk_msg`,
+`pc_police_copper_choice_msg`, `pc_police_copper_aerobics_gate`,
+`pc_police_copper_sleepy_gate`, `pc_police_hint_active_msg`,
+`pc_police_hint_today_msg`, `pc_police_hint_later_msg`,
+`pc_police_booker_zone`, `pc_police_booker_move_action`,
+`pc_police_booker_slot_idx`, `pc_police_booker_greet_msg`,
+`pc_police_booker_talk_msg`, `pc_police_force_category`,
+`pc_police_goods_category`, `pc_police_keep_append_index`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the actor state machines and RNG, the save-store
+mutations, the item-generation item tables, the message free-string
+formatting, and the event-controller checks.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
