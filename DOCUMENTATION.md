@@ -4529,6 +4529,59 @@ C ABI (all `pc_`-prefixed, 16 exports):
 callers rewired yet, per the usual pattern. No
 test runs, per the standing rule.
 
+### Runtime Port Progress: Bees (tree-shake helpers + bee_ant.rs audit fixes)
+
+Extended `rust/src/bee_ant.rs` (already registered).
+Decomp-verified against `ac_ghog.c`, `ac_ghog.h`,
+`ac_bee.c`, `m_player_main_shake_tree.c_inc`,
+`m_player_lib.c`, `bg_item_common.c_inc`
+(GAFE01_00 Rev 0 USA).
+
+The 2026-10-11 audit of the existing file found and
+fixed 4 bugs: `insect_type::ANT` was 41 (it is 38;
+41 is NONE), `COCKROACH` was 42 (it is 28); the bee
+player-status values were swapped (retail: ATTACK =
+1, ENTER_BUILDING = 2); the target frame ran on
+degree diffs instead of the retail s16 short-angle
+diff; the speed target was heading-dependent when
+retail's `abs_speed_angle` is always zeroed, making
+the speed target the constant 8.9f. The bee
+`step()` also gained a dt-scaled `step_dt()`
+(alpha, catch delay, bobbing), since retail scales
+several updates by `graph_dt_60fps_frames`.
+
+New tree-shake decision helpers (pure kernels; the
+shake-tree table, fruit-drop callback, actor
+allocation, FG mutation, honeycomb lifecycle, shock
+request, status-for-bee, ghog rendering/shadow,
+`atans_table`, net-catch/label APIs, catch-label
+transfer, sAdo sound, keyframe animation, and
+rendering stay in C):
+
+- `pc_bee_spawn_eligible` — the exact
+  `mPlib_able_birth_bee()` predicate (first intro,
+  reset flag, bee chase flag, title demo).
+- `pc_bee_shake_retry_step` — the five-count
+  retry: success → timer 0 + spawned; failure →
+  timer − dt clamped at 0.
+- `pc_bee_tree_revert` — new C ABI (none
+  existed): the normal tree, or −1.
+- `pc_bee_drop_valid` — x ≥ 0 and z ≥ 0 (Y not
+  checked in the source).
+- `pc_bee_shock_request` — bee_flag and frame ≥
+  30 → shock(24.0, bee angle).
+- `pc_bee_no_bee_status` — frame == 29.5 →
+  ATTACK status.
+- `pc_bee_force_catch` — (swing or stopped net)
+  and dist < 40.0; otherwise the table path at
+  24.0.
+- `pc_bee_speed_target` (8.9f),
+  `pc_bee_target_frame` (s16 diff).
+
+`ac_ghog.c` is not the tree-shake decision logic;
+it is the hive field-item/shadow visual and stays
+in C. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

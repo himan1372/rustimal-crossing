@@ -2,8 +2,27 @@
 //!
 //! Ports `src/actor/ac_bee.c`, `src/actor/ac_ant.c`, the insect clip
 //! (`src/actor/ac_insect_clip.c_inc`), the runtime ant spawn overlay
-//! (`src/actor/ac_set_ovl_insect.c`), and the bee-tree/honeycomb path
-//! (`src/bg_item/bg_item_common.c_inc`) for GAFE01_00 Rev. 0.
+//! (`src/actor/ac_set_ovl_insect.c`), the bee-tree/honeycomb path
+//! (`src/bg_item/bg_item_common.c_inc`), and the tree-shake decision
+//! helpers (`src/player/m_player_main_shake_tree.c_inc`,
+//! `src/player/m_player_lib.c`) for GAFE01_00 Rev. 0.
+//!
+//! Audit (2026-10-11, `bee-verification-report.md`) fixed 4 bugs:
+//! `insect_type::ANT` is 38 (41 is NONE), `COCKROACH` is 28; the bee
+//! player-status values were swapped (ATTACK = 1, ENTER_BUILDING = 2);
+//! the target frame now runs on the s16 short-angle yaw diff, not
+//! degrees; the speed target is the retail-constant 8.9f (the
+//! heading-dependent addition is dead code in the source —
+//! `abs_speed_angle` is always zeroed).
+//!
+//! Remaining approximations vs retail: no CALC_EASE short-angle
+//! wraparound (plain degree easing), appear rotation.z increment and
+//! scale easing not modeled, no position integration (`_moves` is
+//! recorded only), no force-catch/table-catch request events, no
+//! `disappear_timer > 1.0` fallback in CAUGHT, ant scale chase is
+//! approximate, fly_angle/base_angle short-angle semantics unmodeled.
+//! The ghog hive actor (`src/actor/ac_ghog.c`) stays in C: it is a
+//! field-item/shadow visual with no bee-like state machine.
 //!
 //! Bee and ant are deliberately NOT normal insect actors while active.
 //! They are BG-part special actors (`mAc_PROFILE_BEE` / `mAc_PROFILE_ANT`)
@@ -47,11 +66,12 @@ pub mod net_catch {
     pub const NUM: u8 = 2;
 }
 
-/// Insect type ids used here (positions in the retail insect enum).
+/// Insect type ids used here (positions in the retail insect enum;
+/// verified: ANT = 38, COCKROACH = 28; 41 is NONE, not ANT).
 pub mod insect_type {
     pub const BEE: u8 = 8;
-    pub const ANT: u8 = 41;
-    pub const COCKROACH: u8 = 42;
+    pub const ANT: u8 = 38;
+    pub const COCKROACH: u8 = 28;
 }
 
 /// Item ids (`include/m_name_table.h`).
@@ -244,6 +264,10 @@ pub mod bee {
     pub const ATTACK_DIST: f32 = 30.0;
     pub const CATCH_RADIUS: f32 = 24.0;
     pub const FORCE_CATCH_RADIUS: f32 = 40.0;
+    /// Retail quirk: `abs_speed_angle` is always zeroed in the source
+    /// (`> DEG2SHORT_ANGLE2(-180)` is always true), so the speed target
+    /// is the constant 2.9 + 180/30 = 8.9, not heading-dependent.
+    pub const SPEED_TARGET: f32 = 8.9;
     pub const FLY_SPEED: f32 = 2.9;
     pub const ALT_ABOVE_PLAYER: f32 = 50.0;
     pub const BOBBING_AMP: f32 = 5.0;
@@ -255,11 +279,12 @@ pub mod bee {
     pub const DISAPPEAR_SCALE: f32 = 0.03;
 }
 
-/// Player states the bee reacts to (`mPlib_Get_status_for_bee`).
+/// Player states the bee reacts to (`mPlib_Get_status_for_bee`;
+/// verified: ATTACK = 1, ENTER_BUILDING = 2).
 pub mod bee_player_status {
     pub const NONE: u8 = 0;
-    pub const ENTER_BUILDING: u8 = 1;
-    pub const ATTACK: u8 = 2;
+    pub const ATTACK: u8 = 1;
+    pub const ENTER_BUILDING: u8 = 2;
 }
 
 /// Per-frame inputs for the bee.
@@ -376,8 +401,10 @@ impl BeeActor {
         }
     }
 
-    /// Shared flight movement (`aBEE_fly_move_common`), angles in degrees.
-    fn fly_move_common(&mut self, player_angle_y_deg: f32) {
+    /// Shared flight movement (`aBEE_fly_move_common`). Retail runs
+    /// this on s16 short angles; the yaw diff is converted to s16 units
+    /// before the target-frame computation.
+    fn fly_move_common(&mut self, player_angle_y_deg: f32, dt: f32) {
         let base_angle = match self.action {
             bee_action::FLY | bee_action::CAUGHT => bee::BASE_ANGLE_FLY_DEG,
             _ => bee::BASE_ANGLE_ATTACK_DEG,
@@ -387,19 +414,18 @@ impl BeeActor {
         add_angle_calc(&mut self.add_angle_deg, d_angle, 0.4, 250.0 * 360.0 / 65536.0);
         let d = player_angle_y_deg - self.angle_y_deg;
         add_angle_calc(&mut self.angle_y_deg, d, 0.4, self.add_angle_deg * 0.5);
-        let mut speed_angle = (self.angle_y_deg - player_angle_y_deg).abs();
-        if speed_angle > 180.0 {
-            speed_angle = 0.0;
-        }
-        let mut speed = bee::FLY_SPEED;
-        speed += ((180.0 - speed_angle) / 30.0).abs();
-        add_calc(&mut self.speed, speed, 0.3, 0.15);
+        // Retail quirk: abs_speed_angle is always zeroed, so the speed
+        // target is the constant 8.9f regardless of heading.
+        add_calc(&mut self.speed, bee::SPEED_TARGET, 0.3, 0.15);
 
-        self.bobbing_counter = self.bobbing_counter.wrapping_add(bee::BOBBING_INC);
+        self.bobbing_counter = self
+            .bobbing_counter
+            .wrapping_add((bee::BOBBING_INC as f32 * dt) as i16);
         self.pos_y += bee::BOBBING_AMP * (self.bobbing_counter as f32 * PI / 32768.0).sin();
 
-        let mut target_frame = 90.0 + (player_angle_y_deg - self.angle_y_deg) / 30.0;
-        target_frame = target_frame.clamp(0.0, 180.0);
+        // Retail operates on the s16 short-angle diff here.
+        let diff_s16 = ((player_angle_y_deg - self.angle_y_deg) * 65536.0 / 360.0) as i16;
+        let target_frame = bee_target_frame(diff_s16);
         add_calc(&mut self.start_frame, target_frame, 0.5, 5.0);
 
         // Body deformation tied to the turn angle.
@@ -414,8 +440,14 @@ impl BeeActor {
         add_calc(&mut self.pos.y, self.pos_y, 0.3, bee::Y_EASE_MAX_STEP);
     }
 
-    /// One tick. Returns engine side effects.
+    /// One tick at 60 Hz. Retail scales several updates by dt
+    /// (`graph_dt_60fps_frames`); see `step_dt`.
     pub fn step(&mut self, env: &BeeEnv, events: &mut Vec<BeeEvent>) {
+        self.step_dt(env, 1.0, events);
+    }
+
+    /// One tick with an explicit frame-rate scale.
+    pub fn step_dt(&mut self, env: &BeeEnv, dt: f32, events: &mut Vec<BeeEvent>) {
         events.push(BeeEvent::Sound);
         if self.is_dormant() {
             return;
@@ -425,7 +457,7 @@ impl BeeActor {
         match self.action {
             bee_action::APPEAR => {
                 self.pos_y = env.player_y + bee::ALT_ABOVE_PLAYER;
-                self.alpha += bee::APPEAR_ALPHA_STEP;
+                self.alpha += bee::APPEAR_ALPHA_STEP * dt;
                 if self.alpha >= 255.0 {
                     self.alpha = 255.0;
                     self.set_action(bee_action::FLY);
@@ -458,7 +490,7 @@ impl BeeActor {
                             }
                         }
                         if self.catch_delay_frames > 0.0 {
-                            self.catch_delay_frames -= 1.0;
+                            self.catch_delay_frames -= dt;
                             if self.catch_delay_frames < 0.0 {
                                 self.catch_delay_frames = 0.0;
                             }
@@ -470,7 +502,7 @@ impl BeeActor {
                                 bee::CATCH_RADIUS
                             };
                         }
-                        self.fly_move_common(env.player_angle_y_deg);
+                        self.fly_move_common(env.player_angle_y_deg, dt);
                     }
                 }
             }
@@ -482,7 +514,7 @@ impl BeeActor {
                     self.set_action(bee_action::DISAPPEAR);
                     return;
                 }
-                self.fly_move_common(env.player_angle_y_deg);
+                self.fly_move_common(env.player_angle_y_deg, dt);
             }
             bee_action::ATTACK_WAIT => {
                 if env.leveled {
@@ -499,7 +531,7 @@ impl BeeActor {
                         }
                         _ => {}
                     }
-                    self.fly_move_common(env.player_angle_y_deg);
+                    self.fly_move_common(env.player_angle_y_deg, dt);
                 }
             }
             bee_action::ATTACK => {
@@ -512,12 +544,12 @@ impl BeeActor {
                     } else {
                         events.push(BeeEvent::RequestSting);
                     }
-                    self.fly_move_common(env.player_angle_y_deg);
+                    self.fly_move_common(env.player_angle_y_deg, dt);
                 }
             }
             bee_action::DISAPPEAR => {
                 self.size = Xyz::new(bee::DISAPPEAR_SCALE, bee::DISAPPEAR_SCALE, bee::DISAPPEAR_SCALE);
-                self.alpha -= bee::DISAPPEAR_ALPHA_STEP;
+                self.alpha -= bee::DISAPPEAR_ALPHA_STEP * dt;
                 if self.alpha < 0.0 {
                     self.alpha = 0.0;
                     events.push(BeeEvent::Delete);
@@ -542,6 +574,13 @@ fn add_calc(cur: &mut f32, target: f32, frac: f32, max_step: f32) {
 
 fn add_angle_calc(cur: &mut f32, target: f32, frac: f32, max_step: f32) {
     add_calc(cur, target, frac, max_step);
+}
+
+/// Retail target-frame: operates on the s16 short-angle yaw diff,
+/// `clamp(90 + diff/30.0, 0, 180)`; saturates at 180 unless the yaws
+/// agree within ~14.8 degrees.
+pub fn bee_target_frame(angle_diff_s16: i16) -> f32 {
+    (90.0 + angle_diff_s16 as f32 / 30.0).clamp(0.0, 180.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -763,6 +802,78 @@ impl AntActor {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tree-shake decision helpers (m_player_main_shake_tree.c_inc,
+// m_player_lib.c, bg_item_common.c_inc)
+// ---------------------------------------------------------------------------
+
+/// Bee-spawn retry window, in frames (`bee_spawn_timer = 5.0f`).
+pub const BEE_SPAWN_TIMER: f32 = 5.0;
+/// Player shock distance on a successful bee spawn.
+pub const BEE_SHOCK_DIST: f32 = 24.0;
+/// Animation frame that requests the shock.
+pub const BEE_SHOCK_FRAME: f32 = 30.0;
+/// Animation frame for the no-bee ATTACK status.
+pub const BEE_NO_BEE_STATUS_FRAME: f32 = 29.5;
+
+/// `mPlib_able_birth_bee()`: blocked during the first introduction,
+/// reset state, an existing bee chase, or the title demo.
+pub fn bee_spawn_eligible(first_intro: bool, reset_flag: bool, chase_flag: bool, title_demo: bool) -> bool {
+    !(first_intro || reset_flag || chase_flag || title_demo)
+}
+
+/// The five-count retry window (`Player_actor_Check_BirthBee_Shake_tree`):
+/// on success the timer becomes 0 and the spawn flag is set; on failure
+/// the timer decrements by dt (clamped at 0). Returns (new_timer, spawned).
+pub fn bee_shake_retry_step(timer: f32, succeeded: bool, dt: f32) -> (f32, bool) {
+    if succeeded {
+        (0.0, true)
+    } else {
+        ((timer - dt).max(0.0), false)
+    }
+}
+
+/// `bee_tree_revert` as a C-friendly id: the normal tree, or -1 when the
+/// item is not a bee tree.
+pub fn bee_tree_revert_id(fg_item: u16) -> i32 {
+    bee_tree_revert(fg_item).map(|t| t as i32).unwrap_or(-1)
+}
+
+/// `Player_actor_Check_BirthBee_common`: the drop is valid when
+/// x >= 0 and z >= 0 (Y is not checked there).
+pub fn bee_drop_valid(drop_x: f32, drop_z: f32) -> bool {
+    drop_x >= 0.0 && drop_z >= 0.0
+}
+
+/// Player aftermath: a successful spawn requests the shock once the
+/// shake animation reaches frame 30.
+pub fn bee_shock_request(bee_flag: bool, cur_frame: f32) -> bool {
+    bee_flag && cur_frame >= BEE_SHOCK_FRAME
+}
+
+/// No-bee path: at animation frame 29.5 the player gets the ATTACK
+/// status for bee (`mPlayer_STATUS_FOR_BEE_ATTACK`).
+pub fn bee_no_bee_status(cur_frame: f32) -> bool {
+    cur_frame == BEE_NO_BEE_STATUS_FRAME
+}
+
+/// Forced-catch predicate: a net swing is active (`swing_timer > 0`)
+/// or a stopped net is nearby, and the bee is within 40.0f.
+/// Otherwise the ordinary catch table is used at 24.0f.
+pub fn bee_force_catch(dist: f32, swing_timer: f32, stop_net: bool) -> bool {
+    (swing_timer > 0.0 || stop_net) && dist < bee::FORCE_CATCH_RADIUS
+}
+
+/// Appear fade step: +3 per update, dt-scaled.
+pub fn bee_alpha_step(dt: f32) -> f32 {
+    bee::APPEAR_ALPHA_STEP * dt
+}
+
+/// Disappear fade: alpha − 15 per update, dt-scaled, clamped at 0.
+pub fn bee_disappear_alpha(alpha: f32, dt: f32) -> f32 {
+    (alpha - bee::DISAPPEAR_ALPHA_STEP * dt).max(0.0)
+}
+
 // ---- C ABI ----
 
 #[no_mangle]
@@ -788,6 +899,78 @@ pub extern "C" fn pc_insect_exist_slot() -> u8 {
 #[no_mangle]
 pub extern "C" fn pc_bee_is_bee_tree(fg_item: u16) -> u8 {
     is_bee_tree(fg_item) as u8
+}
+
+/// Normal tree after a bee-tree shake, or -1 when not a bee tree.
+#[no_mangle]
+pub extern "C" fn pc_bee_tree_revert(fg_item: u16) -> i32 {
+    bee_tree_revert_id(fg_item)
+}
+
+/// `mPlib_able_birth_bee()`.
+#[no_mangle]
+pub extern "C" fn pc_bee_spawn_eligible(
+    first_intro: bool,
+    reset_flag: bool,
+    chase_flag: bool,
+    title_demo: bool,
+) -> bool {
+    bee_spawn_eligible(first_intro, reset_flag, chase_flag, title_demo)
+}
+
+/// Retry window: writes the new timer into `out`, returns whether the
+/// spawn succeeded this update.
+#[no_mangle]
+pub extern "C" fn pc_bee_shake_retry_step(
+    timer: f32,
+    succeeded: bool,
+    dt: f32,
+    out: *mut f32,
+) -> bool {
+    let (timer, spawned) = bee_shake_retry_step(timer, succeeded, dt);
+    if !out.is_null() {
+        unsafe {
+            *out = timer;
+        }
+    }
+    spawned
+}
+
+/// Drop-position validity (`x >= 0 && z >= 0`).
+#[no_mangle]
+pub extern "C" fn pc_bee_drop_valid(drop_x: f32, drop_z: f32) -> bool {
+    bee_drop_valid(drop_x, drop_z)
+}
+
+/// Shock request: bee spawned and animation frame >= 30.
+#[no_mangle]
+pub extern "C" fn pc_bee_shock_request(bee_flag: bool, cur_frame: f32) -> bool {
+    bee_shock_request(bee_flag, cur_frame)
+}
+
+/// No-bee path: frame == 29.5 → ATTACK status.
+#[no_mangle]
+pub extern "C" fn pc_bee_no_bee_status(cur_frame: f32) -> bool {
+    bee_no_bee_status(cur_frame)
+}
+
+/// Forced-catch predicate.
+#[no_mangle]
+pub extern "C" fn pc_bee_force_catch(dist: f32, swing_timer: f32, stop_net: bool) -> bool {
+    bee_force_catch(dist, swing_timer, stop_net)
+}
+
+/// Constant retail speed target (8.9f — the heading addition is a
+/// dead quirk in the source).
+#[no_mangle]
+pub extern "C" fn pc_bee_speed_target() -> f32 {
+    bee::SPEED_TARGET
+}
+
+/// Target frame from the s16 short-angle yaw diff.
+#[no_mangle]
+pub extern "C" fn pc_bee_target_frame(angle_diff_s16: i16) -> f32 {
+    bee_target_frame(angle_diff_s16)
 }
 
 #[no_mangle]
@@ -977,5 +1160,55 @@ mod tests {
         assert_eq!(item::HONEYCOMB, 0x0062);
         assert_eq!(item::FOOD_CANDY, 0x2806);
         assert_eq!(item::KABU_SPOILED, 0x2F03);
+    }
+
+    #[test]
+    fn tree_shake_kernels() {
+        // Eligibility predicate.
+        assert!(bee_spawn_eligible(false, false, false, false));
+        assert!(!bee_spawn_eligible(true, false, false, false));
+        assert!(!bee_spawn_eligible(false, true, false, false));
+        assert!(!bee_spawn_eligible(false, false, true, false));
+        assert!(!bee_spawn_eligible(false, false, false, true));
+        // Retry window.
+        assert_eq!(bee_shake_retry_step(5.0, true, 1.0), (0.0, true));
+        assert_eq!(bee_shake_retry_step(5.0, false, 1.0), (4.0, false));
+        assert_eq!(bee_shake_retry_step(0.5, false, 1.0), (0.0, false));
+        // Revert id.
+        assert_eq!(bee_tree_revert_id(item::TREE_BEES), item::TREE as i32);
+        assert_eq!(bee_tree_revert_id(item::TREE), -1);
+        // Drop validity.
+        assert!(bee_drop_valid(10.0, 20.0));
+        assert!(!bee_drop_valid(-1.0, 20.0));
+        assert!(!bee_drop_valid(10.0, -1.0));
+        // Shock / no-bee status.
+        assert!(bee_shock_request(true, 30.0));
+        assert!(!bee_shock_request(true, 29.9));
+        assert!(!bee_shock_request(false, 30.0));
+        assert!(bee_no_bee_status(29.5));
+        assert!(!bee_no_bee_status(29.4));
+        // Force catch.
+        assert!(bee_force_catch(30.0, 5.0, false));
+        assert!(bee_force_catch(30.0, 0.0, true));
+        assert!(!bee_force_catch(30.0, 0.0, false));
+        assert!(!bee_force_catch(40.0, 5.0, false));
+        // Speed target quirk.
+        assert_eq!(bee::SPEED_TARGET, 8.9);
+        // Target frame on s16 diffs.
+        assert_eq!(bee_target_frame(0), 90.0);
+        assert_eq!(bee_target_frame(5400), 180.0); // 90 + 180
+        assert_eq!(bee_target_frame(-5400), 0.0); // 90 - 180
+        assert!((bee_target_frame(900) - 120.0).abs() < 1e-5);
+        // Alpha steps.
+        assert_eq!(bee_alpha_step(1.0), 3.0);
+        assert_eq!(bee_alpha_step(2.0), 6.0);
+        assert_eq!(bee_disappear_alpha(20.0, 1.0), 5.0);
+        assert_eq!(bee_disappear_alpha(10.0, 1.0), 0.0);
+        // Corrected insect type ids.
+        assert_eq!(insect_type::ANT, 38);
+        assert_eq!(insect_type::COCKROACH, 28);
+        // Corrected player status values.
+        assert_eq!(bee_player_status::ATTACK, 1);
+        assert_eq!(bee_player_status::ENTER_BUILDING, 2);
     }
 }
