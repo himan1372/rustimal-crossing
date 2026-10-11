@@ -152,6 +152,7 @@ pub mod sched {
 /// Event-table IDs (`enum event_table`, 0-based indices into the
 /// 120-entry enum; the schedule table's 134 rows reference these).
 pub mod event {
+    pub const RUMOR_NEW_YEARS_DAY: u16 = 0;
     pub const NEW_YEARS_DAY: u16 = 1;
     pub const KAMAKURA: u16 = 3;
     pub const GROUNDHOG_DAY: u16 = 7;
@@ -253,7 +254,7 @@ pub struct ScheduleRow {
 pub mod schedule {
     use super::*;
 
-    pub const ROWS: [ScheduleRow; 14] = [
+    pub const ROWS: [ScheduleRow; 16] = [
         ScheduleRow { // Jan 1, 06:00-10:00
             begin: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 6 },
             end: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 10 },
@@ -378,6 +379,16 @@ pub mod schedule {
             begin: DateSpec { month: rtc::month::DECEMBER, day: 31, hour: sched::MULTIDAY | 23 },
             end: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 0 },
             event: event::NEW_YEARS_EVE_COUNTDOWN,
+        },
+        ScheduleRow { // Jan 1, 06:00-10:00 (Tortimer New Year's Day)
+            begin: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 6 },
+            end: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 10 },
+            event: event::SONCHO_NEW_YEARS_DAY,
+        },
+        ScheduleRow { // New Year's rumor: Dec 25 00:00 -> Dec 31 23:00
+            begin: DateSpec { month: rtc::month::DECEMBER, day: 25, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::DECEMBER, day: 31, hour: 23 },
+            event: event::RUMOR_NEW_YEARS_DAY,
         },
     ];
 
@@ -611,7 +622,7 @@ mod tests {
 
     #[test]
     fn schedule_rows() {
-        assert_eq!(schedule::ROWS.len(), 14);
+        assert_eq!(schedule::ROWS.len(), 16);
         assert_eq!(schedule::ROW_COUNT, 134);
         let ny = &schedule::ROWS[0];
         assert_eq!((ny.begin.month, ny.begin.day, ny.begin.hour), (1, 1, 6));

@@ -3609,6 +3609,75 @@ C ABI (all `pc_`-prefixed, 10 exports):
 No C callers rewired yet, per the usual pattern.
 No test runs, per the standing rule.
 
+### Runtime Port Progress: First Shrine Visit (Hatsumode)
+
+New `rust/src/hatsumode.rs`, registered as `mod hatsumode` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_hatumode_control.c`, `ac_hatumode_control_move.c_inc`,
+`ac_hatumode_npc0.c`, `ac_hatumode_npc0_talk.c_inc`,
+`ac_hatumode_npc0_schedule.c_inc`,
+`ac_hatumode_clip_move.c_inc`, `ac_hatumode_clip_think.c_inc`,
+`ac_shrine.c`, `m_event_map_npc_data.c_inc`,
+`m_event_schedule.c_inc`, `ac_event_manager.c` (GAFE01_00 Rev 0
+USA). All 10 brief claims PROVEN, with brief-missed nuances
+folded into the port.
+
+Ported (pure kernels; actor lifecycle, the NPC clip,
+message/demo ownership, RNG calls, player-action requests,
+shrine animation, the global clip, save-area allocation, and the
+`mSP_money_check`/`mSP_get_sell_price` debit semantics stay in
+C):
+
+- The controller dispatch constants: the 50-Bell price, messages
+  4396/4398, continuations 0x112D/0x112E, the `flags0 & 0x8000`
+  wait gate, and the `flags0 &= ~0x8000` clear at prayer end
+  (brief-missed). The money check runs only after the speech
+  demo is active.
+- Shrine-relative positions with the confirmed [X, Z, Y] layout
+  of `yashiro_pos[3]`: controller home (20+yp[0], yp[2],
+  40+yp[1]); prayer/offering (20+yp[0], yp[2], 85+yp[1]).
+- Dialogue: the `(4 + (npc_id - 0xD058) - cur_npc_idx) & 3`
+  group formula (bitwise AND, not modulo), the {+12,+3,+6,+9}
+  group offsets, the `base+15+RANDOM(3)` branch, and the
+  offering-talk continuations (base+1 with next_think 0x22 vs.
+  base+2).
+- Routes: the 5-entry start-offset tables (+180° orientation),
+  the pre-increment wrap (`root++`, then 10→5, 5→0 — not plain
+  modulo), and the brief-missed `aHN0_posX[9]`/`aHN0_posZ[9]`
+  destination tables with the 10-entry root remap.
+- Flag handshakes: the exact wait masks (think 3 →
+  `0x01 << (idx&1)`; 13 → `0x04 << ((idx&1)^1)`; 28 →
+  `0x10 << ((idx&1)^1)`), consumed on read, plus think 28's
+  0x4000 detour to think 43.
+- The 8-slot New Year shrine spawn layout (HATUMODE_0..4 =
+  0xD058–0xD05C, MIKO = 0xD03D, NEWYEAR_TABLE = 0x5831,
+  SONCHO2), mask 0b00011111.
+- Also added to `event_day.rs`: RUMOR_NEW_YEARS_DAY (0) with
+  the Dec 25–31 rumor row, and the SONCHO_NEW_YEARS_DAY (80)
+  Jan 1 06:00–10:00 row (the NEW_YEARS_DAY row already
+  existed and matches the verified window).
+
+Deliberately NOT ported as retail behavior: the
+`root_table`/`proc_idx_table` 4-entry tables are exposed with
+only 4 valid indices — 5 HATUMODE NPCs spawn, so index 4 is an
+open retail out-of-bounds question that needs
+assembly-level confirmation; the helper reports invalid instead
+of reproducing the read.
+
+C ABI (all `pc_`-prefixed, 19 exports):
+`pc_hatsumode_offer_msg`, `pc_hatsumode_choice_continue`,
+`pc_hatsumode_choice_state`, `pc_hatsumode_wait_ready`,
+`pc_hatsumode_inori_end_flags`, `pc_hatsumode_ctrl_home`,
+`pc_hatsumode_act_pos`, `pc_hatsumode_msg_group`,
+`pc_hatsumode_make_msg`, `pc_hatsumode_talk_msg`,
+`pc_hatsumode_saisen_continue`, `pc_hatsumode_start_offset`,
+`pc_hatsumode_start_root`, `pc_hatsumode_ready2`,
+`pc_hatsumode_next_root`, `pc_hatsumode_next_pos`,
+`pc_hatsumode_wait_mask`, `pc_hatsumode_wait_advance`,
+`pc_hatsumode_spawn_pos`. No C callers rewired
+yet, per the usual pattern. No test runs, per the standing
+rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
