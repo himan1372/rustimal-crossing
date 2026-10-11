@@ -4394,6 +4394,73 @@ C ABI (all `pc_`-prefixed, 10 exports):
 callers rewired yet, per the usual pattern. No test
 runs, per the standing rule.
 
+### Runtime Port Progress: Insect actors (shared controller)
+
+New `rust/src/insect_actor.rs`, registered as `mod
+insect_actor` in `rust/src/lib.rs`. Decomp-verified
+against `ac_insect.c`, `ac_insect_h.h`,
+`ac_insect_data.c_inc`, `ac_insect_move.c_inc`,
+`ac_insect_clip.c_inc`, `ac_insect_draw.c_inc` plus
+all 14 `ac_ins_*.c` behavior files (GAFE01_00 Rev 0
+USA). 12/12 sections PROVEN; the 14 behavior-state
+machines themselves remain untraced as complete
+transition tables and stay in C.
+
+Architectural finding: the 14 `ac_ins_*.c` files are
+14 behavior programs shared by 41 insect types, not
+one-species implementations. Every insect shares
+`aINS_position_move`; the per-type `mv_proc` is the
+behavior program. Work slots are reused with
+different meanings per family and must not be given
+one shared semantic interpretation.
+
+Ported (pure kernels; pool slot ownership, field/actor
+iteration, actual movement, collision checks, catch
+registration, effects, lighting, cleanup, and all 14
+family state machines stay in C):
+
+- The 41-entry type→program table (all programs
+  verified used).
+- The catch-range rules: default 8.0; common/yellow
+  butterflies 24.0 unconditional; cicadas/bee and
+  all 8 beetle types 24.0 only when the player's
+  relative angle is within 90° (else 0.0); the
+  cockroach gets the facing test only when
+  `flag == 4`.
+- The stress radius addition table (`catch_ME_data`,
+  negative entries shrink the radius), the stress
+  band index and per-actor stress (max over
+  UNUSED/PLAYER/NPC/BG lists; only moving actors
+  contribute), and the patience step (decay is
+  dt-scaled, growth is not: `−= 0.5·dt` vs
+  `+= stress·0.5`, clamped 0/100).
+- The fade rules (most types −11 alpha/frame from
+  255; firefly's separate alpha2 path) and the
+  despawn predicate (released & invisible, or
+  > 600.0 in a different acre, both skipped while
+  the insect is the net-catch target).
+- Per-type shadow sizes (8.0/4.0/2.0/6.0).
+
+Brief corrections: butterfly/mosquito spawn is
+background height − 30.0f (brief said +30.0f); the
+chou habitat check rejects units whose high id
+digit is 5 (0x5xxx = houses/shops); the spider is
+MINO-only (dango's SPIDER case is unreachable dead
+code); the net-catch special case lives in the cull
+check, not registration; a stale decomp comment
+says "15 units" where the constant is 600.0f.
+
+C ABI (all `pc_`-prefixed, 12 exports):
+`pc_insect_program_for_type`,
+`pc_insect_catch_range`, `pc_insect_catch_me_radius`,
+`pc_insect_stress_idx`, `pc_insect_stress_calc`,
+`pc_insect_patience_step`, `pc_insect_fade_alpha`,
+`pc_insect_fade_done`, `pc_insect_firefly_alpha2`,
+`pc_insect_firefly_fade_done`,
+`pc_insect_despawn_check`, `pc_insect_shadow_size`.
+No C callers rewired yet, per the usual pattern. No
+test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
