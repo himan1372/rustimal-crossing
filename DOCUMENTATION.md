@@ -2724,6 +2724,74 @@ Gaps / do-not-port: the actor state machines and RNG, the save-store
 mutations, the item-generation item tables, the message free-string
 formatting, and the event-controller checks.
 
+### Runtime Port Progress: Event Visitors (Katrina / Saharah / Wendell / Gracie / Redd)
+
+New `rust/src/event_visitors.rs`, registered as `mod event_visitors`
+in `rust/src/lib.rs`. Decomp-verified against `ac_ev_gypsy_move.c_inc`,
+`ac_ev_carpetPeddler.c_inc`, `ac_ev_artist_move.c_inc`,
+`ac_ev_designer_talk.c_inc`, `ac_ev_broker_move.c_inc`,
+`ac_ev_miko_move.c_inc`, `ac_event_manager.c`, `bg_item_common.c_inc`,
+`m_mail_password_check.c`, `m_npc.c` (GAFE01_00 Rev 0 USA). 10 of 12
+brief claims checked verbatim; 2 HEADLINE CORRECTIONS carried.
+
+CORRECTION 1 — Katrina's fortune distribution: the brief claimed
+Normal 10% / Money luck 50%. Tracing the transform (`RANDOM(10)`
+values 0–3 forced to 4, then `−= 4`) gives index 0 = NORMAL at 50%
+and every other destiny at 10%. The decomp's own comment confirms
+("50% chance of 'normal' luck, 10% chance for other types").
+
+CORRECTION 2 — Wendell's fruit path: the brief claimed fish and fruit
+both go to the gift demo. The `next_act_idx` table shows only FISH
+goes to DEMO_START_WAIT; FOOD takes the ordinary TALK_END_WAIT path.
+
+Resolved items the brief called unresolved: Saharah's price formula —
+`price = 3000 × 2^used` with the arabian event-save count capped at 4
+(max 48,000); the event-save key is `arabian`; the polarity is
+trade-in (the player must POSSESS a carpet to proceed). Bonus find:
+EV_MIKO (D03D), Katrina's New Year omikuji actor, with its own
+4-entry destiny table, `RANDOM(4)`, message 0x1911+omikuji, granting
+ITM_FORTUNE_SLIP and a mail letter. Other bonuses: MONEY_LUCK makes
+bell trees drop ITM_MONEY_1000; Redd has four identities
+(D001/D013/D02C/D039); Katrina has two (D00C/D03D); the event
+absolute values (ARTIST 74 … CARPET_PEDDLER 79); confirmed none of the
+five appear in the April Fools table.
+
+Ported (pure data/kernels; the event scheduling, the event manager,
+all five actors' state machines, the wallet/inventory/save mutations,
+the item-selection tables, the tent actor, the handbill generation,
+and the RNG all stay in C):
+
+- Katrina: the fortune-index transform (roll stays in C), the
+  six-destiny table, result/saved-destiny/talk/call-in messages, the
+  fortune-string bases (rolls in C, wallet decremented first), and the
+  EV_MIKO omikuji mapping.
+- Saharah: the price curve, the used-count increment cap, and the
+  second-menu check messages with the possession-before-money order.
+- Wendell: the item classifier (decoded type/category in, class
+  out), the message table, and the corrected next-action markers.
+- Gracie: both 27-entry dialogue tables verbatim (duplicates
+  preserved), the reward-result message indices, and the event-list
+  vs common-list selector.
+- Redd: the handbill templates and the tent-liveness rule.
+- Constants: all nine identities, the five name indices, the event
+  values, the destiny enum, the item-name encoding constants.
+
+C ABI (all `pc_`-prefixed, 15 exports): `pc_ev_fortune_index`,
+`pc_ev_fortune_result_msg`, `pc_ev_fortune_saved_msg`,
+`pc_ev_fortune_talk_msg`, `pc_ev_fortune_string_no`,
+`pc_ev_miko_destiny`, `pc_ev_miko_msg`, `pc_ev_saharah_price`,
+`pc_ev_saharah_check_msg`, `pc_ev_wendell_classify`,
+`pc_ev_wendell_msg`, `pc_ev_wendell_next_action`,
+`pc_ev_gracie_msg`, `pc_ev_gracie_result_msg_idx`,
+`pc_ev_redd_handbill`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the actor state machines and RNG, the save-store
+mutations, the item-generation item tables, the tent actor's
+merchandise code, the message formatting, and the event-controller
+checks.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

@@ -94,6 +94,7 @@ mod totakeke;
 mod majin;
 mod post_office;
 mod police;
+mod event_visitors;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
