@@ -3282,6 +3282,59 @@ C ABI (all `pc_`-prefixed, 7 exports): `pc_ed_get_type`,
 callers rewired yet, per the usual pattern. No test runs, per
 the standing rule.
 
+### Runtime Port Progress: New Year Countdown
+
+New `rust/src/countdown.rs`, registered as `mod countdown` in
+`rust/src/lib.rs`. Decomp-verified against `ac_count02.c`,
+`ac_count02_move.c_inc`, `ac_countdown.c`,
+`ac_countdown_move.c_inc`, `ac_countdown_clip.h`,
+`ac_countdown_npc0.c`, `ac_countdown_npc0_talk.c_inc`,
+`ac_countdown_npc1.c`, `ac_countdown_npc1_talk.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_time.h` (GAFE01_00 Rev 0 USA).
+All 10 brief claims PROVEN.
+
+Ported (pure timer/state kernels; the NPC talk/demo logic, the
+digit-transition animation, the cracker tool actor, and the save
+stay in C):
+
+- The countdown calculation (`aCOU_setNowTime`): December from
+  23:00 → seconds until midnight; other months → 0; December
+  before 23:00 → 3599. The day is NOT checked — preserved
+  verbatim, not "fixed".
+- The MM:SS digit extraction (`aCOU_getTime`).
+- The NPC0 phase function (seven phases, strict `>`/`<`
+  comparisons) and the SIMPLER NPC1 variant (six phases, no
+  AFTER_10_SEC branch).
+- All seven countdown layout tables with the eight actor slots
+  (the (2, 11) overlap in layout 1 preserved, not "fixed"), the
+  five-NPC-slot mask, and the pool block kind.
+- The prop action states (WAIT/MOVE/HAPPY_NEW_YEAR), the MOVE
+  animation parameters (1.0f → 61.0f @ 0.5f), the happy-counter
+  wrap (59 → 0), and the Dec-31-23:59 wait gate.
+- The NPC1 movement: 60-unit radius with home-angle projection,
+  0.0f/319.0f block-edge offsets (range check BEFORE block
+  check), and the before/after-midnight speed triples.
+- The NPC1 firing sequence constants: the 23:59:50 gate, loop
+  count 2, fire at frame 3.0f (only when drawn), clap loop 43,
+  and the four clap sounds indexed by NPC ID.
+- The digit-change mask algorithm (most-significant-first,
+  four-bit) and the prop-animation request rule (clip present,
+  flag unset, arg0 <= 2).
+
+Deliberately NOT ported: the countdown NPC message-number
+selection (already in the sibling `talk_request` module), the
+talk/demo/forced-talk logic, the digit-transition animation
+(it runs in the DRAW callback), the cracker creation and
+lifecycle, the block-lifetime deletion (needs the field/demo
+state), and save mutations.
+
+C ABI (all `pc_`-prefixed, 9 exports): `pc_cd_set_now_time`,
+`pc_cd_get_time`, `pc_cd_term0`, `pc_cd_term1`,
+`pc_cd_digit_change_mask`, `pc_cd_request_anime`,
+`pc_cd_in_move_range`, `pc_cd_project_radius`,
+`pc_cd_layout_pos`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
