@@ -82,6 +82,7 @@ mod albumin_collision_data;
 mod template_select;
 mod species;
 mod uki;
+mod museum;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

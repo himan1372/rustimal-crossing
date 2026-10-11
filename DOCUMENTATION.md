@@ -2134,6 +2134,58 @@ Gaps: `title_demo_move`'s settings-overlay hold and `mTD_rtc_set` /
 `mTD_rtc_reserve` need C-side state (`GAME_PLAY`, common data) and stay
 in C. The 1800-sample `pactN_key_data` tables stay in C as data.
 
+### Runtime Port Progress: Museum Fossil Assessment (m_museum.c)
+
+New `rust/src/museum.rs`, registered as `mod museum` in `rust/src/lib.rs`.
+Decomp-verified against `src/game/m_museum.c`, `src/game/m_museum_display.c`,
+`src/actor/npc/ac_npc_curator_move.c_inc`, `include/m_museum.h`,
+`include/m_museum_display.h` (GAFE01_00 Rev 0 USA).
+
+The retail flow: dig up generic `ITM_FOSSIL` (0x2511) -> mail it to the
+Museum (`mMl_NAME_TYPE_MUSEUM` = 2) -> `mMsm_SendMuseumMail` increments
+`stored_fossil_num` (cap `mMsm_REMAIL_SLOTS` = 30) -> at the daily 6 AM
+grow tick `mMsm_DepositFossil` calls `mMsm_SendResultMail`, which
+round-robins fossil replies (max `mMsm_MAX_MAIL` = 3 mails/player/pass).
+Each reply carries a *different*, randomly selected identified fossil —
+the mailed generic fossil is never transformed in place. Donating the
+identified fossil to Blathers is a separate operation via
+`mMmd_RequestMuseumDisplay`, which removes the inventory item only on
+success. Players with `contacted == FALSE` (museum info mail not yet
+received) get no replies.
+
+Ported (pure kernels; mail queue, saved museum record, display
+bitfields, RNG, and all donation/inventory side effects stay in C):
+
+- Fossil furniture range: `FTR_DINO_START` = 0x1EEC ..
+  `FTR_DINO_END` = 0x1F4F; index = `(item - 0x1EEC) >> 2` (0..24).
+- `mMsm_GetFossilMailNo`: 25-entry `mail_no_table` reproduced verbatim
+  (deliberately non-sequential order preserved); out-of-range -> index 0.
+- `mMsm_SendResultMail` remail table: `{0x22D, 0x22B, 0x22C, 0x22E}`
+  indexed by kind - 1.
+- `aCR_get_fossil_type`: 7 dinosaur groups as item-id ranges
+  (trikera/trex/bront/stego/ptera/hutaba/mammoth); singles -> -1.
+- `aCR_get_idx_to_donate_fossil`: Blathers response indices — self -> 4,
+  none -> 16 (trilobite 17, ammonite 18, egg 19, stump 20, amber 21),
+  deleted player -> 12, other player -> 8.
+- `aCR_chk_fossil_parts_complete_sub`: all parts' donators in 1..5
+  (mammoth has 2 parts, rest 3); skeleton messages
+  0x2F78..0x2F7E, default 0x2F84.
+- `mMmd_GetDisplayInfo` fossil branch: donator nibble -> CANNOT/CAN/ALREADY.
+
+C ABI (all `pc_`-prefixed; the C originals stay compiled):
+`pc_museum_fossil_mail_no`, `pc_museum_fossil_index`,
+`pc_museum_remail_mail_no`, `pc_museum_fossil_type`,
+`pc_museum_donate_response`, `pc_museum_parts_complete`,
+`pc_museum_display_classify`, `pc_museum_skeleton_msg_no`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `RANDOM` calls in `mMsm_GetFossil` (exactly 2 per
+fossil: `RANDOM(2)` then `RANDOM(count)`); the single-vs-multi pool split
+comes from ROM birth data and is unverified — do not reimplement the
+selection distribution in Rust. Mailing a donatable item donates it
+*at send time* (`mMsm_SetRemailInfo` -> `mMmd_RequestMuseumDisplay`).
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
