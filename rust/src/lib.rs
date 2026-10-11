@@ -121,6 +121,7 @@ mod snowman;
 mod kamakura;
 mod mushroom;
 mod balloon;
+mod cockroach;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

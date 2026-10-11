@@ -4279,6 +4279,63 @@ C ABI (all `pc_`-prefixed, 17 exports):
 No C callers rewired yet, per the usual pattern. No test
 runs, per the standing rule.
 
+### Runtime Port Progress: Cockroaches
+
+New `rust/src/cockroach.rs`, registered as `mod
+cockroach` in `rust/src/lib.rs`. Decomp-verified against
+`m_cockroach.c`, `m_cockroach.h`, `ac_house_goki.c`,
+`ac_house_goki.h` (GAFE01_00 Rev 0 USA). 19/19 sections
+PROVEN, 0 DIFFERS.
+
+Ported (pure kernels; RTC/`lbRTC_*` calls, house/cottage
+save writes, actor lifecycle, collision queries,
+`aMR_CLIP` calls, sound/effect creation,
+shadow/rendering, RNG call order, and the
+`mCkRh_DecideNowGokiFamilyCount` orchestration stay in
+C):
+
+- The infestation growth: strictly `day_gap > 6`, then
+  the clamped sum of the saved count and — when the
+  saved count is already positive — the entire day gap,
+  otherwise the gap minus 6.
+- The 0–10 clamp, the 0–3 visible-count math (with the
+  FALSE-on-clamp return), and the `arrange_idx & 3`
+  house index.
+- The stomp predicate: player exists, is moving,
+  strictly within 9.0f, and exactly at home Y (the
+  `aMR_CLIP` and bg-flag conditions stay in C).
+- The proximity predicate (strict 60.0f), the WAIT/MOVE
+  decision (with the `||` short-circuit), the move-
+  target offsets, the retail `RANDOM(1)` jump-angle bug
+  (always player angle + 4096), the `& 0xC000` cardinal
+  constraint, and the jump roll (0.5/0.2).
+- The timer/alpha/shadow steps (0.5/3.5/2.5 × dt), the
+  death flicker, and the AWAY/WAIT timer inits.
+
+Deliberately NOT ported: the USA cottage branch uses
+the pre-VER_GAFU01_00 path (copies current RTC y/m/d,
+no year-zero guard); the cottage add/remove branches
+write the count but return FALSE; `aHG_check_threshold`
+always returns FALSE (dead doorway branch); the
+wall-angle proc is a no-op within 20.0f of the player;
+the MOVE transition draws `RANDOM_F(5.0f)` twice; the
+saved-infestation-count lifecycle on stomp is untraced
+(actor death only decrements the transient visible
+count) — this port stays arithmetic-only.
+
+C ABI (all `pc_`-prefixed, 17 exports):
+`pc_cockroach_clamp_count`, `pc_cockroach_growth_count`,
+`pc_cockroach_visible_count`,
+`pc_cockroach_house_index`, `pc_goki_stomp_check`,
+`pc_goki_player_near`, `pc_goki_decide_wait_move`,
+`pc_goki_move_target`, `pc_goki_jump_angle_offset`,
+`pc_goki_wall_cardinal`, `pc_goki_should_jump`,
+`pc_goki_timer_step`, `pc_goki_alpha_step`,
+`pc_goki_shadow_step`, `pc_goki_death_visible`,
+`pc_goki_away_timer`, `pc_goki_wait_timer`. No C
+callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
