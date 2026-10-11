@@ -1727,6 +1727,35 @@ status constants; the full machine lives here.
 
 ### Runtime Port Progress: Bee/Ant Special Actors
 
+Bee follow-ups (2026-10-11): headline correction — `add_calc_short_angle2`
+does NOT do angle wraparound in this tree; it eases the plain `s16`
+difference with a dt-scaled min-step floor, `(s16)` truncation plus a
+nonzero-step guarantee, and overshoot snap (the wrapping variant is
+`add_calc_short_angle3`, which the bee/ant never call). `CALC_EASE`,
+`add_calc`, `add_calc_short_angle2`, and `chase_f` are ported verbatim;
+`mlib_calc_dt_fraction` stays in C as a caller input. Move-callback order:
+positional sound → AND-sentinel (`x < 0 && z < 0` skips everything; the
+draw callback uses OR) → conditional `Actor_position_moveF` (ATTACK or
+player not wading) → action callback → anime (`fly_angle` ±`(s16)(500*dt)`)
+→ Y eased toward `pos_y`. APPEAR: `pos_y = playerY + 50`, `rot.x = 32767`,
+`rot.z += (s16)(4096*dt)`, `alpha += 3*dt`, `>= 255` clamps and goes to FLY
+(no scale that frame), else `aBEE_calc_scale(0.1, 0.005)` with per-axis
+`max_step * 0.5`; the init also sets `player_bee_chase_flag`. FLY sizes:
+`size.x = size.y = (0.75 + d/360) * 0.01`, `size.z = (1.5 - d/180) * 0.01`
+with `d = |90 - start_frame|`. Catch requests: 60-frame delay gates;
+net-catch label checked first → CAUGHT; force request when
+`(swing_timer > 0 || stop_net) && dist < 40.0f` (no position/radius args),
+plain-else table request with `&world.position` and `24.0f`; the ant has
+no delay and a candy/spoiled-turnip food gate. CAUGHT: NULL-gated insect
+construction, label transfer as an independent step, `disappear_timer +=
+dt` with `> 1.0f` (not `>=`) → DISAPPEAR; the ant retries conversion every
+call. Ant scale: `chase_f(&x, target, step * 0.5)` then X copied to Y/Z;
+disappear uses `alpha <= 0.0f` with an effective `0.05 * dt` step.
+Honeycomb → bee activation settled: `bIT_actor_drop_wait_bee` performs
+exactly one write (the bee's world position); the bee is constructed
+dormant at the (-1,-1,-1) sentinel and deleted if the drop fails. 13 new
+pure exports.
+
 New `rust/src/bee_ant.rs`, verified against `src/actor/ac_bee.c`,
 `src/actor/ac_ant.c`, `src/actor/ac_insect_clip.c_inc`,
 `src/actor/ac_set_ovl_insect.c`, and `src/bg_item/bg_item_common.c_inc`

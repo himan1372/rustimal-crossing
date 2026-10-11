@@ -244,10 +244,25 @@ candidate for a future pure-kernel port once its boundary is verified.
   Excitebike texture/palette, game 14, AGB 0xFF; reference table @unused.
   scene.rs `FamicomEmu` `cleanup_fn: None` gap CONFIRMED and FIXED to
   `Some("famicom_emu_cleanup")`. 8 new pure exports in `famicom.rs`.
-- **Bee follow-ups** — CALC_EASE short-angle wraparound; appear rotation.z increment
-  and scale easing; position integration ownership; force-catch/table-catch request
-  events; `disappear_timer > 1.0` fallback in CAUGHT; ant scale chase; the exact
-  honeycomb actor callbacks and their update ordering.
+- **Bee follow-ups** — RESOLVED 2026-10-11: HEADLINE CORRECTION —
+  `add_calc_short_angle2` does NOT wrap angles in this tree (plain s16
+  diff; the wrapping variant is `angle3`, unused by bee/ant); the brief's
+  wraparound premise was wrong. `CALC_EASE`/`add_calc`/`angle2`/`chase_f`
+  ported verbatim into `bee_ant.rs` (dt_fraction is a caller input).
+  Move-callback order proven (sound → AND-sentinel → conditional
+  integrate → action → anime → Y-ease; draw uses OR sentinel).
+  APPEAR proven with dt nuances (rot.z += (s16)(4096*dt), alpha += 3*dt,
+  >=255 → FLY without scale that frame; init also sets
+  player_bee_chase_flag). Catch requests proven: 60-frame delay gates;
+  label check first; force (no position/radius args) vs plain-else table
+  (&world.position, 24.0f); bee TRUE == ANT type == 1 and ant's unit-size
+  == bee's 40.0f are symbol-level coincidences. CAUGHT fallback proven:
+  timer += dt, `> 1.0f` (not >=) → DISAPPEAR; creation and label
+  transfer are independent. Ant scale proven (`chase_f` + X→Y/Z copy;
+  disappear uses `alpha <= 0.0f`, effective step `0.05*dt`). Honeycomb→bee
+  activation RESOLVED: `bIT_actor_drop_wait_bee` writes only
+  world.position; the bee is built dormant at (-1,-1,-1) and deleted on
+  drop failure. 13 new pure exports; 12/12 module tests pass.
 - **Fish follow-ups** — the full test/kaseki state machines and their complete transition
   tables; exact UKI_ACTOR status synchronization around the catch animation
   (`aGTT_comeback`/`aGKK_comeback`); the species-indexed `aGYO_hosei_y[]` and

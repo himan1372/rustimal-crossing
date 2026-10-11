@@ -15,12 +15,21 @@
 //! heading-dependent addition is dead code in the source —
 //! `abs_speed_angle` is always zeroed).
 //!
-//! Remaining approximations vs retail: no CALC_EASE short-angle
-//! wraparound (plain degree easing), appear rotation.z increment and
-//! scale easing not modeled, no position integration (`_moves` is
-//! recorded only), no force-catch/table-catch request events, no
-//! `disappear_timer > 1.0` fallback in CAUGHT, ant scale chase is
-//! approximate, fly_angle/base_angle short-angle semantics unmodeled.
+//! Follow-ups ported (2026-10-11, `bee-followups-report.md`):
+//! `CALC_EASE`, `add_calc`, and `add_calc_short_angle2` are ported
+//! verbatim — note `angle2` is plain-s16-difference easing with NO
+//! wraparound (the wrapping variant is `angle3`, which the bee never
+//! calls); APPEAR rotation.z/alpha/scale steps, the FLY size formulas,
+//! force/table catch-request decision events, the CAUGHT
+//! `disappear_timer > 1.0` fallback, and the ant's `chase_f` scale are
+//! all modeled. Remaining approximations: no position integration (the
+//! wrapper-owned `Actor_position_moveF` stays in C, as do the sound,
+//! skeleton animation, actor construction/deletion, label transfer, and
+//! the player tree-shake/axe birth state machine); `dt_fraction`
+//! (`DTCONV_GRAPH`) is a caller input. The honeycomb→bee activation is
+//! settled: `bIT_actor_drop_wait_bee` performs exactly one write (the
+//! bee's world position); the bee is constructed dormant at the
+//! (-1,-1,-1) sentinel and deleted on drop failure.
 //! The ghog hive actor (`src/actor/ac_ghog.c`) stays in C: it is a
 //! field-item/shadow visual with no bee-like state machine.
 //!
@@ -979,6 +988,411 @@ pub extern "C" fn pc_ant_substrate_ok(fg_item: u16) -> u8 {
 }
 
 #[cfg(test)]
+/// Bee/ant easing and lifecycle kernels (`m_lib.c`, `ac_bee.c`,
+/// `ac_ant.c`).
+///
+/// Ported verbatim: `CALC_EASE`, `add_calc` (float), `add_calc_short_angle2`
+/// (s16), `chase_f`. IMPORTANT: `add_calc_short_angle2` does NOT wrap
+/// angles — it eases the plain `s16` difference `target - *pValue` with a
+/// dt-scaled min-step floor, `(s16)` truncation with a nonzero-step
+/// guarantee, and overshoot snap. The wrapping variant is
+/// `add_calc_short_angle3`, which the bee/ant never call.
+/// `mlib_calc_dt_fraction` (`DTCONV_GRAPH`) stays in C: every kernel below
+/// takes the already-computed `dt_fraction` (and `dt`) as inputs.
+///
+/// Move-callback order (`aBEE_actor_move`), wrapper-owned: positional sound
+/// → AND-sentinel (`x < 0 && z < 0` skips everything; the DRAW callback
+/// uses an OR sentinel) → conditional `Actor_position_moveF` (ATTACK or
+/// player not wading) → action callback → `aBEE_anime_proc` (skeleton
+/// frame; `fly_angle` ± `(s16)(500*dt)`) → Y eased toward `pos_y` with
+/// `add_calc(..., CALC_EASE(0.3), 1.5, 0)`. Integration belongs to the
+/// wrapper, not the flight callbacks.
+///
+/// Numeric coincidences to preserve as symbols, not values: the bee's
+/// force-request `TRUE` == `mPlayer_NET_CATCH_TYPE_ANT` == 1, and the
+/// ant's `mFI_UNIT_BASE_SIZE_F` == the bee's `40.0f`.
+///
+/// Catch-request ownership: the requests are player-side side effects;
+/// these kernels only decide WHICH request the bee/ant issues.
+
+/// `CALC_EASE(x) = 1 - sqrt(1 - x)` (`m_lib.h`).
+#[no_mangle]
+pub extern "C" fn pc_calc_ease(x: f32) -> f32 {
+    1.0 - (1.0 - x).sqrt()
+}
+
+/// `add_calc` verbatim (`m_lib.c`): eases `*value` toward `target`.
+/// `dt_fraction` is the `mlib_calc_dt_fraction` result (C-owned);
+/// `dt` scales the min/max steps. Returns `target - *value`.
+#[no_mangle]
+pub extern "C" fn pc_add_calc(
+    value: *mut f32,
+    target: f32,
+    dt_fraction: f32,
+    max_step: f32,
+    min_step: f32,
+    dt: f32,
+) -> f32 {
+    if value.is_null() {
+        return 0.0;
+    }
+    let v = unsafe { &mut *value };
+    let dt_max = max_step * dt;
+    let dt_min = min_step * dt;
+    if *v != target {
+        let mut step = dt_fraction * (target - *v);
+        let neg_min = -dt_min;
+        if step <= neg_min || dt_min <= step {
+            if step > dt_max {
+                step = dt_max;
+            } else if step < -dt_max {
+                step = -dt_max;
+            }
+            *v += step;
+            if step > 0.0 {
+                if *v > target {
+                    *v = target;
+                }
+            } else if *v < target {
+                *v = target;
+            }
+        } else if step > 0.0 {
+            *v += dt_min;
+            if *v > target {
+                *v = target;
+            }
+        } else {
+            *v += neg_min;
+            if *v < target {
+                *v = target;
+            }
+        }
+    }
+    target - *v
+}
+
+/// `add_calc_short_angle2` verbatim (`m_lib.c`): eases an `s16` angle
+/// toward `target` using the PLAIN difference (no wraparound), with a
+/// dt-scaled min-step floor, `(s16)` truncation plus a nonzero-step
+/// guarantee, and overshoot snap. Returns `target - *value`.
+#[no_mangle]
+pub extern "C" fn pc_add_calc_short_angle2(
+    value: *mut i16,
+    target: i16,
+    dt_fraction: f32,
+    max_step: i16,
+    min_step: i16,
+    dt: f32,
+) -> i16 {
+    if value.is_null() {
+        return 0;
+    }
+    let v = unsafe { &mut *value };
+    let dt_max = (max_step as f32 * dt).max(1.0);
+    let dt_min = (min_step as f32 * dt).max(1.0);
+    if *v != target {
+        let diff = target.wrapping_sub(*v);
+        let mut step_size = diff as f32 * dt_fraction;
+        if step_size > dt_min || step_size < -dt_min {
+            if step_size > dt_max {
+                step_size = dt_max;
+            } else if step_size < -dt_max {
+                step_size = -dt_max;
+            }
+        } else if diff >= 0 {
+            step_size = dt_min;
+        } else {
+            step_size = -dt_min;
+        }
+        let mut step = step_size as i16;
+        if step == 0 && diff != 0 {
+            step = if diff > 0 { 1 } else { -1 };
+        }
+        *v = v.wrapping_add(step);
+        if step > 0 {
+            if target.wrapping_sub(*v) < 0 {
+                *v = target;
+            }
+        } else if target.wrapping_sub(*v) > 0 {
+            *v = target;
+        }
+    }
+    target.wrapping_sub(*v)
+}
+
+/// `chase_f` verbatim (`m_lib.c`): fixed-step approach with no overshoot.
+/// The step is NOT dt-scaled internally — the caller scales it. Returns
+/// nonzero when the target is reached.
+#[no_mangle]
+pub extern "C" fn pc_chase_f(value: *mut f32, target: f32, step: f32) -> bool {
+    if value.is_null() {
+        return false;
+    }
+    let v = unsafe { &mut *value };
+    let mut m_step = step;
+    if m_step != 0.0 {
+        if *v > target {
+            m_step = -m_step;
+        }
+        *v += m_step;
+        if m_step * (*v - target) >= 0.0 {
+            *v = target;
+            return true;
+        }
+    } else if *v == target {
+        return true;
+    }
+    false
+}
+
+/// APPEAR rotation.x: `DEG2SHORT_ANGLE2(180.0) - 1` = 32767.
+pub const BEE_APPEAR_ROT_X: i16 = 32767;
+/// APPEAR rotation.z increment per unit dt: `DEG2SHORT_ANGLE2(22.5)` = 4096.
+pub const BEE_APPEAR_ROT_Z_STEP: i16 = 4096;
+/// APPEAR alpha increment per unit dt.
+pub const BEE_APPEAR_ALPHA_STEP: f32 = 3.0;
+
+/// APPEAR rotation.z increment: `(s16)(4096 * dt)`.
+#[no_mangle]
+pub extern "C" fn pc_bee_appear_rot_z_inc(dt: f32) -> i16 {
+    (BEE_APPEAR_ROT_Z_STEP as f32 * dt) as i16
+}
+
+/// APPEAR alpha step: advances `alpha` by `3*dt`; when it reaches 255 it
+/// is clamped and the function returns true (transition to FLY — the
+/// scale-easing else-branch is NOT taken that frame).
+#[no_mangle]
+pub extern "C" fn pc_bee_appear_alpha(alpha: *mut f32, dt: f32) -> bool {
+    if alpha.is_null() {
+        return false;
+    }
+    let a = unsafe { &mut *alpha };
+    *a += BEE_APPEAR_ALPHA_STEP * dt;
+    if *a >= 255.0 {
+        *a = 255.0;
+        return true;
+    }
+    false
+}
+
+/// FLY deformation sizes from `d = |90 - start_frame|`:
+/// `size.x = size.y = (0.75 + d/360) * 0.01`,
+/// `size.z = (1.5 - d/180) * 0.01`.
+#[no_mangle]
+pub extern "C" fn pc_bee_fly_size(start_frame: f32, out: *mut f32) {
+    if out.is_null() {
+        return;
+    }
+    let d = (90.0 - start_frame).abs();
+    let o = unsafe { std::slice::from_raw_parts_mut(out, 3) };
+    o[0] = (0.75 + d / 360.0) * 0.01;
+    o[1] = o[0];
+    o[2] = (1.5 - d / 180.0) * 0.01;
+}
+
+/// `aBEE_fly_move_common` angle target: `base - (s16)(|90 - start_frame|
+/// * 7.5)`, where `base` is 1600 in FLY/CAUGHT and 5000 otherwise.
+#[no_mangle]
+pub extern "C" fn pc_bee_fly_base_angle(action: u8) -> i16 {
+    if action == 1 || action == 2 {
+        1600
+    } else {
+        5000
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pc_bee_fly_d_angle(base_angle: i16, start_frame: f32) -> i16 {
+    let angle = (90.0 - start_frame).abs() * 7.5;
+    base_angle.wrapping_sub(angle as i16)
+}
+
+/// Catch-request decision. Returns 0 = no request (delay still active),
+/// 1 = net-catch label matched (go to CAUGHT), 2 = force-catch request
+/// (`Set_Item_net_catch_request_force_proc`, no position/radius args),
+/// 3 = table-catch request (`Set_Item_net_catch_request_table_proc` with
+/// the actor's world position and 24.0f radius). The label check runs
+/// before the request branch; the plain-else table branch has no
+/// `dist < 24` gate at the call site. Bee force distance is `40.0f`.
+pub const BEE_CATCH_DELAY: f32 = 60.0;
+pub const BEE_FORCE_DIST: f32 = 40.0;
+pub const CATCH_TABLE_RADIUS: f32 = 24.0;
+pub const CATCH_REQ_NONE: u8 = 0;
+pub const CATCH_REQ_CAUGHT: u8 = 1;
+pub const CATCH_REQ_FORCE: u8 = 2;
+pub const CATCH_REQ_TABLE: u8 = 3;
+
+#[no_mangle]
+pub extern "C" fn pc_bee_catch_request(
+    catch_delay: f32,
+    label_match: bool,
+    swing_timer: f32,
+    stop_net: bool,
+    dist_xz: f32,
+) -> u8 {
+    if catch_delay > 0.0 {
+        return CATCH_REQ_NONE;
+    }
+    if label_match {
+        return CATCH_REQ_CAUGHT;
+    }
+    if (swing_timer > 0.0 || stop_net) && dist_xz < BEE_FORCE_DIST {
+        CATCH_REQ_FORCE
+    } else {
+        CATCH_REQ_TABLE
+    }
+}
+
+/// Ant catch-request decision: no catch delay (unlike the bee); force
+/// distance is `mFI_UNIT_BASE_SIZE_F` (numerically 40.0, kept symbolic).
+pub const ANT_FORCE_DIST: f32 = 40.0;
+
+#[no_mangle]
+pub extern "C" fn pc_ant_catch_request(
+    label_match: bool,
+    swing_timer: f32,
+    stop_net: bool,
+    dist_xz: f32,
+) -> u8 {
+    if label_match {
+        return CATCH_REQ_CAUGHT;
+    }
+    if (swing_timer > 0.0 || stop_net) && dist_xz < ANT_FORCE_DIST {
+        CATCH_REQ_FORCE
+    } else {
+        CATCH_REQ_TABLE
+    }
+}
+
+/// CAUGHT failure fallback: advances `*timer` by `dt`; returns true when
+/// it exceeds 1.0 (transition to DISAPPEAR). Called only when no insect
+/// actor was created that update — creation and the net-catch
+/// label-transfer are separate C-owned operations with independently
+/// observable outcomes.
+#[no_mangle]
+pub extern "C" fn pc_caught_timer_expired(timer: *mut f32, dt: f32) -> bool {
+    if timer.is_null() {
+        return false;
+    }
+    let t = unsafe { &mut *timer };
+    *t += dt;
+    *t > 1.0
+}
+
+/// `aANT_calc_scale` verbatim: chases `scales[0]` toward `target` with
+/// `chase_f(step * 0.5)`, then copies X into Y and Z. The caller passes
+/// the dt-scaled step (`0.1 * dt` from `aANT_disappear`, so the effective
+/// chase step is `0.05 * dt`). `aANT_disappear` uses `alpha <= 0.0f`
+/// (not `<`) for the delete branch.
+#[no_mangle]
+pub extern "C" fn pc_ant_calc_scale(scales: *mut f32, step: f32, target: f32) {
+    if scales.is_null() {
+        return;
+    }
+    let s = unsafe { std::slice::from_raw_parts_mut(scales, 3) };
+    pc_chase_f(s.as_mut_ptr(), target, step * 0.5);
+    s[1] = s[0];
+    s[2] = s[0];
+}
+
+    #[test]
+    fn easing_kernels() {
+        // CALC_EASE(0) = 0, CALC_EASE(1) = 1.
+        assert!((pc_calc_ease(0.0) - 0.0).abs() < 1e-6);
+        assert!((pc_calc_ease(1.0) - 1.0).abs() < 1e-6);
+        assert!((pc_calc_ease(0.3) - (1.0 - 0.7f32.sqrt())).abs() < 1e-6);
+        // add_calc: moves toward target, snaps on overshoot.
+        let mut v = 0.0f32;
+        let rem = pc_add_calc(&mut v, 10.0, 0.5, 100.0, 0.0, 1.0);
+        assert!((v - 5.0).abs() < 1e-6 && (rem - 5.0).abs() < 1e-6);
+        let mut v = 9.99f32;
+        pc_add_calc(&mut v, 10.0, 0.5, 100.0, 0.05, 1.0);
+        assert!((v - 10.0).abs() < 1e-6); // min-step nudge overshoots -> snap
+        let mut v = 10.0f32;
+        assert_eq!(pc_add_calc(&mut v, 10.0, 0.5, 100.0, 0.0, 1.0), 0.0);
+        // add_calc_short_angle2: plain s16 diff, NO wraparound.
+        let mut a: i16 = 0;
+        let rem = pc_add_calc_short_angle2(&mut a, 1000, 0.5, 250, 0, 1.0);
+        assert_eq!(a, 250); // 1000 * 0.5 = 500, clamped to max_step 250
+        assert_eq!(rem, 750);
+        // No wrap: the s16 diff -64000 truncates to +1536, so the step
+        // goes the "wrong" way exactly as retail does.
+        let mut a: i16 = 32000;
+        pc_add_calc_short_angle2(&mut a, -32000, 1.0, 250, 0, 1.0);
+        assert_eq!(a, 32250); // diff wraps to +1536 -> clamped step +250
+        // Nonzero-step guarantee: tiny fraction still moves by 1.
+        let mut a: i16 = 0;
+        pc_add_calc_short_angle2(&mut a, 5, 0.0001, 250, 0, 1.0);
+        assert_eq!(a, 1);
+        // chase_f: fixed step, no overshoot, exact return.
+        let mut v = 0.0f32;
+        assert!(!pc_chase_f(&mut v, 1.0, 0.3));
+        assert!((v - 0.3).abs() < 1e-6);
+        assert!(pc_chase_f(&mut v, 0.35, 0.3)); // would overshoot -> snap
+        assert!((v - 0.35).abs() < 1e-6);
+        let mut v = 1.0f32;
+        assert!(pc_chase_f(&mut v, 1.0, 0.0));
+    }
+
+    #[test]
+    fn appear_and_fly_kernels() {
+        // rotation.z increment is dt-scaled truncation.
+        assert_eq!(pc_bee_appear_rot_z_inc(1.0), 4096);
+        assert_eq!(pc_bee_appear_rot_z_inc(0.5), 2048);
+        assert_eq!(BEE_APPEAR_ROT_X, 32767);
+        // alpha: reaches 255 -> clamp + FLY transition, no scale path.
+        let mut a = 250.0f32;
+        assert!(!pc_bee_appear_alpha(&mut a, 1.0));
+        assert!((a - 253.0).abs() < 1e-6);
+        assert!(pc_bee_appear_alpha(&mut a, 1.0));
+        assert_eq!(a, 255.0);
+        // FLY sizes: d = |90 - start_frame|.
+        let mut s = [0f32; 3];
+        pc_bee_fly_size(90.0, s.as_mut_ptr());
+        assert!((s[0] - 0.0075).abs() < 1e-6 && (s[2] - 0.015).abs() < 1e-6);
+        pc_bee_fly_size(0.0, s.as_mut_ptr());
+        assert!((s[0] - (0.75 + 0.25) * 0.01).abs() < 1e-6);
+        assert!((s[2] - (1.5 - 0.5) * 0.01).abs() < 1e-6);
+        // base angle: 1600 in FLY(1)/CAUGHT(2), else 5000.
+        assert_eq!(pc_bee_fly_base_angle(1), 1600);
+        assert_eq!(pc_bee_fly_base_angle(2), 1600);
+        assert_eq!(pc_bee_fly_base_angle(4), 5000);
+        assert_eq!(pc_bee_fly_d_angle(1600, 90.0), 1600);
+        assert_eq!(pc_bee_fly_d_angle(1600, 0.0), 1600 - 675);
+    }
+
+    #[test]
+    fn catch_and_caught_kernels() {
+        // delay active -> no request.
+        assert_eq!(pc_bee_catch_request(60.0, false, 1.0, false, 10.0), CATCH_REQ_NONE);
+        assert_eq!(pc_bee_catch_request(0.5, false, 1.0, false, 10.0), CATCH_REQ_NONE);
+        // label match -> CAUGHT (before the request branch).
+        assert_eq!(pc_bee_catch_request(0.0, true, 0.0, false, 999.0), CATCH_REQ_CAUGHT);
+        // force: swing timer + in range.
+        assert_eq!(pc_bee_catch_request(0.0, false, 1.0, false, 39.9), CATCH_REQ_FORCE);
+        // stop-net + in range.
+        assert_eq!(pc_bee_catch_request(0.0, false, 0.0, true, 10.0), CATCH_REQ_FORCE);
+        // plain else -> table (no dist<24 gate at the call site).
+        assert_eq!(pc_bee_catch_request(0.0, false, 0.0, false, 10.0), CATCH_REQ_TABLE);
+        assert_eq!(pc_bee_catch_request(0.0, false, 1.0, false, 40.0), CATCH_REQ_TABLE);
+        assert_eq!(CATCH_TABLE_RADIUS, 24.0);
+        // ant: no delay, same shape.
+        assert_eq!(pc_ant_catch_request(true, 0.0, false, 999.0), CATCH_REQ_CAUGHT);
+        assert_eq!(pc_ant_catch_request(false, 1.0, false, 10.0), CATCH_REQ_FORCE);
+        assert_eq!(pc_ant_catch_request(false, 0.0, false, 10.0), CATCH_REQ_TABLE);
+        // CAUGHT fallback: > 1.0, not >=.
+        let mut t = 0.0f32;
+        assert!(!pc_caught_timer_expired(&mut t, 1.0));
+        assert!(!pc_caught_timer_expired(&mut t, 0.0)); // exactly 1.0 -> no
+        assert!(pc_caught_timer_expired(&mut t, 0.1)); // 1.1 -> yes
+        // ant scale: chase_f on X, copied to Y/Z.
+        let mut s = [1.0f32, 0.5, 0.25];
+        pc_ant_calc_scale(s.as_mut_ptr(), 0.1, 0.01);
+        assert!((s[0] - 0.95).abs() < 1e-6); // 1.0 - 0.1*0.5
+        assert_eq!(s[1], s[0]);
+        assert_eq!(s[2], s[0]);
+    }
+
 mod tests {
     use super::*;
 
