@@ -380,21 +380,24 @@ static DEMO_STATE: Mutex<TitleDemoState> = Mutex::new(TitleDemoState {
     frame_30fps: 0,
 });
 
+/// Staged for the future title-screen cutover: same semantics as the C
+/// originals in m_titledemo.c, but pc_-prefixed so they don't collide
+/// while the C file is still compiled in.
 #[no_mangle]
-pub extern "C" fn mTD_demono_get() -> c_int {
+pub extern "C" fn pc_title_demono_get() -> c_int {
     let mut st = DEMO_STATE.lock().unwrap();
     st.demono = demono_next(st.demono);
     st.demono as c_int
 }
 
 #[no_mangle]
-pub extern "C" fn mTD_get_titledemo_no() -> c_int {
+pub extern "C" fn pc_title_get_titledemo_no() -> c_int {
     let st = DEMO_STATE.lock().unwrap();
     titledemo_index(st.demono) as c_int
 }
 
 #[no_mangle]
-pub extern "C" fn mTD_tdemo_button_ok_check() -> c_int {
+pub extern "C" fn pc_title_tdemo_button_ok_check() -> c_int {
     let st = DEMO_STATE.lock().unwrap();
     demo_button_ok(st.frame_30fps) as c_int
 }

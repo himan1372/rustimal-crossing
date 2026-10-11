@@ -2122,8 +2122,9 @@ writes, and RTC/common-data calls stay in C):
 - Verified no-op: `mTD_player_keydata_init`'s tool filter assigns every
   branch back to itself, so the header tool id passes through unchanged.
 
-C ABI: `mTD_demono_get`, `mTD_get_titledemo_no`,
-`mTD_tdemo_button_ok_check` (stateful, Mutex-guarded),
+C ABI: `pc_title_demono_get`, `pc_title_get_titledemo_no`,
+`pc_title_tdemo_button_ok_check` (stateful, Mutex-guarded; pc_-prefixed
+so they don't collide with `m_titledemo.c` while it's still compiled),
 `pc_titledemo_decode_keydata`, `pc_titledemo_advance_frame`.
 `cargo check --lib` clean (only the crate-standard "never used"
 warnings); no C callers rewired yet, per the usual pattern. No test
@@ -2132,6 +2133,3098 @@ runs, per the standing rule.
 Gaps: `title_demo_move`'s settings-overlay hold and `mTD_rtc_set` /
 `mTD_rtc_reserve` need C-side state (`GAME_PLAY`, common data) and stay
 in C. The 1800-sample `pactN_key_data` tables stay in C as data.
+
+### Runtime Port Progress: Museum Fossil Assessment (m_museum.c)
+
+New `rust/src/museum.rs`, registered as `mod museum` in `rust/src/lib.rs`.
+Decomp-verified against `src/game/m_museum.c`, `src/game/m_museum_display.c`,
+`src/actor/npc/ac_npc_curator_move.c_inc`, `include/m_museum.h`,
+`include/m_museum_display.h` (GAFE01_00 Rev 0 USA).
+
+The retail flow: dig up generic `ITM_FOSSIL` (0x2511) -> mail it to the
+Museum (`mMl_NAME_TYPE_MUSEUM` = 2) -> `mMsm_SendMuseumMail` increments
+`stored_fossil_num` (cap `mMsm_REMAIL_SLOTS` = 30) -> at the daily 6 AM
+grow tick `mMsm_DepositFossil` calls `mMsm_SendResultMail`, which
+round-robins fossil replies (max `mMsm_MAX_MAIL` = 3 mails/player/pass).
+Each reply carries a *different*, randomly selected identified fossil —
+the mailed generic fossil is never transformed in place. Donating the
+identified fossil to Blathers is a separate operation via
+`mMmd_RequestMuseumDisplay`, which removes the inventory item only on
+success. Players with `contacted == FALSE` (museum info mail not yet
+received) get no replies.
+
+Ported (pure kernels; mail queue, saved museum record, display
+bitfields, RNG, and all donation/inventory side effects stay in C):
+
+- Fossil furniture range: `FTR_DINO_START` = 0x1EEC ..
+  `FTR_DINO_END` = 0x1F4F; index = `(item - 0x1EEC) >> 2` (0..24).
+- `mMsm_GetFossilMailNo`: 25-entry `mail_no_table` reproduced verbatim
+  (deliberately non-sequential order preserved); out-of-range -> index 0.
+- `mMsm_SendResultMail` remail table: `{0x22D, 0x22B, 0x22C, 0x22E}`
+  indexed by kind - 1.
+- `aCR_get_fossil_type`: 7 dinosaur groups as item-id ranges
+  (trikera/trex/bront/stego/ptera/hutaba/mammoth); singles -> -1.
+- `aCR_get_idx_to_donate_fossil`: Blathers response indices — self -> 4,
+  none -> 16 (trilobite 17, ammonite 18, egg 19, stump 20, amber 21),
+  deleted player -> 12, other player -> 8.
+- `aCR_chk_fossil_parts_complete_sub`: all parts' donators in 1..5
+  (mammoth has 2 parts, rest 3); skeleton messages
+  0x2F78..0x2F7E, default 0x2F84.
+- `mMmd_GetDisplayInfo` fossil branch: donator nibble -> CANNOT/CAN/ALREADY.
+
+C ABI (all `pc_`-prefixed; the C originals stay compiled):
+`pc_museum_fossil_mail_no`, `pc_museum_fossil_index`,
+`pc_museum_remail_mail_no`, `pc_museum_fossil_type`,
+`pc_museum_donate_response`, `pc_museum_parts_complete`,
+`pc_museum_display_classify`, `pc_museum_skeleton_msg_no`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `RANDOM` calls in `mMsm_GetFossil` (exactly 2 per
+fossil: `RANDOM(2)` then `RANDOM(count)`); the single-vs-multi pool split
+comes from ROM birth data and is unverified — do not reimplement the
+selection distribution in Rust. Mailing a donatable item donates it
+*at send time* (`mMsm_SetRemailInfo` -> `mMmd_RequestMuseumDisplay`).
+
+### Runtime Port Progress: Special-Visitor Classification (m_npc.h)
+
+New `rust/src/visitors.rs`, registered as `mod visitors` in
+`rust/src/lib.rs`. Decomp-verified against `include/m_npc.h`,
+`include/m_name_table.h`, `src/actor/npc/ac_npc_init.c_inc`,
+`src/actor/npc/ac_npc_curator_move.c_inc` (GAFE01_00 Rev 0 USA).
+
+Special visitors are not one system: NPC identity, the set-NPC manager
+(`ac_set_npc_manager.c`), actor init branches, event scheduling, RNG,
+and saved records all stay in C. There is NO single retail predicate
+deciding "visitor X appears today" — appearance emerges from the
+manager's regular/guest procedures plus event state — so no such kernel
+exists here. Ported are only the source-proven pure classifications:
+
+- NPC ID encoding: `mNpc_GET_IDX` (`& 0x0FFF`), `mNpc_GET_TYPE`
+  (`& 0xF000`), `mNpc_IS_SPECIAL` (type `== 0xD000`);
+  `ITEM_NAME_GET_TYPE` (upper nibble: 13 = special, 14 = villager).
+  `mNpc_EVENT_NPC_NUM` = 5, `mNpc_MASK_NPC_NUM` = 3.
+- Curator item ranges (verbatim, asymmetry preserved): art
+  `0x12AC..=0x12E7` (inclusive), insect `0x2D00..0x2D28` (end
+  EXCLUSIVE), fish `0x2300..=0x2340` (end inclusive).
+- Curator offer classification in `aCR_msg_win_open_wait` priority
+  order: empty / fossil / art / insect / fish / generic fossil / other.
+  (The fossil check itself lives in `museum.rs`.)
+
+C ABI (all `pc_`-prefixed): `pc_visitor_is_special`,
+`pc_visitor_name_type`, `pc_visitor_npc_idx`, `pc_curator_is_art`,
+`pc_curator_is_insect`, `pc_curator_is_fish`, `pc_curator_offer_class`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the `aNPC_actor_init` special path (event-NPC then
+mask-NPC clothing fallback) needs actor pointers + save; the
+`aSNMgr` manager, `mNpc_GetSameEventNpc`/`mNpc_GetSameMaskNpc`
+record lookups, and all visitor scheduling stay in C.
+
+### Runtime Port Progress: Wisp the Ghost (ac_ev_ghost.c)
+
+New `rust/src/wisp.rs`, registered as `mod wisp` in `rust/src/lib.rs`.
+Decomp-verified against `ac_ev_ghost_talk.c_inc`,
+`ac_ev_ghost_schedule.c_inc`, `ac_ev_ghost.c`, `ac_event_manager.c`,
+`m_event.c`, `m_event.h`, `m_name_table.h`, `ac_ev_ghost.h`
+(GAFE01_00 Rev 0 USA). All 9 brief claims verified verbatim against the
+decomp before porting; the one correction is that the reschedule window
+is [today−7, today+4], not "previous Monday to upcoming Friday" (the
+variable names are reused from the Gulliver block).
+
+Ported (pure kernels; scheduler, event manager, actor lifecycle, spirit
+spawn overrides, RNG, inventory mutation, and reward selection stay
+in C):
+
+- Spirit items `ITM_SPIRIT0..4` = 0x2D28..0x2D2C (stack-encoding 1..5
+  spirits; they begin exactly where the exclusive-end insect range
+  stops). `ITEM_IS_WISP`, `WISP_COUNT` preserved.
+- `aEGH_hitodama_num`: weighted total `sum(count[i] * (i+1))` over the
+  five per-id inventory counts.
+- Weed-favor thresholds: strict `<50/<150/<450/<900` → 0x2EF1..0x2EF5.
+- Greeting: 0 → `0x2EE7 + RANDOM(5)` (roll stays in C, passed in);
+  1..4 → `0x2EEB + num`; >= 5 → 0x2EF0.
+- `aEGH_time_over`: strict `now_sec > 4 * 3600`.
+- Found alpha: 140 if found, 0 if hidden (`aEGH_actor_ct`).
+- Flags: `ACTIVE` 0x4000, `RETURNED_SPIRITS` 0x8000,
+  `COMMON_SPAWNED_SPIRITS` 0x8000, `SP_NPC_EV_GHOST` 0xD06F,
+  `MINIMUM_GRASS_COUNT` 8.
+
+C ABI (all `pc_`-prefixed): `pc_wisp_item_is_spirit`,
+`pc_wisp_stack_count`, `pc_wisp_spirit_count`, `pc_wisp_weed_msg`,
+`pc_wisp_greet_msg`, `pc_wisp_time_over`, `pc_wisp_found_alpha`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `init_weekly_event` date math + `RANDOM(3)`,
+`ghost_start` placement (`bx = 1+RANDOM(5)`, `bz = 2+RANDOM(4)`,
+uniqueness retry), the insect-spawn spirit override, `aEGH_not_collect_get`
+reward selection (22 collection lists + RNG), weed-clear/roof-paint
+side effects, and the handover choreography.
+
+### Runtime Port Progress: Blanca the Faceless Cat (ac_npc_mask_cat.c)
+
+New `rust/src/blanca.rs`, registered as `mod blanca` in `rust/src/lib.rs`.
+Decomp-verified against `m_event.c`, `ac_event_manager.c`,
+`ac_npc_mask_cat_move.c_inc`, `m_scene.c`, `m_name_table.h`, `m_npc.h`,
+`m_private.h`, `m_mask_cat.h` (GAFE01_00 Rev 0 USA). All 10 brief claims
+checked verbatim before porting; no corrections needed. The `// Blanca`
+source comment in `m_npc.c` proves the English name directly.
+
+Two special-NPC ids, one mask-cat actor family: `SP_NPC_MASK_CAT`
+(0xD075) is the regular event visitor; `SP_NPC_MASK_CAT2` (0xD076) is
+the travel-scene slot (Blanca or Rover). They use different registration
+paths and must not be collapsed.
+
+Ported (pure kernels; scheduler, mask registry, actor lifecycle, talk
+state machine, travel selection, RNG, and save mutations stay in C):
+
+- Talk message ids: first talk `talk_idx * 4 + 0x31E4` (pre-increment
+  idx, verbatim); repeat `0x31E5 + 4 * (talk_idx - 1) + RANDOM(3)`
+  with `talk_idx <= 0` clamped to 1 (roll stays in C, passed in).
+- Birthday-branch weekday set: Sun/Mon/Wed/Fri rejected
+  (`mMC_check_birth_day` minus the save read).
+- Cloth item: `ITM_CLOTH_START` (0x2400) `+ cloth_no`
+  (`regist_mask_maskcat`); travel-scene guard writes `cloth_no` back
+  only when the selected cloth is in `[0x2400, 0x24FF)` (strict),
+  else `EMPTY_NO`.
+- Constants: `TALK_IDX_MAX` 10, `FLAG_MASK_CAT_SCHEDULED` 1<<0.
+
+C ABI (all `pc_`-prefixed): `pc_blanca_first_talk_msg`,
+`pc_blanca_repeat_talk_msg`, `pc_blanca_birth_day_ok`,
+`pc_blanca_cloth_item`, `pc_blanca_travel_cloth_no`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `mMC_check_birth` (resets save at talk max),
+`mMC_check_delete` (±1 week expiry), `gohome_mask_start` selection
+order vs the returning-animal event, `mNpc_RegistMaskNpc`, the
+`init_weekly_event` MASK_NPC override, and the SCENE_START_DEMO3
+Blanca/Rover toggle.
+
+### Runtime Port Progress: Gulliver the Seagull (ac_ev_dozaemon.c)
+
+New `rust/src/gulliver.rs`, registered as `mod gulliver` in
+`rust/src/lib.rs`. Decomp-verified against `m_event.c`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`ac_ev_dozaemon_move.c_inc`, `m_name_table.h`, `m_event.h`,
+`ac_ev_dozaemon.h`, `lb_rtc.h` (GAFE01_00 Rev 0 USA). 9 of 10 brief
+claims checked verbatim; one correction — the WAKEUP save flag does
+NOT delete the actor, it routes the schedule proc to
+`aEDZ_THINK_WANDER` (post-wakeup wandering); the only deletion in
+`aEDZ_actor_ct` is `mv_proc != NULL && dozaemon_completed`.
+
+Identity: `SP_NPC_EV_DOZAEMON` (0xD064) is Gulliver's event identity;
+`SP_NPC_CASTAWAY` (0xD07B) is the separate boat-travel castaway actor,
+gated by Gulliver's event state. Do not merge them.
+
+Ported (pure kernels; scheduler, seaside placement, actor lifecycle,
+thought/talk state machine, furniture selector, inventory grant, and
+save mutations stay in C):
+
+- `after_n_day`: verbatim port of the pure packed month/day arithmetic
+  (`raw = (month<<8)|day`), with the leap-year check preserved via a
+  year argument (the decomp's `last_day_of_month` reads the RTC year,
+  so the kernel takes it instead of reading RTC).
+- Weekly date offset `1 + (today_date.raw + hour) % 5` — no RNG,
+  deterministic; range 1–5.
+- Talk message ids: normal talk strict `< 0.35f` → 0x23F8, else
+  `0x23F9 + RANDOM(5)`; forced talk `0x23FE + RANDOM(6)`; reward branch
+  0x2404/0x2408 (`mMsg_SET_CONTINUE_MSG_NUM`), later branch
+  0x2405/0x2409 (`mDemo_Set_msg_num` — different macro, distinction
+  preserved in C), post-give 0x2406/0x2407, wandering `0x240A+RANDOM(6)`.
+  All RNG rolls stay in C and are passed in.
+- Constants: save flags WAKEUP/GIVE/GAVE_FIRST, event window 06:00–22:00.
+
+C ABI (all `pc_`-prefixed): `pc_gulliver_after_n_day`,
+`pc_gulliver_weekly_ofs`, `pc_gulliver_norm_talk_msg`,
+`pc_gulliver_force_talk_msg`, `pc_gulliver_ageru_msg`,
+`pc_gulliver_ageru2_msg`, `pc_gulliver_give_msg`,
+`pc_gulliver_wander_msg`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `init_weekly_event` priority vs bridge and
+mask-cat events, `make_actor_in_seaside_block` placement,
+`aEDZ_actor_ct` lifecycle, the full talk state machine,
+`mSP_SelectRandomItem_New` reward distribution (JONASON list),
+`mPr_SetFreePossessionItem`, and the boat-demo castaway path.
+
+### Runtime Port Progress: Kapp'n's Boat Ferry (ac_boat.c)
+
+New `rust/src/boat.rs`, registered as `mod boat` in `rust/src/lib.rs`.
+Decomp-verified against `ac_boat.c`, `ac_boat_move.c_inc`,
+`ac_boat_demo.c`, `ac_boat_demo_move.c_inc`, `ac_boat_demo.h`,
+`m_name_table.h`, `m_lib.h`, `types.h` (GAFE01_00 Rev 0 USA). All 10
+brief claims checked verbatim; only two precision nuances, no
+corrections: the rudder-step halving is `(s16)(step * 0.5f)` (float
+multiply-then-truncate), not `/ 2.0f`; and the vertical "reversal"
+sets the velocity *cap* (`max_velocity_y` ±0.1f) and re-rolls gravity,
+it does not flip the current velocity. Bonus find: a fourth song
+table the brief missed — `sing_dialogue_msg_base_no[4]`.
+
+Ported (pure data/kernels; the boat actor, demo controller, Kapp'n
+NPC, player demo requests, frame-driven handshakes, GBA transfer, and
+the island data transition all stay in C):
+
+- Fixed 8-point route table with the source's F/G/H-5 unit comments.
+- Direction data: `block_z == 6` → to-island; last-point {7, 0},
+  first-checkpoint {1, 6}; init angles 0xE000/0x6000;
+  checkpoint-advance rule (sign of dZ only, no distance threshold).
+- Song tables and message math: `player_pattern_table`,
+  first-part BGM/message tables, dialogue message base (bonus),
+  second-part BGM (0x70–0x79) and message base; repeat-rejection
+  acceptance test (the `do/while(TRUE)` rolls stay in C, passed per
+  roll); `last_song_*` init 0xFF.
+- Constants: `SP_NPC_SENDO` 0xD072, GBA loader 0xC83C / program
+  0x15244 (+4 on Aus), USA FRAMERATE identity values.
+
+C ABI (all `pc_`-prefixed): `pc_boat_to_island`,
+`pc_boat_should_advance_checkpoint`, `pc_boat_player_pattern`,
+`pc_boat_song_accepted`, `pc_boat_first_part_bgm`,
+`pc_boat_first_part_msg`, `pc_boat_dialogue_msg`,
+`pc_boat_second_part_bgm`, `pc_boat_second_part_msg`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: steering (frame-rate-accumulator-coupled),
+rocking/vertical motion, passenger attachment, the action state
+machines and handshakes, Kapp'n's talk state machine, the island
+environment transition, the GBA transfer routines, and the castaway
+cameo lifecycle.
+
+### Runtime Port Progress: Train Arrival/Departure (m_train_control.c)
+
+New `rust/src/train.rs`, registered as `mod train` in `rust/src/lib.rs`.
+Decomp-verified against `m_train_control.c`, `m_train_control.h`,
+`ac_train1_move.c_inc`, `ac_train_door.c`, `ac_train_window.c`,
+`ac_station.c`, `ac_npc_station_master_talk.c_inc`,
+`ac_intro_demo_move.c_inc`, `m_name_table.h`, `ac_station_clip.h`,
+`m_camera2.h` (GAFE01_00 Rev 0 USA). All 14 brief claims checked
+verbatim; no corrections, five precision nuances carried:
+(1) the controller's per-frame X advance is `0.5f * speed * dt` and all
+`chase_f` rates are `rate * dt` — frame-rate coupled, integration loop
+stays in C; (2) `mTRC_demo_init` uses `now_sec − 4:50`, a different
+literal from the −4:10 timetable offset; (3) `anime_table`/`anime_end`
+index by `seq_no` while `anime_spd` indexes by `action`;
+(4) arg0 passenger force passes a zeroed rot with the ROTY flag, arg1
+passes `rot = NULL` with no ROTY flag; (5) Porter's talk tables are
+(msg, continuation, camera) structs, not bare message ids.
+`ac_shasho.c` confirmed absent (only `ac_npc_station_master.c`).
+
+Ported (pure data/kernels; the controller, both train actors,
+door/window/station actors, Porter's state machine, the intro demo,
+and the Rover/Blanca scene selection all stay in C):
+
+- Timetable: 25-entry table (hours 00–24 at hour:19:00), first entry
+  `>=` now, minus 4:10 — verbatim scan; day-change `>=` rollover rule.
+- USA speed constants incl. the un-cleaned `0.21000001f` literal.
+- Four init paths: X starts, initial actions, control states, Z 740.0,
+  and the Y rule (`mRF_CheckFieldStep3() ? 300 : 180` stays in C).
+- Transition thresholds: `pos.x > 2165.0`, `fabsf(speed) < 0.008`,
+  timers 48/84/180, `start_timer += 310`, `pos.x > 4400.0`.
+- Train1 animation tables with the seq_no/action asymmetry;
+  passenger offsets (60,20,20)/(2,16,20) with the rot-flag asymmetry;
+  door sound frames 2.0/27.0.
+- Window: scroll speeds per scene, palette threshold table with the
+  verbatim first-match scan, tree-scroll +5.
+- Station variant math (`type / 5`, type/pal offsets, winter skeleton
+  index stays in C); Porter forced/normal talk tables with
+  continuations and cameras; identities GUIDE D004, DEPART_MASTER
+  D00B, STATION_MASTER D00E, RCN_GUIDE D014; intro-demo values
+  (flag 3, scene_mode 9, doorway (2180,0,820), walk (2220,840) @ 2.5).
+
+C ABI (all `pc_`-prefixed): `pc_train_depart_timer`,
+`pc_train_day_rollover`, `pc_train_tree_palette_idx`,
+`pc_train_station_arg0`, `pc_train1_anim_speed`,
+`pc_train1_anim_end`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the `dt`-coupled controller transitions, train
+actor lifecycles and parent/child linkage, door/window animation
+state, Porter's think table, the intro-demo choreography, and the
+SCENE_START_DEMO3 Rover/Blanca selection (covered by the Blanca
+module's travel-scene kernels).
+
+### Runtime Port Progress: Tortimer the Mayor (ac_ev_soncho.c)
+
+New `rust/src/tortimer.rs`, registered as `mod tortimer` in
+`rust/src/lib.rs`. Decomp-verified against `m_event.c`,
+`ac_event_manager.c`, `ac_ev_soncho.c`, `ac_ev_soncho_talk.c_inc`,
+`ac_ev_soncho2.c`, `ac_ev_soncho2_think.c_inc`,
+`ac_ev_speech_soncho_talk.c_inc`, `m_name_table.h`, `m_event.h`,
+`m_kankyo.h`, `ac_groundhog_control.h` (GAFE01_00 Rev 0 USA). 10 of 11
+brief claims checked verbatim; 1 headline correction — the brief
+assigned the bridge dialogue backwards: the FIRST conversation shows
+the time-of-day greeting, SUBSEQUENT conversations show the proposal
+0x2F3E (the talk-info callback checks the first-talk bit while
+`aESC_talk_init` sets it, the same pattern as Blanca's mask-cat
+actor). The decline path was backwards too: first-conversation
+declines play the rotating follow-up, later declines use the
+secondary dialogue. A port following the brief would show the
+proposal on the wrong conversation. Other nuances: the villager gate
+is `>= ANIMAL_NUM_MAX` (15), not `==`; the `1<<7` high bit is the top
+bit of the 7-bit `locations_used` field; the speech actor has a
+Groundhog Day pre-branch before the weather switch; the brief's event
+list omitted `mEv_EVENT_SONCHO_METEOR_SHOWER`. The `// Tortimer`
+comment in `m_npc.c` proves the English name.
+
+Ported (pure data/kernels; the three actor paths, calendar/event
+scheduler, bridge candidate generation, bridge acceptance writes,
+NPC state machines, dialogue, and save mutations all stay in C):
+
+- Six identities (EV_SONCHO D06E, EV_SONCHO2 D074, D078, D079,
+  SONCHO D07F, EV_SPEECH_SONCHO D087) with shared metadata; kept
+  separate — profiles and callers differ.
+- Bridge weekday gate (Saturday, or non-Sunday with a stale weekly
+  date); candidate index `remain = (spots-1) - used`; final-candidate
+  high-bit rule.
+- Time-of-day greeting with verbatim hour boundaries; initial-message
+  and decline-path selection with the CORRECTED first/repeat
+  semantics; pending message `0x2F44 + roll` (roll in C); follow-up
+  rotation `0x2F47`/`0x2F39 + msg_no` with wrap at 5.
+- Speech message: Groundhog pre-branch, then clear/snow/other weather
+  branches off `mString_SPEECH_SONCHO_START` 0x3DB5 (rolls in C);
+  forced-speech base.
+- Constants: ANIMAL_NUM_MAX 15, tug-of-war timer 0x12C,
+  FIRST_TALK_BIT 5.
+
+C ABI (all `pc_`-prefixed): `pc_tortimer_bridge_day_eligible`,
+`pc_tortimer_bridge_remain`, `pc_tortimer_time_talk_msg`,
+`pc_tortimer_initial_msg`, `pc_tortimer_pending_msg`,
+`pc_tortimer_followup_msg`, `pc_tortimer_next_followup_msg`,
+`pc_tortimer_speech_msg`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `mSC_get_soncho_event()` date rules,
+`mSC_trophy_item()` mappings, event-day spawn locations,
+`river_stream`/`bridge_stand_river` geometry, the full
+`mEv_EVENT_BRIDGE_MAKE` construction lifecycle, and the Groundhog
+Day control clip.
+
+### Runtime Port Progress: K.K. Slider (ac_npc_totakeke.c)
+
+New `rust/src/totakeke.rs`, registered as `mod totakeke` in
+`rust/src/lib.rs`. Decomp-verified against `m_event.c`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`ac_npc_totakeke_talk.c_inc`, `ac_npc_totakeke_think.c_inc`,
+`ac_mikanbox_clip.c_inc`, `m_name_table.h`, `ac_npc_totakeke.h`,
+`m_private.h`, `audio_defs.h` (GAFE01_00 Rev 0 USA). All 12 brief
+claims checked verbatim; no corrections. Two omission-type bonuses
+from verification: four extra "no-intensity" weather thresholds in
+the performance chain, and the Resetti-cameo spawn window
+(`show_timer >= FRAMERATE_TIMER(3600) && < FRAMERATE_SELECT(3610,3010)`).
+
+Ported (pure data/kernels; the actor, weekly scheduler, event
+manager, talk/think state machines, mikanbox clip, inventory/aircheck
+writes, RNG, and staff-roll audio/weather side effects all stay in C):
+
+- The collection selector, bit-for-bit: `count_uncollected` and
+  `select_song` reimplement `aMKBC_count_merody` /
+  `aMKBC_clip_search_merody` given the two collection words and the
+  already-generated random index (the single `RANDOM(count)` and the
+  all-collected fallback bitmap clear stay in C). `collect`
+  reimplements `aMKBC_clip_check_merody` (`md_no < 32` → word0 bit,
+  else word1 bit `md_no - 32`, only when `md_no < 52`).
+- Reroll acceptance: up to 3 retries while `song == _99f`; the final
+  song may still equal `_99f` (rolls in C).
+- Request path: `0x37 + RANDOM_F(3)` fallback, `item − 0x2A00` index,
+  `song >= 0x34` continuation branch.
+- Greeting `MSG_TOTAKEKE_START + {0,1,2,0xD}[talk]`; live BGM
+  `BGM_TOTAKEKE_LIVE0 (192) + song`.
+- Constants: identities (TOTAKEKE D05D, P_SEL D018, RTC D066 — kept
+  separate), Saturday 20:00–23:00, placement block {1,3} unit {7,7}
+  arg 0x51, save flags, think states, minidisk range 0x2A00–0x2A37
+  with 52 selectable songs.
+
+C ABI (all `pc_`-prefixed): `pc_totakeke_greet_msg`,
+`pc_totakeke_needs_reroll`, `pc_totakeke_request_fallback_song`,
+`pc_totakeke_request_song_index`, `pc_totakeke_live_bgm`,
+`pc_totakeke_count_uncollected`, `pc_totakeke_select_song`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the alternate identities' creation paths, the
+submenu request-text path, the staff-roll audio synchronization,
+the weather-change counter chain, the Resetti cameo, and the full
+mikanbox clip lifecycle.
+
+### Runtime Port Progress: Mr. Resetti (ac_npc_majin.c)
+
+New `rust/src/majin.rs`, registered as `mod majin` in `rust/src/lib.rs`.
+Decomp-verified against `ac_reset_demo.c`, `ac_npc_majin.c`,
+`ac_npc_majin_schedule.c_inc`, `ac_npc_majin_talk.c_inc`,
+`ac_npc_majin3_talk.c_inc`, `ac_npc_majin4_talk.c_inc`,
+`ac_npc_majin4_schedule.c_inc`, `ac_ev_majin_move.c_inc`,
+`m_name_table.h` (GAFE01_00 Rev 0 USA). All 8 brief claims checked
+verbatim; no corrections. Nuances carried: the `default:` call state
+is CALL_4 (covers MAJIN2/3/4); `se_clear_timer = -1` one-shot disarm;
+the `-1` chg_length sentinel can never trigger; the light window is
+strict (`> 19:00` / `< 05:00`, boundary seconds excluded); the bounds
+analysis proves `majin_name[reset-1]` can never go out of bounds (the
+demo is only created when `reset_flag` is set, which happens alongside
+the count increment, so `reset_count >= 1`).
+
+Ported (pure data/kernels; the reset-demo controller, the Resetti/Don
+actor variants, their think/talk state machines, the text-entry
+overlay, Don's reset/fade sequence, the lighting, and the Groundhog
+Day event actor all stay in C):
+
+- Reset-count normalization (`>= 9` → `6 + ((reset-9) % 3)`) and the
+  8-entry identity table: D07C, D07D, D03E, D065, D07E (Don), D068,
+  D069, D080.
+- Initial call states per identity (MAJIN→CALL, D07C→CALL_2,
+  D07D→CALL_3, BROTHER→CALL_4, D080→CALL_5, default→CALL_4).
+- Force-talk table `{0x1B3B, 0x3A38, 0x3A42, 0x3A4C, 0x3B05}`;
+  Don's `{0x250F, 0x2512}`, timers 180/8, fade 255−8/update.
+- The word-entry test, bit-for-bit, over caller-provided buffers (the
+  ROM string tables stay in C): full-16-byte good-word comparison,
+  the ng-word substring scan with the exact `chg_length` boundary
+  stepping (`len` 2→10 across the 32 words), `17 − len` offsets per
+  word, `mem_cmp`-returns-TRUE-on-equality semantics, GOOD > NG >
+  WRONG priority, and the outcome messages
+  (GOOD→0x23EC, NG→0x23EF, WRONG→0x23EE).
+- Groundhog event-actor weather messages (rolls in C); the strict
+  point-light time window.
+- Constants: EV_MAJIN D081, MAJIN5 D06B, think states, word counts
+  (16 good, 32 ng), string buffer size 16.
+
+C ABI (all `pc_`-prefixed): `pc_majin_reset_identity`,
+`pc_majin_initial_call_state`, `pc_majin_force_talk_msg`,
+`pc_majin_ng_word_len`, `pc_majin_word_msg`, `pc_majin_ev_msg`,
+`pc_majin_point_light_active`. The full buffer-taking scan
+(`check_ng_word`/`check_word`) is implemented as pure Rust over
+caller-provided buffers for future differential testing; the ROM
+string tables themselves are retail string data and stay in C.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the reset-hole effect, the text-entry overlay,
+the demo-clip coordination, the weather-clip sound handling, and the
+Groundhog controller handshake.
+
+### Runtime Port Progress: Post Office Clerks (Pelly / Phyllis / Pete)
+
+New `rust/src/post_office.rs`, registered as `mod post_office` in
+`rust/src/lib.rs`. Decomp-verified against `m_post_office.c`,
+`m_npc.c`, `ac_npc_post_girl.c`, `ac_npc_post_girl.c_inc`,
+`ac_npc_post_man.c`, `ac_npc_post_man_move.c_inc`,
+`ac_aprilfool_control.c` (GAFE01_00 Rev 0 USA). All 14 brief claims
+checked verbatim; no corrections. Nuances carried: the choice
+adjustment is an EXACT-VALUE switch on status (0 or 1 only — status 3
+gets no adjustment, do not rewrite as a bitmask test); the loan-balance
+comma byte is written at `str[l]` but the free-string copy receives
+length `l` — reproduce, do not "fix"; the delivery advance and
+force-flag clear happen only if `mPO_make_post_man()` succeeds;
+delivery is scene-gated (skipped in PLAYERSELECT/TITLE_DEMO); Pete's
+start action and Y position are birth-type-indexed; the receipt path's
+ignored `mPO_receipt_proc()` return is preserved (do not fix without
+retail evidence). Bonus finds: the second 8-entry status-indexed table
+for the repay-after path, the 5-entry receive table embedding the
+refusal IDs, the desk-full → `force_mail_delivery_flag = TRUE` path in
+`aPG_actor_dt`, and `draw_type = (npc_id == POST_GIRL) ? 0 : 1`.
+
+Ported (pure data/kernels; the counter state machine, the mail
+subsystem, Pete's movement/delivery actor, the submenu UI, the font
+formatting, and the April Fools overrides all stay in C):
+
+- Clerk status bitmask (desk-full from the aggregate stored-mail
+  count vs 5, loan/first-job/bank-account branches) — dual bitmask and
+  8-entry-table index.
+- Opening greeting (`msg_no[status] + draw_type`) and the repay-after
+  table; `draw_type` 0 for Pelly, 1 for Phyllis.
+- Business-menu choice adjustment with the exact-value condition.
+- Destination-validation outcome codes and the refusal tables
+  (`{0x8e1,0x8b5,0x1bd7}` by `dest-1`; the 5-entry receive table by
+  `dest+1`).
+- Bank-account init eligibility (native, no loan, house size >= 3,
+  renew == FALSE) and the loan millions/remainder split.
+- Delivery schedule (`<9` → 09:00, `<17` → 17:00, else next-day 09:00,
+  min/sec zeroed).
+- Pete's dialogue bases/bounds by talk_type (rolls in C), the
+  14-entry talk-permit table, birth-type start Y/actions, April Fools
+  indices (Pelly 0x0007, Phyllis 0x0008, Pete 0x0009).
+- Constants: POST_GIRL D003, POST_GIRL2 D012, POST_MAN D011, name
+  indices 0x20D/0x20E/0x20F, MAIL_STORAGE_SIZE 5, HOME_MAILBOX_SIZE 10.
+
+C ABI (all `pc_`-prefixed): `pc_post_clerk_status`,
+`pc_post_greet_msg`, `pc_post_repay_after_msg`,
+`pc_post_adjust_choice`, `pc_post_refuse_msg`,
+`pc_post_bank_account_eligible`, `pc_post_next_delivery_hour`,
+`pc_post_next_delivery_next_day`, `pc_post_pete_msg_base`,
+`pc_post_pete_talk_permit`, `pc_post_draw_type`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the 30-action counter machine, `mPO_receipt_proc()`
+and the delivery procs, Pete's route tables and mailbox animation,
+the April Fools dialogue overrides, and the loan-balance font
+formatting.
+
+### Runtime Port Progress: Police Officers (Copper / Booker)
+
+New `rust/src/police.rs`, registered as `mod police` in
+`rust/src/lib.rs`. Decomp-verified against `ac_npc_police.c`,
+`ac_npc_police_move.c_inc`, `ac_npc_police2.c`,
+`ac_npc_police2_move.c_inc`, `m_police_box.c`, `m_npc.c`,
+`ac_aprilfool_control.c` (GAFE01_00 Rev 0 USA). All 20 brief claims
+checked verbatim; no corrections. Nuances carried: the movement
+thresholds are kept as written — `dist < (SQ(50.0f)−50.0f)` = 2450.0
+and `dist < (SQ(70.0f)+100.0f)` = 5000.0 on the SQUARED distance, do
+not simplify; the zone `ux` comparisons are strict `>` at 7/4/1 with
+`uz` clamped 2–6; the same-zone far case returns
+RUN_PL_OTHER_ZONE (verbatim retail quirk, RUN_PL_SAME_ZONE is never
+produced by the decider); the sleepy branch is an `else if` on the
+aerobics condition; the talk-request gate checks `last_field_id`
+while talk-init checks `last_scene_no`; the ticket branch is
+`TYPE == NAME_TYPE_ITEM1 && CAT == ITEM1_CAT_TICKET` specifically;
+the 0xF128 constant is shared with DUMMY_BOAT (per the decomp's own
+comment); the init uses `mSP_LISTTYPE_ABC`, not "common-priority";
+the `(int)qrand() >= 0` expression is preserved without resolving
+its semantics; clearing in `mPB_keep_all_item_in_block` is
+unconditional for every accepted item and the RANDOM(20) overwrite
+hits the temp array.
+
+Ported (pure data/kernels; both actors, the PoliceBox_c store, the
+field-item relocation, the item-generation tables, the message
+formatting, and the April Fools overrides all stay in C):
+
+- Copper: time-of-day talk index and message (+4 on the
+  player-kind/map-flag test), entrance greeting 0x0771, choice
+  messages (hint path stays in C), the three event-hint tables with
+  per-state selectors and the 0x2C2D/0x2C37 fallbacks, the aerobics
+  entry gate (06:00–07:00, not rain, outside 67.5°) with its
+  animation loops {2,4,1} and exit test, and the sleepy gate
+  (02:00–04:00, ≥60 units) with its morph/loop sequencing.
+- Booker: zone math, movement decision with speeds, slot index from
+  the reserved prop, greeting/talk messages by store count and
+  `_99C`, item-name and inventory-full messages, the dummy pickup
+  position, and the station-exit constants.
+- Lost-and-found: storage constants, forced-generation category and
+  goods sub-category from the roll (rolls in C), the grow eligibility
+  gate, the FIFO append index, and the acre-cleanup merge math.
+- Constants: POLICE D00D, POLICE2 D010, name indices 0x210/0x6D9,
+  April Fools 0x0005/0x0006, RSV_POLICE_ITEM_0 0xF128.
+
+C ABI (all `pc_`-prefixed, 15 exports): `pc_police_copper_talk_msg`,
+`pc_police_copper_choice_msg`, `pc_police_copper_aerobics_gate`,
+`pc_police_copper_sleepy_gate`, `pc_police_hint_active_msg`,
+`pc_police_hint_today_msg`, `pc_police_hint_later_msg`,
+`pc_police_booker_zone`, `pc_police_booker_move_action`,
+`pc_police_booker_slot_idx`, `pc_police_booker_greet_msg`,
+`pc_police_booker_talk_msg`, `pc_police_force_category`,
+`pc_police_goods_category`, `pc_police_keep_append_index`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the actor state machines and RNG, the save-store
+mutations, the item-generation item tables, the message free-string
+formatting, and the event-controller checks.
+
+### Runtime Port Progress: Event Visitors (Katrina / Saharah / Wendell / Gracie / Redd)
+
+New `rust/src/event_visitors.rs`, registered as `mod event_visitors`
+in `rust/src/lib.rs`. Decomp-verified against `ac_ev_gypsy_move.c_inc`,
+`ac_ev_carpetPeddler.c_inc`, `ac_ev_artist_move.c_inc`,
+`ac_ev_designer_talk.c_inc`, `ac_ev_broker_move.c_inc`,
+`ac_ev_miko_move.c_inc`, `ac_event_manager.c`, `bg_item_common.c_inc`,
+`m_mail_password_check.c`, `m_npc.c` (GAFE01_00 Rev 0 USA). 10 of 12
+brief claims checked verbatim; 2 HEADLINE CORRECTIONS carried.
+
+CORRECTION 1 — Katrina's fortune distribution: the brief claimed
+Normal 10% / Money luck 50%. Tracing the transform (`RANDOM(10)`
+values 0–3 forced to 4, then `−= 4`) gives index 0 = NORMAL at 50%
+and every other destiny at 10%. The decomp's own comment confirms
+("50% chance of 'normal' luck, 10% chance for other types").
+
+CORRECTION 2 — Wendell's fruit path: the brief claimed fish and fruit
+both go to the gift demo. The `next_act_idx` table shows only FISH
+goes to DEMO_START_WAIT; FOOD takes the ordinary TALK_END_WAIT path.
+
+Resolved items the brief called unresolved: Saharah's price formula —
+`price = 3000 × 2^used` with the arabian event-save count capped at 4
+(max 48,000); the event-save key is `arabian`; the polarity is
+trade-in (the player must POSSESS a carpet to proceed). Bonus find:
+EV_MIKO (D03D), Katrina's New Year omikuji actor, with its own
+4-entry destiny table, `RANDOM(4)`, message 0x1911+omikuji, granting
+ITM_FORTUNE_SLIP and a mail letter. Other bonuses: MONEY_LUCK makes
+bell trees drop ITM_MONEY_1000; Redd has four identities
+(D001/D013/D02C/D039); Katrina has two (D00C/D03D); the event
+absolute values (ARTIST 74 … CARPET_PEDDLER 79); confirmed none of the
+five appear in the April Fools table.
+
+Ported (pure data/kernels; the event scheduling, the event manager,
+all five actors' state machines, the wallet/inventory/save mutations,
+the item-selection tables, the tent actor, the handbill generation,
+and the RNG all stay in C):
+
+- Katrina: the fortune-index transform (roll stays in C), the
+  six-destiny table, result/saved-destiny/talk/call-in messages, the
+  fortune-string bases (rolls in C, wallet decremented first), and the
+  EV_MIKO omikuji mapping.
+- Saharah: the price curve, the used-count increment cap, and the
+  second-menu check messages with the possession-before-money order.
+- Wendell: the item classifier (decoded type/category in, class
+  out), the message table, and the corrected next-action markers.
+- Gracie: both 27-entry dialogue tables verbatim (duplicates
+  preserved), the reward-result message indices, and the event-list
+  vs common-list selector.
+- Redd: the handbill templates and the tent-liveness rule.
+- Constants: all nine identities, the five name indices, the event
+  values, the destiny enum, the item-name encoding constants.
+
+C ABI (all `pc_`-prefixed, 15 exports): `pc_ev_fortune_index`,
+`pc_ev_fortune_result_msg`, `pc_ev_fortune_saved_msg`,
+`pc_ev_fortune_talk_msg`, `pc_ev_fortune_string_no`,
+`pc_ev_miko_destiny`, `pc_ev_miko_msg`, `pc_ev_saharah_price`,
+`pc_ev_saharah_check_msg`, `pc_ev_wendell_classify`,
+`pc_ev_wendell_msg`, `pc_ev_wendell_next_action`,
+`pc_ev_gracie_msg`, `pc_ev_gracie_result_msg_idx`,
+`pc_ev_redd_handbill`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the actor state machines and RNG, the save-store
+mutations, the item-generation item tables, the tent actor's
+merchandise code, the message formatting, and the event-controller
+checks.
+
+### Runtime Port Progress: Stalk Market (Turnips)
+
+New `rust/src/stalk_market.rs`, registered as `mod stalk_market` in
+`rust/src/lib.rs`. Decomp-verified against `m_kabu_manager.c`,
+`ac_ev_kabuPeddler_move.c_inc`, `ac_npc_shop_common.c`,
+`m_all_grow_ovl.c`, `ac_event_manager.c` (GAFE01_00 Rev 0 USA). All 13
+brief claims checked verbatim; no corrections. Nuances carried: trend
+B has an EXTRA probability clamp the brief missed — after the ×0.3
+drop, `price_decrease_percent` is clamped to ≤ 0.1 (fires whenever the
+pre-drop chance exceeded 1/3); the trend-B minimum comparison is
+literally `>` (not `<`) — do not "fix" it; trend C keeps
+`0.14999998f` verbatim; the `Kabu_manager()` week window is
+bidirectional (±1 week); the typeB decomp comment has a typo
+(`//0.1f` labeled `(20%)`) but the behavior is residual 20%. Bonus
+resolutions: the spoilage timing the brief called unresolved is partly
+answered in code — `mAGrw_CheckSpoilKabuTime` spoils when the coming
+Sunday is overdue, inventory/house/haniwa turnips ARE converted via
+`mAGrw_SpoilAllPossession` (the unconditional null-`grow_info` path),
+and `mAGrw_ZuruSpoilKabu` is the anti-time-travel path.
+
+Ported as a deterministic differential harness (every kernel takes the
+roll results as inputs; nothing rolls):
+
+- The Sunday price formula (`1.0 + (r − 0.5) × 0.6`, ×100, truncated
+  to u16 → 70–129).
+- Trend selection with the single-draw subtract-select and the
+  previous-trend tables.
+- Trend A: the ×8.0 spike and the Mon–Fri spike day.
+- Trend B: the full six-day state machine with the exact operation
+  order, the literal `>` minimum comparison, and the probability
+  clamp.
+- Trend C: the chained factor with the verbatim constant.
+- Joan: purchase/sale tables, transaction totals, sale messages,
+  greetings, identity D007, the turnip item IDs.
+- Nook: the quest → spoiled → Sunday → ordinary branch order and
+  the payout formula.
+- Spoilage: the spoil decision (flag vs unconditional null path) and
+  the coming-Sunday weekday offset.
+
+Constants: weekdays, trends A/B/C, the 0x18-byte save layout, the
+turnip IDs (ITM_KABU_START 0x2F00), price bounds 10/2000.
+
+C ABI (all `pc_`-prefixed, 14 exports): `pc_kabu_sunday_price`,
+`pc_kabu_next_trend`, `pc_kabu_spike_price`, `pc_kabu_spike_day`,
+`pc_kabu_trend_b_init`, `pc_kabu_trend_b_min_price`,
+`pc_kabu_trend_b_step`, `pc_kabu_trend_c_factor`,
+`pc_kabu_joan_total`, `pc_kabu_joan_sale_msg`,
+`pc_kabu_nook_payout`, `pc_kabu_nook_turnip_branch`,
+`pc_kabu_spoil_kabu`, `pc_kabu_spoil_weekday_offset`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the schedule generation driver, the date-window
+logic, Joan's actor and transaction, Nook's shop transaction, the
+field-growth spoilage passes, the event-manager callbacks, and the
+RNG.
+
+### Runtime Port Progress: Lost-and-Found Storage & Police Station
+
+New `rust/src/lost_found.rs`, registered as `mod lost_found` in
+`rust/src/lib.rs`. Decomp-verified against `m_police_box.c`,
+`ac_police_box.c`, `ac_police_box_move.c_inc`,
+`bg_police_item_move.c_inc`, `m_npc.c`, `m_start_data_init.c`,
+`m_all_grow_ovl.c`, `ac_event_manager.c` (GAFE01_00 Rev 0 USA). All 12
+brief claims checked verbatim; no corrections. Nuances carried: the
+brief's `mPB_keep_item()` caller list was incomplete — 8 more call
+sites found (br_shop, douzou, event_manager, house, shop_level,
+m_field_info, m_start_data_init, and m_police_box itself); bulk
+collection has FOUR cases (POOL, SHRINE, STATION, PLAYER), not two;
+the double `mPB_police_box_init` call is version-gated — exactly one
+compiles for GAFE01_00; the display Y function takes `(pos, 1.0f)`;
+the in-place compaction is proven safe by the `keep_item <= item_buf`
+invariant.
+
+Ported (pure buffer/data kernels; the save array, the field state,
+the item-name decoding, the item selectors, and the RNG stay in C):
+
+- The stored-item count (scans all 20, never stops at holes).
+- The order-preserving compaction, safe for in-place use.
+- Single-item insertion with the FIFO eviction (the ITEM1/FTR type
+  filter stays in C as a gate argument); appends at the count, not
+  the first hole.
+- The floor-display coordinate table with the exact nibble usage
+  (x = low nibble, z = high nibble).
+- The station light expression and its angle targets/chase rate.
+- The reserved-ID range test, the door constants, and the init slot
+  layout.
+
+Scope split: the sibling `police` module keeps Booker's interaction
+math and the bulk-merge index math; this module owns the storage
+buffer operations and the building.
+
+C ABI (all `pc_`-prefixed, 7 exports): `pc_lf_count`,
+`pc_lf_compact`, `pc_lf_insert`, `pc_lf_display_x`,
+`pc_lf_display_z`, `pc_lf_station_light_on`, `pc_lf_is_rsvpolice`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the save mutations, the bulk acre collection, the
+random generation, the display draw calls, the door transitions, and
+the item-name decoding.
+
+### Runtime Port Progress: ABD Bank
+
+New `rust/src/bank.rs`, registered as `mod bank` in
+`rust/src/lib.rs`. Decomp-verified against `m_bank_ovl.c`,
+`m_bank_ovl.h`, `m_private.h`, `m_mail.c`, `ac_npc_post_girl.c`,
+`ac_npc_post_girl.c_inc`, `save_check_NSW.c_inc` (GAFE01_00 Rev 0
+USA). All 13 brief claims checked; no behavioral corrections. Two
+brief imprecisions carried: the smallest place value is 1, not 10
+(keta table 100000/10000/1000/100/10/1, cursor 6 = OK); and
+`player_max_bell` is exactly
+`99999 + 30000 × (money bags of any denomination) + 30000 × (empty
+slots)`, valuing every existing bag at the largest bag size.
+
+Ported (pure amount-editing arithmetic; the wallet/bag inventory, the
+save writes, and the submenu input machine stay in C):
+
+- Cursor-to-place-value and the displayed cash change (ABS of the
+  proposed-minus-opening difference).
+- The deposit branch verbatim: cash clamp → bank-max clamp → zero
+  check (buzzer, return before the crossing check) → the
+  opening-cash crossing cap.
+- The withdrawal branch verbatim: bank clamp → capacity clamp →
+  zero check → the mirrored crossing cap.
+- Pelly's bank-account eligibility (native, loan == 0, house size ≥ 3,
+  not mid-renewal).
+- The four milestone tiers with the ascending first-eligible
+  selection and the per-player claimed flags.
+- The save-validation comparison, preserved literally (signed).
+
+Deliberately NOT ported: `mBN_bank_ovl_init`, `mBN_bank_ok` (the
+Bell-bag removal/upgrade/creation loops), the submenu input state
+machine, Pelly's dialogue, and the mail send. Confirmed: the overlay
+computes NO interest — `bank_account` is referenced only in the
+overlay, the milestone mail, Pelly's balance message, and save
+validation.
+
+C ABI (all `pc_`-prefixed, 7 exports): `pc_bn_deposit`,
+`pc_bn_withdraw`, `pc_bn_keta`, `pc_bn_bell_change`,
+`pc_bn_has_bank_account`, `pc_bn_milestone`,
+`pc_bn_deposit_save_error`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
+### Runtime Port Progress: Catalog UI & Order Transaction
+
+New `rust/src/catalog.rs`, registered as `mod catalog` in
+`rust/src/lib.rs`. Decomp-verified against `m_catalog_ovl.c`,
+`m_catalog_ovl.h`, `m_tag_ovl.c`, `ac_npc_shop_common.c`,
+`ac_npc_shop_common.h`, `m_shop.c`, `m_private.h` (GAFE01_00 Rev 0
+USA). All 12 brief claims checked; no behavioral corrections. The
+catalog-to-order chain turned out fully traceable (stronger than the
+brief's "strong reconstruction"): the "Order" tag runs
+`mTG_order_proc`, which converts the FTR-space selection to
+ITEM1-space and carries `price == 0` as `slot_no = 0`, mapping to
+ORDER_UNAVAILABLE.
+
+Ported (pure data/selection/transaction kernels; rendering,
+animation, input, item-name decoding, the FTR index tables, and the
+save stay in C):
+
+- The collection-bit test (`idx >> 5` / `idx & 0x1F`).
+- The menu constants, the nine category ids, and the five collected
+  bitfield sizes (other categories reuse the furniture bitfield).
+- The completion rule and the `top_idx + y_idx` selection.
+- The price rules: unconditional zero for haniwa/fossils/music and
+  the non-FTR fallback; list-gated and always-priced cases documented
+  with the verbatim special index ranges.
+- The order-selection mapping (`price == 0` → slot 0 →
+  ORDER_UNAVAILABLE; slot 1 → ORDER_OFFER; EMPTY_NO → cancel).
+- The order-confirmation outcome, the funds check (wallet + bags),
+  the payment wallet arithmetic (bags consumed smallest-first, the
+  remainder stays in the wallet and may exceed WALLET_MAX), and the
+  sales cap clamp.
+
+Deliberately NOT ported: the rendering/animation/input state
+machines, `aNSC_set_ftr_order`'s inventory writes (no NULL check in
+retail — the caller guarantees a free slot), the FTR→ITEM1 id
+conversion, the per-shop-level sales caps' values, and the
+five-slot queue itself (owned by the sibling `special_delivery`
+module).
+
+C ABI (all `pc_`-prefixed, 8 exports): `pc_cl_check_collect_bit`,
+`pc_cl_completed`, `pc_cl_selected_index`, `pc_cl_order_slot`,
+`pc_cl_order_action`, `pc_cl_order_check_msg`, `pc_cl_money_check`,
+`pc_cl_sell_price_wallet`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
+### Runtime Port Progress: Able Sisters Design Patterns
+
+New `rust/src/design.rs`, registered as `mod design` in
+`rust/src/lib.rs`. Decomp-verified against `m_needlework.h`,
+`m_needlework.c`, `m_design_ovl.c`, `m_design_ovl.h`,
+`m_cporiginal_ovl.h`, `m_private.h`, `m_common_data.h`,
+`ac_needlework_indoor.c`, `ac_npc_needlework_talk.c_inc`,
+`ac_npc_needlework.h`, `ac_flag.c` (GAFE01_00 Rev 0 USA). All 12
+brief claims checked; no behavioral corrections. The brief's open
+`flag_design_set` question is CLOSED by a full use-site search: the
+byte at record offset 0x011 is a "custom design applied" marker
+whose only live consumer is the island flagpole (set on apply,
+tested at render); it is dead state on player/shop records in
+retail — preserved, never invented for.
+
+Ported (pure record/texture/pixel/color kernels; the drawing input,
+the rendering, the submenu machines, the NPC dialogue, the shop
+actor's double-buffer handoff, the ARAM/ROM default loading, and
+the save records stay in C):
+
+- The record layout constants (0x220 record, 0x20 texture offset,
+  512-byte 4-bit texture).
+- The tile-aware `mDE_POS2TEXEL` mapping with the verified nibble
+  order (odd x = low nibble), plus pixel get/set that preserve the
+  sibling nibble.
+- The RGB5A3→RGB8 conversion with the exact integer math (opaque
+  `(ch*255)/31`, transparent `ch*17`; alpha not converted).
+- The GBA nibble swap (self-inverse) and the `& 15` palette mask.
+- The blank-pattern literal (full 16-char `"blank           "`),
+  the player/shop default palette tables, and the display-order
+  resolution through `my_org_no_table`.
+- The 350-Bell design price, Sable's visit-day counter rule (new
+  date only, non-foreign, cap 10), the shop cloth/umbrella slot
+  split, the 8×12 card-folder constants, and the editor
+  mode/tool ids.
+
+Deliberately NOT ported: the tool/controller behavior, the
+rendering, the submenu and dialogue state machines, the shop
+actor's buffered copy/exchange handoff, the worn-design branch,
+and `ac_broker_design.c` (a furniture broker actor, not the
+pattern editor).
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_ds_pos2texel`,
+`pc_ds_pixel_get`, `pc_ds_pixel_set`, `pc_ds_nibble_swap`,
+`pc_ds_rgb5a3_to_rgb8`, `pc_ds_palette_mask`,
+`pc_ds_visit_next_days`, `pc_ds_shop_slot_kind`,
+`pc_ds_shop_slot_idx`, `pc_ds_resolve_slot`. No C callers rewired
+yet, per the usual pattern. No test runs, per the standing rule.
+
+### Runtime Port Progress: Town Tune Composer
+
+New `rust/src/melody.rs`, registered as `mod melody` in
+`rust/src/lib.rs`. Decomp-verified against `m_melody.c`,
+`m_melody.h`, `m_mscore_ovl.c`, `ac_mscore_control.c`,
+`ac_mscore_control.h`, `m_name_table.h`, `m_bgm.c`,
+`m_start_data_init.c` (GAFE01_00 Rev 0 USA). All 12 brief claims
+checked; no behavioral corrections.
+
+Ported (pure encoding and transition kernels; the overlay input,
+the audio calls, the rendering, the actor checks, the submenu
+lifecycle, the GBA state machine, and the save stay in C):
+
+- The packed-u64 ↔ 16-step conversions with the exact nibble order
+  and low-nibble masking.
+- The literal default tune and the all-HOLD clear action.
+- The asymmetric C-up/C-down transitions with the exact sound
+  behavior (0→15 silent, 15→14 plays `SysTrgStart(0)`).
+- The cursor advance/back with the index-16 end position, and the
+  edit-end save/continue/restore branches.
+- The music-board item check, the GBA message/timeout constants,
+  and the note names.
+
+Deliberately NOT ported: the overlay input polling, the audio and
+rendering, the board facing/interaction checks, the submenu and
+dialogue state machines, and the GBA transfer flow. The caller
+audit is complete: the composer overlay, the GBA read path, the
+NPC/quest melody hooks, and `m_bgm.c`'s hourly time-signal
+(instruments 0xFE island / 0xFF mainland) all consume the same
+saved u64 — keep it authoritative.
+
+C ABI (all `pc_`-prefixed, 11 exports): `pc_ml_unpack`,
+`pc_ml_pack`, `pc_ml_clear`, `pc_ml_step_up`,
+`pc_ml_step_up_sound`, `pc_ml_step_down`,
+`pc_ml_step_down_sound`, `pc_ml_cursor_advance`,
+`pc_ml_cursor_back`, `pc_ml_edit_end`, `pc_ml_is_music_board`. No C
+callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+### Runtime Port Progress: Museum Building & Exhibit Actors
+
+New `rust/src/museum_display.rs`, registered as `mod museum_display`
+in `rust/src/lib.rs`. Decomp-verified against
+`m_museum_display.h`, `m_museum_display.c`, `ac_museum_fossil.c`,
+`ac_museum_picture.c`, `ac_museum_fish.c`, `ac_museum_insect.c`,
+`ac_museum_indoor.c`, `ac_museum.c`, `m_name_table.h`,
+`m_room_type.h` (GAFE01_00 Rev 0 USA). All 12 brief claims checked;
+no behavioral corrections.
+
+Ported (pure state/table/mapping kernels; species simulation,
+rendering, camera, player rotation, and the save stay in C):
+
+- The 63-byte nibble-packed display record: even/odd nibble
+  read/write, bounds-checked queries, the donor predicates.
+- The fossil floor-placement table (25 entries) and the
+  donated-fossil item formula (`0x1EEC + (idx << 2) + (rotation &
+  3)`); the dummy items stay C-side symbols.
+- The fossil talk-position table (25 entries) — a SEPARATE table
+  from the floor placement; never derived from it.
+- The 15 artwork positions with the draw offsets and the DIFFERENT
+  talk-check offsets plus the 16-entry facing-direction gate.
+- The donor-sensitive talk messages (12191/12192/12193) and the
+  fish/insect continuation pair (12194/12195).
+- The fish tank centers, the aquarium light-power formula, the
+  five fish info stations with their resolved species-index lists,
+  and the six insect stations with their lists.
+- The station filtered-list construction (fixed ordering,
+  nonzero-donor filter).
+- The room wall alpha transitions (±24, clamped) and the
+  camera-state fade sets.
+- The exterior: entrance door data, exit rewrite values, the night
+  light expression (06:00 boundary — not the police station's
+  05:00), and the front-door check.
+
+Deliberately NOT ported: the species-specific fish/insect
+simulation, the skeleton animation, the point-light reservation
+lifecycle, the rendering and display lists, the camera API, the
+player-rotation checks, the shop-sales-adjacent assessment (owned
+by the sibling `museum` module), and the save mutations.
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_md_query`,
+`pc_md_bit_store`, `pc_md_talk_msg`, `pc_md_station_msg`,
+`pc_md_alpha_on`, `pc_md_alpha_off`, `pc_md_fade_out`,
+`pc_md_light_power`, `pc_md_museum_light_on`,
+`pc_md_fossil_display_item`. No C callers rewired yet, per the
+usual pattern. No test runs, per the standing rule.
+
+### Runtime Port Progress: Shop Interiors & Fitting Rooms
+
+New `rust/src/shop_interior.rs`, registered as `mod shop_interior`
+in `rust/src/lib.rs`. Decomp-verified against
+`ac_shop_design.c`, `ac_shop_manekin.c`, `ac_shop_umbrella.c`,
+`ac_shop_indoor.c`, `ac_shop_level.c`, `ac_shop_goods.c`,
+`ac_shop_goods.h`, `m_name_table.h`, `m_shop.h` (GAFE01_00 Rev 0
+USA). Two brief corrections carried: saplings and
+Halloween-status flower bags map to `RSV_SHOP_HALLOWEEN`, not
+`RSV_SHOP_PLANT`; and the carpet default at index 3 (DEPART_1F) is
+`ITM_CARPET70`, not `ITM_CARPET68`.
+
+Ported (pure mapping/state kernels; rendering, texture/DMA,
+collision registration, the actor engine callbacks, and the save
+stay in C):
+
+- All 26 reserved shop IDs (`RSV_SHOP_*` 0xFE00-0xFE18 plus
+  `RSV_FE1F`).
+- The item→reserved-slot classification, verbatim, including the
+  source-commented unreachable signboard check inside the tool
+  range and the sold-sentinel round-trips.
+- The sold-slot routing: per-category route, goods-list sentinel,
+  and field-ground write, with the retail quirks preserved (sold
+  clothing's FG write is `RSV_NO`, not `RSV_SHOP_SOLD_CLOTH`;
+  stationery takes the bare `return TRUE` path with no report and
+  no write; grab bags report and write immediately).
+- The mannequin counting predicate (clothing OR the
+  `RSV_SHOP_SOLD_CLOTH` sentinel), the clothing/naked texture
+  indices, the `(count+1)` bank sizes, the coordinate normalization
+  with first-match search semantics.
+- The umbrella state machine (WAIT/DELETE/NONE), the 0.001f
+  delete step, the `item - ITM_UMBRELLA_START` model index, and a
+  draw-scale accessor that preserves the retail first-record
+  behavior verbatim.
+- The five indoor room types, the wall/carpet defaults, and the
+  texture-bank alternation.
+- The lottery drum positions per shop index (the 5th entry is
+  unreachable — DEPART_2 keeps `actor_specific = -1`).
+- The shop-building scan bounds (`[SHOP0, SHOP3+1]`, with the
+  source's own `@BUG` comment that the upper bound includes the
+  post office) and the three renewal-date exclusions (Nook sale
+  within 2 days, lottery day within 2 days, Black Friday).
+- The thrown-item display pool size (`aSG_SINGLE_DRAW_NUM` = 9).
+
+Deliberately NOT ported: merchandise rendering and display
+lists, the drop-animation physics and sound, the wall/carpet
+texture copying and DMA, the mannequin/umbrella collision
+registration and teardown, the shop-level actor's field-ground
+rewrite iteration and lost-and-found/deposit side effects (the
+C caller supplies the items; Rust only answers the bounds and
+constants), and the save mutations.
+
+C ABI (all `pc_`-prefixed, 11 exports): `pc_si_item_to_slot`,
+`pc_si_sold_route`, `pc_si_sold_sentinel`,
+`pc_si_sold_fg_write`, `pc_si_is_mannequin_spot`,
+`pc_si_umbrella_delete_step`, `pc_si_umbrella_draw_scale`,
+`pc_si_alternate_bank`, `pc_si_drum_pos`,
+`pc_si_is_shop_building`, `pc_si_renewal_blocked`. No C callers
+rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+### Runtime Port Progress: Player House Interiors
+
+New `rust/src/house_interior.rs`, registered as `mod house_interior`
+in `rust/src/lib.rs`. Decomp-verified against `ac_my_indoor.c`,
+`ac_my_indoor.h`, `ac_house_clock.c`, `ac_house_clock.h`,
+`ac_arrange_room.c`, `ac_my_house.c`, `ac_arrange_ftr.c`,
+`m_scene_table.h`, `m_name_table_floor_decl.h`, `audio_defs.h`
+(GAFE01_00 Rev 0 USA). All 10 brief claims checked; 0 DIFFERS.
+
+Ported (pure state/table/mapping kernels; actor construction,
+rendering, texture DMA, collision, and the save stay in C):
+
+- The scene→room-kind table: six kinds, exactly 10 entries,
+  first match wins, fallback S. (No LL2-basement or second-floor
+  scene exists — the brief's phrasing overstated the table.)
+- The texture-bank geometry: `aMI_PAL_SIZE`/`aMI_TEX_SIZE` and the
+  derived wall/floor bank sizes, two banks each, with the
+  both-banks initial load.
+- The floor-sound selection: basement → 82, `0 <= floor_num <
+  71` → floor_num, otherwise 83 (`FLOOR_ORIGINAL_SE`).
+- The wallpaper/flooring validation: valid at `[0, 67)` or an
+  original design; invalid resets to 0.
+- The room step flags: M/L/LL1 + basement → step 0; LL1 →
+  step 1; LL2 → step 2; floor-no 2 → step 3.
+- The clock model/position selection: 9 clock types with their
+  hand-joint indices, the 9-entry scene→position table, the
+  120-frame phase accumulator with the verbatim
+  `aHC_CrossedFrame` semantics, the 15/45 chime test, the 0.5f
+  animation speed, the RTC-driven hand angles (`0x4000 -
+  rad_hour/rad_min`), the chime sound ID `NA_SE_12D` (0x12D),
+  and the raffle-hides-shop-clocks rule.
+- The arrange-room packed-index extraction: wall = high byte,
+  floor = low byte, BOTH clamped to 0..0x42 (the brief suggested
+  the wall range differed — it doesn't).
+- The exterior door action states (four, with the source's own
+  `SCEEN` typo documented), the entry door data per house size,
+  and the ±48.29f exit offsets.
+
+Deliberately NOT ported: `ac_arrange_ftr.c` (an empty actor stub
+— nothing to port), the keyframe/DMA/texture/display-list
+rendering, the furniture actor lifecycle (owned by the sibling
+`furniture` module and C), the furniture profile callbacks, the
+clock's `rad_hour`/`rad_min` computation (in the time system),
+and save mutations.
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_hi_room_kind`,
+`pc_hi_floor_se`, `pc_hi_validate_index`, `pc_hi_room_steps`,
+`pc_hi_clock_pos`, `pc_hi_crossed_frame`, `pc_hi_clock_chime`,
+`pc_hi_clock_hidden`, `pc_hi_arrange_extract`,
+`pc_hi_entry_start`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
+### Runtime Port Progress: Event-Day NPCs and Controllers
+
+New `rust/src/event_day.rs`, registered as `mod event_day` in
+`rust/src/lib.rs`. Decomp-verified against `m_event.h`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`m_event_map_npc.c`, `m_event_map_npc_data.c_inc`,
+`ac_ev_turkey.c`, `ac_tokyoso_control.c`,
+`ac_groundhog_control.c`, `ac_ev_santa.c`, `lb_rtc.h`
+(GAFE01_00 Rev 0 USA). Every claim PROVEN; one count corrected
+(the schedule table has 134 rows, not 137+).
+
+Ported — Layer A only (pure data and helpers). The calendar
+scheduler, event-manager placement, NPC registration, and all
+NPC actor state machines stay in C:
+
+- The event-ID encoding: 3-bit type / 29-bit subtype with the
+  verbatim get/set semantics. The source's `mEv_SET` quirk
+  (uses `mEv_SET_TYPE(subtype)`) is inert and resolved to
+  VALUES — small subtypes land at `subtype << 29`.
+- The schedule date-field codecs: weekly data, lunar month,
+  save-month, hour-slot, and the TODAY/MULTIDAY flag bits.
+- The 14 decomp-verified schedule rows as raw encoded data
+  (the full 134-row table stays in C; date decoding stays in C).
+- The special-visitor→NPC-kind mapping, verbatim — including
+  the carpet peddler's kind being `mEv_SPNPC_ARABIAN` and the
+  `default:` fall-through to SHOP.
+- The 17-entry event-map type table (IDs only; index 6
+  Halloween has no fixed data — dynamic naming), the
+  `SP_NPC_EV_HALLOWEEN_0` (0xD020) naming rule, and the New
+  Year layout positions with the NPC mask.
+- Franklin's present logic: `PRESENT_NUM` 12, `ALL_BITS`
+  0xFFF, the reset predicate, and the n-th-ungiven mapping
+  (the RANDOM pick stays in C).
+- The tokyoso controller states (nine, with the source's own
+  `STRECH` typo carried), and Jingle's four wish categories.
+- Tortimer's 30 `SONCHO_*` event IDs as a documented name list
+  with the four index-verified pairings.
+
+Deliberately NOT ported: the daily event-list construction and
+active/inactive transitions, the event-manager block/unit
+search and actor placement, NPC registration and
+participation, the special-visitor schedule/save mutations, the
+Jack/Franklin/Jingle/Tortimer/Wisp talk and think state
+machines, the activity controllers' runtime behavior, and save
+mutations.
+
+C ABI (all `pc_`-prefixed, 7 exports): `pc_ed_get_type`,
+`pc_ed_get_subtype`, `pc_ed_weekly_data`,
+`pc_ed_special_type2kind`, `pc_ed_halloween_npc_name`,
+`pc_ed_franklin_all_given`, `pc_ed_franklin_nth_ungiven`. No C
+callers rewired yet, per the usual pattern. No test runs, per
+the standing rule.
+
+### Runtime Port Progress: New Year Countdown
+
+New `rust/src/countdown.rs`, registered as `mod countdown` in
+`rust/src/lib.rs`. Decomp-verified against `ac_count02.c`,
+`ac_count02_move.c_inc`, `ac_countdown.c`,
+`ac_countdown_move.c_inc`, `ac_countdown_clip.h`,
+`ac_countdown_npc0.c`, `ac_countdown_npc0_talk.c_inc`,
+`ac_countdown_npc1.c`, `ac_countdown_npc1_talk.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_time.h` (GAFE01_00 Rev 0 USA).
+All 10 brief claims PROVEN.
+
+Ported (pure timer/state kernels; the NPC talk/demo logic, the
+digit-transition animation, the cracker tool actor, and the save
+stay in C):
+
+- The countdown calculation (`aCOU_setNowTime`): December from
+  23:00 → seconds until midnight; other months → 0; December
+  before 23:00 → 3599. The day is NOT checked — preserved
+  verbatim, not "fixed".
+- The MM:SS digit extraction (`aCOU_getTime`).
+- The NPC0 phase function (seven phases, strict `>`/`<`
+  comparisons) and the SIMPLER NPC1 variant (six phases, no
+  AFTER_10_SEC branch).
+- All seven countdown layout tables with the eight actor slots
+  (the (2, 11) overlap in layout 1 preserved, not "fixed"), the
+  five-NPC-slot mask, and the pool block kind.
+- The prop action states (WAIT/MOVE/HAPPY_NEW_YEAR), the MOVE
+  animation parameters (1.0f → 61.0f @ 0.5f), the happy-counter
+  wrap (59 → 0), and the Dec-31-23:59 wait gate.
+- The NPC1 movement: 60-unit radius with home-angle projection,
+  0.0f/319.0f block-edge offsets (range check BEFORE block
+  check), and the before/after-midnight speed triples.
+- The NPC1 firing sequence constants: the 23:59:50 gate, loop
+  count 2, fire at frame 3.0f (only when drawn), clap loop 43,
+  and the four clap sounds indexed by NPC ID.
+- The digit-change mask algorithm (most-significant-first,
+  four-bit) and the prop-animation request rule (clip present,
+  flag unset, arg0 <= 2).
+
+Deliberately NOT ported: the countdown NPC message-number
+selection (already in the sibling `talk_request` module), the
+talk/demo/forced-talk logic, the digit-transition animation
+(it runs in the DRAW callback), the cracker creation and
+lifecycle, the block-lifetime deletion (needs the field/demo
+state), and save mutations.
+
+C ABI (all `pc_`-prefixed, 9 exports): `pc_cd_set_now_time`,
+`pc_cd_get_time`, `pc_cd_term0`, `pc_cd_term1`,
+`pc_cd_digit_change_mask`, `pc_cd_request_anime`,
+`pc_cd_in_move_range`, `pc_cd_project_radius`,
+`pc_cd_layout_pos`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
+### Runtime Port Progress: Halloween Special NPC
+
+New `rust/src/halloween.rs`, registered as `mod halloween` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_halloween_npc.c`, `ac_halloween_npc.h`,
+`ac_halloween_npc_talk.c_inc`,
+`ac_halloween_npc_schedule.c_inc`,
+`ac_event_manager.c`, `m_event_map_npc.c`,
+`m_event_schedule.c_inc`, `m_name_table.h` (GAFE01_00 Rev 0
+USA). All 10 brief claims PROVEN.
+
+This actor is NOT Jack: Jack is the separate Pumpkin event
+actor (`ac_ev_pumpkin.c`). This is the special Halloween NPC
+layered on the ordinary NPC engine, doing trick-or-treat
+interactions. Jack's actor remains research-only.
+
+Ported (pure kernels; the talk state machine, RNG calls, the
+schedule callbacks, and the save stay in C):
+
+- The trick-candidate scan (`aHWN_get_trick_type`): FTR0/FTR1
+  eligible if not quest and not the two excluded furniture
+  (Jack-o'-lantern 295, Jack-in-the-box 305); ITEM1 eligible
+  if not a tool and not quest. The pure branch decision
+  (`count > 0 && random_f < 0.5`) is ported; the RNG and item
+  selection stay in C to preserve call order.
+- The trick-type enum (CHG_CLOTH 0 / CHG_ITEM 1).
+- All 14 talk states (END_WAIT 13 → `none_proc1`) and the two
+  think states (APPROACH / APPROACH_WAIT).
+- The forced-talk trigger: horizontal strictly < 70.0f,
+  vertical strictly < 20.0f, block coordinates must match.
+- The message IDs: greeting 2442, normal talk 2479 + looks,
+  first-call continuing 0x098B + looks * 6, item restarts
+  (0x098C/098E/098F/0990 + looks * 6 — the scaling lives inside
+  `aHWN_restart_msg_win`), clothing-trick completion
+  0x098D + looks * 6.
+- The tool ranges (net→rod 0x2200-0x2203, golden 0x2239-0x223C),
+  candy 0x2806, the trick clothing 0x2411, and EMPTY_NO 0x0000.
+- The event-manager spawn constants: SP_NPC_HALLOWEEN 0xD025,
+  the contiguous SP_NPC_EV_HALLOWEEN_0..4 (0xD020-0xD024)
+  derivation, and the 0x51 event parameter.
+- The schedule model: step cap 2, request priority 4, the
+  70-unit request arg.
+- Also added to `event_day.rs`: the RUMOR_HALLOWEEN event ID
+  (48) and the Oct 1 00:00 → Oct 30 23:00 rumor schedule row.
+
+C ABI (all `pc_`-prefixed, 5 exports): `pc_hwn_trick_candidates`,
+`pc_hwn_trick_decision`, `pc_hwn_force_talk`,
+`pc_hwn_is_tool_range`, `pc_hwn_event_npc_name`. No C callers
+rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+### Runtime Port Progress: Fireworks Show NPCs
+
+New `rust/src/fireworks.rs`, registered as `mod fireworks` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_hanabi_npc0.c`, `ac_hanabi_npc0_talk.c_inc`,
+`ac_hanabi_npc0_anime.c_inc`, `ac_hanabi_npc1.c`,
+`ac_hanabi_npc1_talk.c_inc`, `ac_hanabi_npc1_anime.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`,
+`ac_event_manager.c` (GAFE01_00 Rev 0 USA). All 13 brief claims
+PROVEN.
+
+Ported (pure kernels; the fan tool actor, the event-manager
+handlers, the talk state machine, and RNG calls stay in C):
+
+- NPC0: the 100.0f radius with home-angle projection, the
+  0.0f/319.0f block-edge offsets, the walk-end rule (ANY
+  collision flag, not just wall flags, or move_timer > 60),
+  the think selection with the attention-gated banzai
+  thresholds (0.05f / 0.3f) and the 135° turn test
+  (DEG2SHORT_ANGLE2(135.0f) = 24576), and the message bases
+  (base[looks] + RANDOM(3)).
+- NPC1: the def_angle[4][7] table converted via
+  DEG2SHORT_ANGLE into s16 units, the destination one
+  field-unit base size (40.0f) from home along the angle,
+  the action selection (no attention → fan; otherwise
+  `action[(cur == FAN ? 1 : 0) + (npc_idx & 1)]`), the loop
+  tables (base {0,1,3,3}, rnd {0.0,2.0,4.0,4.0}), the four
+  clap sounds, and the message arithmetic
+  (base[looks] + RANDOM(3) + npc_idx * 3).
+- The seven pool layouts with the seven actor slots (the
+  vendor and stall share coordinates in each layout,
+  preserved verbatim), the two rosters (layouts 2/4/7 use
+  YOMISE + FIREWORKS_STALL0, the rest use YOMISE2 +
+  FIREWORKS_STALL1), the five-NPC mask, and the pool block
+  kind.
+- The actor IDs: SP_NPC_EV_HANABI_0..4 = 0xD027–0xD02B,
+  SP_NPC_EV_YOMISE = 0xD02C, SP_NPC_EV_YOMISE2 = 0xD039.
+- Also added to `event_day.rs`: RUMOR_FIREWORKS_SHOW (31),
+  SONCHO_FIREWORKS_SHOW (97), and WEATHER_CLEAR (116) with
+  their schedule rows (July 4 19:00–20:00 Tortimer, June 25 →
+  July 3 23:00 rumor, July 4 00:00–23:00 weather override).
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_fw_npc0_next`,
+`pc_fw_npc0_out_of_range`, `pc_fw_npc0_project_radius`,
+`pc_fw_npc1_next`, `pc_fw_npc1_default_angle`,
+`pc_fw_npc1_dst_pos`, `pc_fw_layout_pos`,
+`pc_fw_layout_roster`, `pc_fw_npc0_msg`, `pc_fw_npc1_msg`. No
+C callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
+### Runtime Port Progress: Cherry Blossom Festival NPCs
+
+New `rust/src/cherry_blossom.rs`, registered as `mod
+cherry_blossom` in `rust/src/lib.rs`. Decomp-verified against
+`ac_hanami_npc0.c`, `ac_hanami_npc0_talk.c_inc`,
+`ac_hanami_npc0_anime.c_inc`, `ac_hanami_npc1.c`,
+`ac_hanami_npc1_talk.c_inc`, `ac_hanami_npc1_anime.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`
+(GAFE01_00 Rev 0 USA). All 13 brief claims PROVEN.
+
+Ported (pure kernels; the talk state machine, the tumbler and
+fan tool actors, the positional sound, and RNG calls stay in
+C):
+
+- NPC0: the action selection with the parity rule
+  (`idx = RANDOM(2); idx <<= (event_idx & 1)` → even events
+  choose WAIT/MERRY, odd choose WAIT/DRINK), the loop tables
+  (base {1,2,1}, rnd {2.0f,3.0f,1.0f}), the four clap sounds,
+  the four initial angles via DEG2SHORT_ANGLE2, the talk
+  message arithmetic (base[looks] + RANDOM(3) + event_idx *
+  3), and the tumbler condition (odd event_idx and a NULL
+  right-hand actor).
+- NPC1: the seven-entry initial angle table via
+  DEG2SHORT_ANGLE2 indexed by the pool layout, the think
+  selection (next_action wins; otherwise strict 135° turn
+  test, walk on no wall flags, else turn), the 100.0f squared
+  radius (strict >) with home-angle projection, the 0.0f/319.0f
+  block-edge clamps, the walk-end rule (ANY collision flag or
+  move_timer > 60), and the talk message arithmetic
+  (base[looks] + RANDOM(3), confirmed with no event_idx
+  offset).
+- The festival layout: eight slots (five hanami NPCs, the two
+  Sakura tables, SONCHO2) with their field-unit coordinates, a
+  single map variant on a shrine block, the five-NPC mask, and
+  the IDs (SP_NPC_EV_HANAMI_0..4 = 0xD032–0xD036,
+  SP_NPC_EV_SONCHO2 = 0xD074, SAKURA_TABLE0 = 0x582A,
+  SAKURA_TABLE1 = 0x582B).
+- Also added to `event_day.rs`: CHERRY_BLOSSOM_PETALS (65)
+  with the April 3 00:00 → April 8 23:00 schedule row — a
+  distinct event from the festival itself.
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_cb_npc0_next`,
+`pc_cb_npc0_msg`, `pc_cb_npc0_def_angle`,
+`pc_cb_npc0_make_tumbler`, `pc_cb_npc1_next`,
+`pc_cb_npc1_msg`, `pc_cb_npc1_def_angle`,
+`pc_cb_npc1_out_of_range`, `pc_cb_npc1_project_radius`,
+`pc_cb_layout_pos`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
+### Runtime Port Progress: Harvest Festival NPCs
+
+New `rust/src/harvest.rs`, registered as `mod harvest` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_harvest_npc0.c`, `ac_harvest_npc0.c_inc`,
+`ac_harvest_npc1.c`, `ac_harvest_npc1.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`,
+`ac_event_manager.c`, `ac_ev_turkey.c` (GAFE01_00 Rev 0 USA).
+All 12 brief claims PROVEN.
+
+Ported (pure kernels; Franklin's save/common area and talk
+state machine, the tumbler tool actor, the event-manager
+handlers, and RNG calls stay in C):
+
+- NPC0: the think selection (`_998 != -1` → stored action,
+  otherwise `RANDOM(2) << (_9A4 & 1)` → even raw indices
+  choose WAIT/MERRY, odd choose WAIT/DRINK), the loop tables
+  (base {1,2,1,1}, rnd {0.0f,3.0f,1.0f,0.0f}), the four clap
+  sounds, the default angle via the masked index
+  (`raw_idx & 3` → {45°,270°,315°,90°}), the talk message
+  arithmetic (base[looks] + raw_idx * 3 + RANDOM(3)), and the
+  tumbler condition (odd raw index and a NULL right-hand
+  actor). The raw index and the masked angle index are kept
+  distinct — the fifth NPC (raw 4) has even parity but angle
+  index 0.
+- NPC1: the think (stored slot wins and clears; otherwise NO
+  action selection — only flag re-application, unlike NPC0),
+  the to-default handler (queues WAIT when the shape rotation
+  matches the zero default angle), the creation-time
+  `world.position.x += 20.0f` constant, and the talk message
+  arithmetic (base[looks] + RANDOM(3), no event-index offset).
+- The festival layout: nine slots (five harvest NPCs,
+  Tortimer, three tables) with their field-unit coordinates, a
+  single map variant on a shrine block, the five-NPC mask,
+  and the IDs (SP_NPC_EV_HARVEST_0..4 = 0xD082–0xD086,
+  SP_NPC_EV_SONCHO2 = 0xD074, HTABLE0..2 = 0x5846–0x5848,
+  SP_NPC_TURKEY = 0xD08D).
+- Also added to `event_day.rs`: RUMOR_HARVEST_FESTIVAL (55),
+  HARVEST_FESTIVAL_FRANKLIN (108), the
+  `sched::day_after_weekly` codec, the schedule rows (Tortimer
+  and Franklin at the same 4th-Thursday window, the Nov 11 →
+  day-after-1st-Sunday rumor, and the festival-day weather
+  override), and Franklin's full 12-entry present table IDs.
+
+C ABI (all `pc_`-prefixed, 8 exports): `pc_hv_npc0_next`,
+`pc_hv_npc0_msg`, `pc_hv_npc0_default_angle`,
+`pc_hv_npc0_make_tumbler`, `pc_hv_npc1_think`,
+`pc_hv_npc1_to_default`, `pc_hv_npc1_msg`, `pc_hv_layout_pos`.
+No C callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
+### Runtime Port Progress: Moon Viewing (Tukimi)
+
+New `rust/src/moon_viewing.rs`, registered as `mod moon_viewing`
+in `rust/src/lib.rs`. Decomp-verified against `ac_tukimi.c`,
+`ac_tukimi_move.c_inc`, `ac_tukimi_draw.c_inc`,
+`ac_tukimi_npc0_talk.c_inc`, `ac_tukimi_npc1_talk.c_inc`,
+`ac_tukimi_npc1_anime.c_inc`, `m_event_map_npc_data.c_inc`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`, `m_bgm.c`,
+`m_name_table.h` (GAFE01_00 Rev 0 USA). 11 of 12 brief claims
+PROVEN; the 12th DIFFERS: the structure actor is deleted only
+when `ABS(tukimi_b - player_b) > 1` on either block axis, not on
+a plain block mismatch — an adjacent block keeps the actor.
+The brief's plain-mismatch version would delete it too
+aggressively.
+
+The key retail fact: `ac_tukimi_npc0`/`ac_tukimi_npc1` are spawned
+by the METEOR SHOWER event manager, not the Harvest Moon
+Festival manager. The two events share the pool block but keep
+distinct event IDs, effects (eEC_EFFECT_NIGHT13_MOON vs.
+eEC_EFFECT_SHOOTING_SET — and the meteor stop deletes
+eEC_EFFECT_SHOOTING, not _SHOOTING_SET), and music tracks (30
+vs. 250); they must not be merged into one Rust implementation.
+
+Ported (pure kernels; NPC lifecycle, skeleton animation,
+message resources, RNG calls, and the event-manager handlers
+stay in C):
+
+- The structure actor: variant index
+  (`npc_id - NEWYEAR_SHRINE0`; valid IDs 0x582F/0x5830, left and
+  right), the `id = id == 0 ? 6 : 6` background-offset constant
+  (always ID 6, value 100), the 271.0f animation argument,
+  DUMMY_TUKIMI (0xF10A), and the ABS-diff->1 deletion rule.
+- NPC0: the eight-entry `def_angle` table (0xA000..0) plus the
+  seven-entry X/Z offset tables (offsets are ADDED to world
+  position), and the Meteor-Shower-gated dialogue formula
+  `msg_base[looks] + RANDOM(3)` with both base families
+  (0x1EB0/0x3F46). Head target: 40 units forward, 30 units
+  BELOW the eye, priority 3, only in aNPC_ACT_SPECIAL.
+- NPC1: the 5x7 `def_angle` table indexed by
+  `[npc_id - 0xD03F][mFI_GetPuleIdx()]`, the animation index
+  (KUISINBO1 only for event_idx == 4, WAIT1 otherwise), the
+  fifth-NPC special case (no talk turning, KUISINBO1 default;
+  dispatch tests `npc_id == SP_NPC_EV_TUKIMI_4`), the head
+  target (40 forward, 30 ABOVE the eye, skipped for index 4),
+  and the dialogue (`msg[looks] + RANDOM(3) + event_idx * 3`
+  for ordinary indices; separate 0x1EBC/0x3F52 base family and
+  no event_idx term for index 4).
+- The Meteor Shower pool placement: seven 5-slot layouts
+  (SP_NPC_EV_TUKIMI_0..3 = 0xD03F–0xD042, Tortimer fifth),
+  mask 0b0011111; layouts 2/4/7 pair with the first roster,
+  1/3/5/6 with the second (same pairing as fireworks). Layout
+  2's slots 3 and 4 both sit at (13, 2) — preserved verbatim.
+  `mFI_GetPuleIdx()` returns `type - 69` (0–6) for pool blocks,
+  -1 otherwise, so NPC0's 8th angle entry is unreachable in
+  practice.
+- Also added to `event_day.rs`: SONCHO_METEOR_SHOWER (93),
+  SONCHO_HARVEST_MOON_FESTIVAL (97), the Aug 12 and
+  lunar-date schedule rows, plus two corrections from this
+  pass — SONCHO_FIREWORKS_SHOW is 92 (not 97) and
+  WEATHER_CLEAR is 109 (not 116); the earlier fireworks pass
+  had counted raw file lines instead of enum entries. Verified
+  by recounting all 120 `enum event_table` entries against
+  six already-ported anchors.
+
+C ABI (all `pc_`-prefixed, 10 exports):
+`pc_tukimi_should_delete`, `pc_tukimi_npc0_facing`,
+`pc_tukimi_npc0_pos_offset`, `pc_tukimi_npc0_message`,
+`pc_tukimi_npc1_facing`, `pc_tukimi_npc1_animation_index`,
+`pc_tukimi_npc1_is_fifth`, `pc_tukimi_npc1_message`,
+`pc_tukimi_npc1_wants_head_target`, `pc_tukimi_ms_layout`.
+No C callers rewired yet, per the usual pattern.
+No test runs, per the standing rule.
+
+### Runtime Port Progress: First Shrine Visit (Hatsumode)
+
+New `rust/src/hatsumode.rs`, registered as `mod hatsumode` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_hatumode_control.c`, `ac_hatumode_control_move.c_inc`,
+`ac_hatumode_npc0.c`, `ac_hatumode_npc0_talk.c_inc`,
+`ac_hatumode_npc0_schedule.c_inc`,
+`ac_hatumode_clip_move.c_inc`, `ac_hatumode_clip_think.c_inc`,
+`ac_shrine.c`, `m_event_map_npc_data.c_inc`,
+`m_event_schedule.c_inc`, `ac_event_manager.c` (GAFE01_00 Rev 0
+USA). All 10 brief claims PROVEN, with brief-missed nuances
+folded into the port.
+
+Ported (pure kernels; actor lifecycle, the NPC clip,
+message/demo ownership, RNG calls, player-action requests,
+shrine animation, the global clip, save-area allocation, and the
+`mSP_money_check`/`mSP_get_sell_price` debit semantics stay in
+C):
+
+- The controller dispatch constants: the 50-Bell price, messages
+  4396/4398, continuations 0x112D/0x112E, the `flags0 & 0x8000`
+  wait gate, and the `flags0 &= ~0x8000` clear at prayer end
+  (brief-missed). The money check runs only after the speech
+  demo is active.
+- Shrine-relative positions with the confirmed [X, Z, Y] layout
+  of `yashiro_pos[3]`: controller home (20+yp[0], yp[2],
+  40+yp[1]); prayer/offering (20+yp[0], yp[2], 85+yp[1]).
+- Dialogue: the `(4 + (npc_id - 0xD058) - cur_npc_idx) & 3`
+  group formula (bitwise AND, not modulo), the {+12,+3,+6,+9}
+  group offsets, the `base+15+RANDOM(3)` branch, and the
+  offering-talk continuations (base+1 with next_think 0x22 vs.
+  base+2).
+- Routes: the 5-entry start-offset tables (+180° orientation),
+  the pre-increment wrap (`root++`, then 10→5, 5→0 — not plain
+  modulo), and the brief-missed `aHN0_posX[9]`/`aHN0_posZ[9]`
+  destination tables with the 10-entry root remap.
+- Flag handshakes: the exact wait masks (think 3 →
+  `0x01 << (idx&1)`; 13 → `0x04 << ((idx&1)^1)`; 28 →
+  `0x10 << ((idx&1)^1)`), consumed on read, plus think 28's
+  0x4000 detour to think 43.
+- The 8-slot New Year shrine spawn layout (HATUMODE_0..4 =
+  0xD058–0xD05C, MIKO = 0xD03D, NEWYEAR_TABLE = 0x5831,
+  SONCHO2), mask 0b00011111.
+- Also added to `event_day.rs`: RUMOR_NEW_YEARS_DAY (0) with
+  the Dec 25–31 rumor row, and the SONCHO_NEW_YEARS_DAY (80)
+  Jan 1 06:00–10:00 row (the NEW_YEARS_DAY row already
+  existed and matches the verified window).
+
+Deliberately NOT ported as retail behavior: the
+`root_table`/`proc_idx_table` 4-entry tables are exposed with
+only 4 valid indices — 5 HATUMODE NPCs spawn, so index 4 is an
+open retail out-of-bounds question that needs
+assembly-level confirmation; the helper reports invalid instead
+of reproducing the read.
+
+C ABI (all `pc_`-prefixed, 19 exports):
+`pc_hatsumode_offer_msg`, `pc_hatsumode_choice_continue`,
+`pc_hatsumode_choice_state`, `pc_hatsumode_wait_ready`,
+`pc_hatsumode_inori_end_flags`, `pc_hatsumode_ctrl_home`,
+`pc_hatsumode_act_pos`, `pc_hatsumode_msg_group`,
+`pc_hatsumode_make_msg`, `pc_hatsumode_talk_msg`,
+`pc_hatsumode_saisen_continue`, `pc_hatsumode_start_offset`,
+`pc_hatsumode_start_root`, `pc_hatsumode_ready2`,
+`pc_hatsumode_next_root`, `pc_hatsumode_next_pos`,
+`pc_hatsumode_wait_mask`, `pc_hatsumode_wait_advance`,
+`pc_hatsumode_spawn_pos`. No C callers rewired
+yet, per the usual pattern. No test runs, per the standing
+rule.
+
+### Runtime Port Progress: Tug of War (Tunahiki)
+
+New `rust/src/tunahiki.rs`, registered as `mod tunahiki` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_tunahiki_control.c`, `ac_tunahiki_npc0.c`,
+`ac_tunahiki_npc0_schedule.c_inc`,
+`ac_tunahiki_npc0_talk.c_inc`, `ac_tunahiki_npc1.c`,
+`ac_tunahiki_npc1_schedule.c_inc`,
+`ac_tunahiki_npc1_talk.c_inc`,
+`include/ac_tunahiki_control.h`, `m_event_map_npc_data.c_inc`,
+`m_event_schedule.c_inc`, `ac_event_manager.c` (GAFE01_00 Rev 0
+USA). All 8 brief claims PROVEN.
+
+The design: one controller owns the shared rope simulation
+(`aEv_tunahiki_c`, 0x18 bytes); NPC1 participants animate from
+it and feed pull speeds back through the shared save area.
+
+Ported (pure kernels; the event save area, actor lifecycle,
+rope actor, NPC clip, animation frame-control, RNG calls,
+effects, audio, and demo/talk stay in C):
+
+- The full `aTNC_wait` controller update: ±0.3 shake from
+  `game_frame & 1` while SHAKE is set, the TALK_ALL freeze,
+  `rope_base += speed * 0.025`, the strict ±10 clamp with
+  speed zeroing, `rope = rope_base + shake`, and the counter
+  reset to 2 (not 0) at 65.
+- The `aTNN1_aiko` deterministic parts: the speed-selection
+  chain (`rng < 0.45` → `mag+3`; `< 0.9` → `-(mag+3)`; else 0 —
+  RNG values supplied by the C caller), the footstep condition
+  (`speed * dir > 8.0`), and the end-state decision
+  (`-(base*dir) > 5` → 2; `< -5` with `next_speed*dir >= 0` →
+  3; else 1, keeping the zero-speed equality on branch 3).
+- ID decomposition: index, member bit, the raw team mask (0 or
+  2 — not normalized), and the delete/talk flag shifts.
+- Team direction (`(npc_id - TUNAHIKI_1) & 2`), the home
+  offsets (dir×95 for ID indices 2–3, else dir×85; z dir×5),
+  and the `home.x + rope_base` follow rule (not `rope`).
+- Dialogue arithmetic (`base + msg_no + rand3`; NPC0 msg_no 0,
+  NPC1 3/6/9) and the 6-slot shrine placement
+  (TUNAHIKI_0..4 = 0xD05F–0xD063, Tortimer (10, 8)), mask
+  0b0011111.
+- Also added to `event_day.rs`: the two verified tug-of-war
+  windows (Mar 19 15:00 → Mar 21 16:00, Sep 21 15:00 → Sep 23
+  16:00; plain date ranges, no rumor row — the fair-level
+  rumors cover it).
+
+Deliberately NOT ported as retail behavior: the constructor
+never initializes speed/next_speed/counter (their values come
+from the save-area allocator — no zero-init added); several
+NPC1 paths dereference the save area with no null check (only
+NPC0's destructor guards), so the port preserves the
+call-order assumptions; the redundant second save-area fetch
+in `aTNC_wait` is folded (documented); the `#ifdef TARGET_PC`
+tick loop in `aTNC_actor_move` is PC-port, not retail.
+
+C ABI (all `pc_`-prefixed, 15 exports):
+`pc_tunahiki_npc_index`, `pc_tunahiki_member`,
+`pc_tunahiki_team_mask`, `pc_tunahiki_delete_flag`,
+`pc_tunahiki_talk_flag`, `pc_tunahiki_dir`,
+`pc_tunahiki_home_offset`, `pc_tunahiki_follow_x`,
+`pc_tunahiki_rope_step`, `pc_tunahiki_counter_step`,
+`pc_tunahiki_next_speed`, `pc_tunahiki_footstep`,
+`pc_tunahiki_next_think`, `pc_tunahiki_msg`,
+`pc_tunahiki_spawn_pos`. No C callers rewired
+yet, per the usual pattern. No test runs, per the standing
+rule.
+
+### Runtime Port Progress: Morning Aerobics (Taisou)
+
+New `rust/src/taisou.rs`, registered as `mod taisou` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_taisou_npc0.c`, `ac_taisou_npc0_talk.c_inc`,
+`ac_taisou_npc0_anime.c_inc`, `include/ac_taisou_npc0.h`,
+`include/audio.h`, `m_event_map_npc_data.c_inc`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`ac_npc_anim_def.h` (GAFE01_00 Rev 0 USA). All 10 brief claims
+PROVEN.
+
+Ported (pure kernels; the radio counter, RNG call order, NPC
+clip lifecycle, the leader/group globals, animation init,
+demo/talk, Tortimer's radio-card inventory mutations, and the
+event-manager handlers stay in C):
+
+- The failure arithmetic: the five rates {0.0, 0.05, 0.1, 0.15,
+  0.3} with retail's `> 4 → 0` type fallback, the
+  `(measure + 1) % 10` next action, the eligibility predicate
+  (no failure actor designated, next action neither 0 nor 9,
+  float below rate), and the `1 + RANDOM(8)` rejection
+  predicate (the re-roll loop stays in C).
+- The 13-entry action→animation table with numeric IDs
+  (INTRO1_A 81 … TIRED1 105) plus the `(anime_dir & 1)`
+  variant bit.
+- All ten segment start-ratio tables (varying lengths
+  3/5/3/5/3/5/5/5/5/2), the end/morph ratios, the ratio
+  lengths, and the `aTS0_set_current` frame-sync math. The
+  taisou6 array's unsorted `{0.0, 0.5, 1.0, 1.5, 0.96875}`
+  order is preserved as written.
+- The delay math: NPC 0 never gets the RANDOM(48) offset; the
+  per-step 0.2/0.8 ratio adjustment; the over-block test
+  against `startRatio[seg][seq + 1]` (the NEXT boundary).
+- Dialogue: row 0 while Morning Aerobics is active (row 1 for
+  the Sports Fair variant), Copper's {9829, 9832} bases, the
+  villager `base + type*3 + rand2` formula with the fixed +2
+  for action == 10, the 180°/0° init-angle rule, the
+  smallest-ID leader selection, and the 7-slot shrine layout
+  (TAISOU_0..4 = 0xD04E–0xD052, radio 0x582C, Tortimer 0xD078).
+- Also added to `event_day.rs`: RUMOR_MORNING_AEROBICS (33)
+  with the Jul 14–24 rumor row and TALK_MORNING_AEROBICS (34)
+  with the Jul 26–Aug 30 row (both MULTIDAY-encoded, appended
+  at the end; the Jul 25–Aug 31 06:00 row already existed).
+
+C ABI (all `pc_`-prefixed, 18 exports):
+`pc_taisou_failure_rate`, `pc_taisou_next_action`,
+`pc_taisou_failure_eligible`, `pc_taisou_failure_reject`,
+`pc_taisou_anim_id`, `pc_taisou_anim_variant`,
+`pc_taisou_start_ratio`, `pc_taisou_sync_frame`,
+`pc_taisou_has_delay`, `pc_taisou_delay_step`,
+`pc_taisou_over_block`, `pc_taisou_msg_row`,
+`pc_taisou_npc_type`, `pc_taisou_villager_msg`,
+`pc_taisou_copper_msg`, `pc_taisou_init_angle`,
+`pc_taisou_leader_update`, `pc_taisou_spawn_pos`. No C callers
+rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+### Runtime Port Progress: Fishing Tourney (Turi)
+
+New `rust/src/fishing_tourney.rs`, registered as
+`mod fishing_tourney` in `rust/src/lib.rs`. Decomp-verified
+against `ac_turi.c`, `ac_turi_npc0.c`,
+`ac_turi_npc0_move.c_inc`, `ac_turi_npc0_anime.c_inc`,
+`ac_ev_angler.c`, `ac_ev_angler_move.c_inc`,
+`ac_turi_clip.c_inc`, `m_fishrecord.c`, `m_event_schedule.c_inc`,
+`m_event_map_npc_data.c_inc`, `ac_event_manager.c`
+(GAFE01_00 Rev 0 USA). All 7 sections PROVEN with one
+DIFFERS-level correction: the stand's self-deletion test is
+`ABS(block diff) > 1` in either axis, NOT `!=` — adjacent
+blocks do NOT delete the stand (same pattern as the
+Hatsumode brief fix).
+
+Ported (pure kernels; the structure-actor framework, actor
+lifecycle, NPC clip/schedule/demo/talk, the rod tool-actor,
+the save/common areas, the record database
+insertion/recycling, mail, and the event-manager pool
+orchestration stay in C):
+
+- The fish-size formulas: `pc_fish_size_from_rank` with f32
+  arithmetic and truncation — LARGE `(50+20·rng²)/2.54`,
+  MEDIUM `(30+20·rng)/2.54`, SMALL `(30−20·rng²)/2.54` — plus
+  the hour-driven rank branch (`<9` → fixed small, `<15` →
+  C draws RANDOM(2), else C draws RANDOM(3)).
+- The strict record comparison (`current < submitted` — ties
+  do not beat), the host's time gate (`hour < 6 ||
+  hour >= 18`), the measurement rank (FISH07 → large, FISH06
+  → medium, else small), the item classification (FISH05–07
+  → bass), and the 40-entry fish→message-number table with
+  its two out-of-order entries (FISH16 → 0x110C, FISH33 →
+  0x2FAF) copied verbatim.
+- The stand variant (`npc_id − 0x5838`), the corrected
+  block-deletion rule, the 5×7 participant facing-angle table
+  (degrees converted with C's wrapping `(s16)` semantics, so
+  180° yields −32768), the participant dialogue
+  (`base + rand3 + idx*3` with the six 0x1F0A-based bases),
+  the looks-based animation frame speeds, the entry bit
+  (`1 << player_no`), and the clothing/furniture reward
+  branch.
+- Also added to `event_day.rs`: RUMOR/TALK/SONCHO consts for
+  both tournaments (27/28/90 and 52/53/102) and all eight
+  schedule rows — every Sunday of June/November 06:00–17:00
+  via `weekly_data(7, SUNDAY)`, the May/October rumor rows,
+  and the June/November talk rows ending on the last Sunday
+  (`weekly_data(6, SUNDAY)`). ROWS 20→28.
+
+Deliberately NOT ported: all RNG call order (including the
+extra apparently-unused fqrand() in `mEv_fishRecord_local`
+and the RANDOM-before-fqrand order in `mFR_make_NpcRecord`),
+PersonalID handling, the five-slot record database, mail,
+the stand's 3×3 background-offset tables (structure-actor
+territory), the 7 pool layouts (event-manager territory),
+and the host's save-area lifecycle (including its
+NULL-check-free teardown).
+
+C ABI (all `pc_`-prefixed, 15 exports):
+`pc_fish_size_from_rank`, `pc_fish_npc_rank_branch`,
+`pc_fish_record_beaten`, `pc_fish_time_open`,
+`pc_fish_measure_rank`, `pc_angler_item_type`,
+`pc_angler_fish_msgno`, `pc_fish_entry_bit`,
+`pc_fish_reward_is_cloth`, `pc_turi_stand_variant`,
+`pc_turi_should_delete`, `pc_turi_npc_index`,
+`pc_turi_def_angle`, `pc_turi_msg_no`,
+`pc_turi_frame_speed`. No C callers rewired yet, per the
+usual pattern. No test runs, per the standing rule.
+
+### Runtime Port Progress: Sports Fair Ball Toss (Tamaire)
+
+New `rust/src/tamaire.rs`, registered as `mod tamaire` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_tamaire_npc0.c`, `ac_tamaire_npc0_schedule.c_inc`,
+`ac_tamaire_npc0_talk.c_inc`, `ac_tamaire_npc1.c`,
+`ac_tamaire_npc1_schedule.c_inc`, `ac_tamaire_npc1_talk.c_inc`,
+`ac_tamaire_npc0.h`, `ac_tamaire_npc1.h`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`
+(GAFE01_00 Rev 0 USA). All 13 items PROVEN with two
+DIFFERS-level corrections: throw-end timer expiry goes to
+KYORO, not KYORO_MAE (confirmed in both the proc and the
+dt_tbl); the ball prop's block-deletion test is strict `!=`
+(adjacent blocks DO delete it) — the opposite of the turi
+stand's `ABS > 1`.
+
+Ported (pure kernels; NPC clip/action requests, think
+scheduling, the tool-actor lifecycle including the
+asymmetric destructor, animation frame control and
+passCheck, all RNG call order, the eEC throw effect, the
+shared static team flag with its per-construction reset,
+talk/demo, and the map placement stay in C):
+
+- NPC0's route destinations with the TRUE default branch
+  (+80/+160, +200/+40, −40/+160, default −160/−40) in s16
+  with wrapping, the turn gate (aNPC_ACT_TURN at
+  aNPC_ACTION_END_STEP = 0xFF), the walk-end +1/−1
+  advance/rollback decision (the rollback is a source-level
+  recovery path, not incidental), and the cheer branch
+  (CLAP1 67 / BANZAI1 66 from the C-side float).
+- NPC1's team-relative origin (z +40 always; x +200 when
+  `((id − TAMAIRE_1) & 2) != 0`, else −160), the raw team
+  flag bits (1/2, not normalized), the throw team bit
+  `((id − TAMAIRE_1) >> 1) & 1`, and the random-move angle
+  subtraction with C's f32→s16 truncation (sin_s/cos_s stay
+  in C).
+- The ball tool table {49, 48, 51, 50} with the verbatim
+  index expression (right = `((((id−TAMAIRE_1)>>1)&1)^1)`,
+  left = same + 2), the pickup frame targets {15, 27, 39}
+  (edge-crossing, never `==`), the re-throw gate (`left !=
+  0`), and the throw angle addend (RANDOM(3000) + 12288,
+  sample in C).
+- Dialogue: NPC0's literal bases {7781, 7793, 7769, 7805,
+  7817, 7829}, NPC1's offsets {3, 3, 3, 6, 6, 9}, message =
+  base + offset + rand3 (RNG in C).
+- The 10-slot shrine layout (TAMAIRE_0..4 = 0xD053–0xD057,
+  paired balls/baskets, Tortimer), mask 0b0011111.
+- Also added to `event_day.rs`: the two verified ball-toss
+  windows (Mar 19 13:00 → Mar 21 14:00, Sep 21 13:00 → Sep
+  23 14:00; plain ranges; event 12 already existed; ROWS
+  28→30).
+
+Deliberately NOT ported: the shared static team flag and
+its per-construction reset (file-static semantics must be
+preserved, not moved to a one-time initializer), the
+#TARGET_PC-only timer helpers and the `timer_accum` field
+(PC-port, not retail), the eEC_EFFECT_TAMAIRE trajectory
+and scoring (not in these two files), and the event
+origin/pool layout selection.
+
+C ABI (all `pc_`-prefixed, 17 exports):
+`pc_tamaire_npc0_destination`,
+`pc_tamaire_npc0_turn_advance`, `pc_tamaire_npc0_move_step`,
+`pc_tamaire_cheer_anim`, `pc_tamaire_npc1_origin`,
+`pc_tamaire_team_bit`, `pc_tamaire_throw_team_bit`,
+`pc_tamaire_tool_id`, `pc_tamaire_throw_angle`,
+`pc_tamaire_next_move_angle`, `pc_tamaire_pickup_frame`,
+`pc_tamaire_throw_again`, `pc_tamaire_talk_msg`,
+`pc_tamaire_npc0_msg_base`, `pc_tamaire_npc1_msg_offset`,
+`pc_tama_should_delete`, `pc_tamaire_spawn_pos`. No C
+callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
+### Runtime Port Progress: Field Day Footrace (Tokyoso)
+
+New `rust/src/tokyoso.rs`, registered as `mod tokyoso` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_tokyoso_control.c`, `ac_tokyoso_clip.c_inc`,
+`ac_tokyoso_npc0.c`, `ac_tokyoso_npc0_schedule.c_inc`,
+`ac_tokyoso_npc0_talk.c_inc`, `ac_tokyoso_npc1.c`,
+`ac_tokyoso_npc1_schedule.c_inc`, `ac_tokyoso_npc1_talk.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`
+(GAFE01_00 Rev 0 USA). All 11 sections PROVEN with
+DIFFERS-level nuances (see below).
+
+Naming note: the request title said "summer festival
+stalls," but these files are the Field Day Footrace (the
+save area is keyed to mEv_EVENT_SPORTS_FAIR_FOOT_RACE; the
+map setup calls it fdd_tokyoso). They are ported as the
+footrace, not stalls. Real stall behavior lives under the
+Fireworks Show's YOMISE/FIREWORKS_STALL actors — a separate
+future commission.
+
+Ported (pure kernels; the controller state machine, the
+shared save area at slot 8, NPC clip/action requests,
+animation frame control, all RNG call order, the eEC
+effects, sounds, talk/demo, and the map placement stay in
+C):
+
+- The ID decomposition: index, raw team (0/1), raw role
+  (0/2, never normalized), and NPC1's birth role test with
+  the brief-missed −1 shift — `aTKC_NPCID2ROLE(npc_id − 1)`
+  makes TOKYOSO_0/3/4 spectators and TOKYOSO_1/2 runners.
+- The flag-bit shifts (delete/stretch/ready/kansen/goal)
+  from the verbatim `NPCIDX2*FLG` macros, including the
+  source-misspelled READYLFG.
+- The lap-crossing test (odd lap: angle < −4000; even:
+  angle > 4000), the goal decision (`lap > 8` with no goal
+  → WON if the other has none, else LOSE), the angular
+  target with C's truncating f32→s16 conversion, the run
+  speed (`(4 + dist/90) − idx·0.5`, −1 when ahead), and the
+  run destination — X = origin + dist·cos_s but Z = origin
+  − dist·sin_s (the brief said "cos/sin" without the sign).
+- The finish-line target with centered `(RANDOM_F(10) − 5)`
+  draws (samples in C), the retail run-check (`angle >
+  −1000 && angle < 4096` — the BUGFIXES variant differs),
+  the ahead test (laps first, then positive angle diff),
+  and the warmup destination math.
+- Dialogue: NPC0's literal bases {6621, 6637, 6605, 6653,
+  6669, 6685}, NPC1's 13-entry offsets
+  {14,2,14,4,6,8,8,10,10,12,12,12,12}, message = base +
+  offset + rand2 (RNG in C).
+- The 6-slot shrine layout (TOKYOSO_0..4 = 0xD02D–0xD031,
+  Tortimer), mask 0b0011111.
+- Also added to `event_day.rs`: the two verified footrace
+  windows (Mar 19 11:00 → Mar 21 12:00, Sep 21 11:00 → Sep
+  23 12:00; plain ranges; event 15 already existed; ROWS
+  30→32).
+
+Deliberately NOT ported: the `@BUG` double
+`setupAction(GO)` (documented; the C keeps it), the
+`aTKC_set` gate `(flags & READY_ALL) == 0` (mask EMPTY,
+not "incomplete"), the controller's `_00 == 3` move
+override, NPC0's destructor ASSIGNING `flags =
+DELETE_NPC0` (wipes other bits — not "fixed" to OR),
+NPC1's `_00 == 3` self-delete living in the move callback
+rather than the destructor, the `aTKC_FLAG_15` bit and the
+full `_01` semantics (unresolved), and the eEC effect
+trajectories.
+
+C ABI (all `pc_`-prefixed, 22 exports):
+`pc_tokyoso_npc_index`, `pc_tokyoso_team`,
+`pc_tokyoso_role`, `pc_tokyoso_birth_role`,
+`pc_tokyoso_delete_flag`, `pc_tokyoso_stretch_flag`,
+`pc_tokyoso_ready_flag`, `pc_tokyoso_kansen_flag`,
+`pc_tokyoso_goal_flag`, `pc_tokyoso_lap_advance`,
+`pc_tokyoso_goal_decision`, `pc_tokyoso_next_angle`,
+`pc_tokyoso_run_speed`, `pc_tokyoso_run_target`,
+`pc_tokyoso_finish_target`, `pc_tokyoso_run_check`,
+`pc_tokyoso_is_ahead`, `pc_tokyoso_warmup_target`,
+`pc_tokyoso_talk_msg`, `pc_tokyoso_npc0_msg_base`,
+`pc_tokyoso_npc1_msg_offset`, `pc_tokyoso_spawn_pos`. No C
+callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
+### Runtime Port Progress: Snowman Building
+
+New `rust/src/snowman.rs`, registered as `mod snowman` in
+`rust/src/lib.rs`. Decomp-verified against `m_snowman.c`,
+`ac_snowman.c`, `ac_psnowman.c`, `m_event_schedule.c_inc`,
+`ac_event_manager.c` (GAFE01_00 Rev 0 USA). All 12
+sections PROVEN with DIFFERS-level nuances (see below).
+
+Ported (pure kernels; actor lifecycle, collision
+ownership, the player-push demo calls, foreground
+placement, save-pointer access, date-growth integration,
+quest callbacks, dialogue/demo state, effects/audio, mail
+submission, RNG call order, and the event-manager birth
+orchestration stay in C):
+
+- The growth step (`aSMAN_calc_scale`): `attr ≤ 3` grows by
+  speed, otherwise shrinks at 75%; clamped to [0, 6400];
+  normalized = dist/6400; actor scale = normalized·0.02 +
+  0.01 capped at 0.03.
+- The proportion score from the ACTUAL actor scales (0.01
+  + 0.02·normalized — not the normalized values):
+  `|head/body − 0.85| ≤ 0.05/0.15/0.25` → PERFECT/GOOD/OK/
+  BAD, all boundaries inclusive.
+- The message arithmetic: completed-snowman `2209 +
+  ((msg_id + slot) % 3) + result·3`, assembly bases
+  {2197, 2200, 2203, 2206} + RANDOM(3) (sample in C).
+- The reward-index selection with exactly ONE re-roll (no
+  loop; samples and ownership check in C), the 12-item
+  table in source order (IDs computed from the X-macro
+  expansion — verify against the build before wiring),
+  and the mail base 0x202 + rnd.
+- The 4-byte record packing (exists, trunc(norm·255),
+  trunc(norm·255), score), the slot/sub-ID mapping
+  (`(id − 0xA008)/3`, `% 3`), the per-day melt step
+  (`trunc(0.8·size)` applied `days` times), the lifespan
+  check (winter && (sub_id + days) < 3), and the negative-
+  day normalization.
+- The push-gate predicate (normalized > 0.2, distance <
+  norm·20+25, timer saturating at 17 — not 16 — height gap
+  in (−10, 25), player moving, speed < 3, |angle| < 10012)
+  and the combine gate (different parts, both > 0.2, NOT
+  both stationary — the brief said "either").
+- The head selection (faster ball jumps; ties go to A).
+- Also added to `event_day.rs`: SNOWMAN_SEASON (62) with
+  the Dec 25 00:00 → Feb 17 23:00 row (plain range; ROWS
+  32→33).
+
+Deliberately NOT ported: the no-return function is
+`mSN_ClearSnowmanData`, not `mSN_ClearSnowman` (the brief
+mixed them up — documented); the registration gate
+(PART0 + COMBINED + HEAD_JUMP + nonzero fg_pos + !DELETE);
+the `move_dist` persistence through the event common area
+(accessor stays in C); the ball-part selection via the
+boolean-indexed `part_tbl`; the parabolic head-jump arc
+and landing rotation; the assembly dust effects; the
+`@BUG` NULL dereference in the foreground search.
+
+C ABI (all `pc_`-prefixed, 14 exports):
+`pc_snowman_scale_step`, `pc_snowman_score`,
+`pc_snowman_msg_no`, `pc_snowman_assembly_msg`,
+`pc_snowman_reward_index`, `pc_snowman_record_pack`,
+`pc_snowman_slot_from_id`, `pc_snowman_sub_id`,
+`pc_snowman_melt_step`, `pc_snowman_check_life`,
+`pc_snowman_melt_days`, `pc_snowman_push_ok`,
+`pc_snowman_combine_ok`, `pc_snowman_head_is_a`. No C
+callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
+### Runtime Port Progress: Igloo
+
+New `rust/src/kamakura.rs`, registered as `mod kamakura`
+in `rust/src/lib.rs`. Decomp-verified against
+`ac_kamakura.c`, `ac_kamakura_move.c_inc`,
+`ac_kamakura_indoor.c`, `ac_kamakura_npc0.c`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`m_npc.c`, `ac_set_npc_manager.c`, `ac_quest_manager.c`,
+`ac_quest_talk_greeting.c`, `ac_quest_talk_normal_init.c`
+(GAFE01_00 Rev 0 USA). 17/17 sections PROVEN with
+DIFFERS-level nuances (see below).
+
+Ported (pure kernels; actor lifecycle, foreground
+placement, the door request/demo/wipe, save-area access,
+NPC/move-actor creation, quest-manager state, RNG call
+order, effects/audio dispatch, the `anim_frame`
+accumulator, the steam cadence, and the villager-selection
+policy stay in C):
+
+- The entry check (`aKKR_check_player`): strict facing
+  interval (24576, 40960) and squared distance < 1600
+  from (actor X, actor Z + 40).
+- The exit position (`aKKR_rewrite_out_data`): (actor X,
+  ground Y, actor Z + 86) — also recording `exit_type = 0`
+  and `extra_data = 3`.
+- The window-lighting target (`aKKR_ctrl_light`): true
+  outside 06:00 inclusive – 18:00 exclusive.
+- The candle phase: `((u32)anim_frame − late) % period`
+  (34 ring / 24 fire), and the `aKI_MakeSinPointHalf`
+  midpoint/cosine interpolation verbatim (3.14f phase).
+- The greeting selection: `hello_msg[] = {6367, 6376,
+  6358, 6385, 6394, 6403}[looks]`, the money/item
+  bitfield, `1 + base + RANDOM(2)` when both flags are set
+  (sample in C), BELL_MIN = 3000.
+- The furniture trade-list branch: kamakura + rnd ≥ 90 →
+  list 19; tent + rnd ≥ 80 → list 23; otherwise the
+  C-owned default (samples and lookup in C).
+- Also added to `event_day.rs`: the Kamakura schedule row
+  Jan 2 10:00 → Feb 23 21:00 (event 3; ROWS 33→34). The
+  `event_day` consts and type-table entry already existed.
+
+Deliberately NOT ported: the steam cadence is
+`graph_dt_period_elapsed(game, &dt_accum, 8.0f)`, NOT
+`game_frame & 7` (the brief was wrong — documented); the
+candle phases run on `k_indoor->anim_frame`, NOT
+`game->frame_counter` (the brief was wrong —
+documented); the chase rate is `0.019532442f *
+dt_num_60fps_frames`; the unused `aKI_mochi_anime_data`
+table; the `aNPC_ct_data_c` trailing 0; the `mEvMN_GetNpcJointEv`
+selection policy; the 0xFF-sentinel save-byte access.
+
+C ABI (all `pc_`-prefixed, 8 exports):
+`pc_kamakura_entry_check`, `pc_kamakura_exit_position`,
+`pc_kamakura_light_target`, `pc_kamakura_candle_phase`,
+`pc_kamakura_sin_point_half`, `pc_kamakura_greeting_msg`,
+`pc_kamakura_trade_list`, `pc_kamakura_save_byte_valid`.
+No C callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
+### Runtime Port Progress: Mushrooms
+
+New `rust/src/mushroom.rs`, registered as `mod mushroom`
+in `rust/src/lib.rs`. Decomp-verified against
+`m_mushroom.c`, `m_mushroom.h`,
+`m_event_schedule.c_inc`, `m_name_table.h` (GAFE01_00 Rev
+0 USA). 16/16 sections PROVEN with DIFFERS-level nuances
+(see below).
+
+Ported (pure kernels; save-pointer access, the foreground
+grid and deposit data, the `mFI_*` queries, RTC access,
+all `fqrand()` call order, `mFI_SetFGUpData()`, and the
+`lbRTC_*` time helpers stay in C):
+
+- The target count (`mMsr_GetMushroomNum`): hour 8 →
+  `5 − min/15`, hour 9 with min < 15 → 1, otherwise 0,
+  gated on `active || saved date != today`.
+- The time conversions: `Rtc2MushTime` (quarter =
+  `min/15`, does not touch `active`) and `Mushtime2Rtc`
+  (min = quarter × 15, sec = 0), the quarter-hour
+  rounding table {45, 30, 15, 0} (rounds DOWN despite
+  the source comment), and the all-zero timestamp check
+  (the two init paths — previous day vs current time —
+  stay in C).
+- Tree eligibility (the 14 accepted ids), the five
+  placement offsets {-1, 1, 15, 16, 17}, the boundary
+  `ut_x < 15 && ut_z < 15`, and the hierarchical index
+  selection (`(fqrand() * count)` as i32, sample in C).
+- The two player exclusions as SEPARATE kernels:
+  placement excludes the whole X column AND Z row
+  (`bx != pbx − 1 && bz != pbz − 1`), cleanup excludes
+  only the single player acre.
+- Cleanup eligibility (mushroom item AND not buried),
+  the clear-all decision (strict `total < clear_num`),
+  and the `mMsr_SetShareNum` distribution verbatim: the
+  deterministic spread phase, plus one random-
+  allocation step per call with the sampled block index
+  supplied by C.
+- Also added to `event_day.rs`: MUSHROOM_SEASON (48)
+  with the Oct 15 00:00 → Oct 25 23:00 row (plain range;
+  ROWS 34→35).
+
+Deliberately NOT ported: there is NO mushroom furniture
+mechanism — `m_mushroom.c` only ever writes
+ITM_FOOD_MUSHROOM, no mushroom-series furniture ids
+exist in the decomp, and the mother's mail uses the
+mushroom as a food present, not furniture. The pickup
+path needs no furniture branch from this system. Also
+not ported: the startup cleanup's (0, 0) player acre, its
+lack of an event-status check, the column-refill logic,
+and the per-row candidate bitfields.
+
+C ABI (all `pc_`-prefixed, 14 exports):
+`pc_mushroom_target_count`, `pc_mushroom_rtc_to_time`,
+`pc_mushroom_time_to_rtc`, `pc_mushroom_round_quarter`,
+`pc_mushroom_is_zero_time`, `pc_mushroom_tree_eligible`,
+`pc_mushroom_boundary_ok`, `pc_mushroom_select_index`,
+`pc_mushroom_placement_excluded`,
+`pc_mushroom_cleanup_excluded`, `pc_mushroom_clearable`,
+`pc_mushroom_clear_all`, `pc_mushroom_share_spread`,
+`pc_mushroom_share_random_step`. No C
+callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
+### Runtime Port Progress: Balloon Presents
+
+New `rust/src/balloon.rs`, registered as `mod balloon`
+in `rust/src/lib.rs`. Decomp-verified against
+`m_fuusen.c`, `m_fuusen.h`, `m_common_data.h`,
+`m_play.c`, `ac_fuusen.c`, `ac_fuusen.h`, `ac_balloon.c`,
+`ac_balloon.h`, `m_private.c`, `m_name_table.h` (GAFE01_00
+Rev 0 USA). 17/17 sections PROVEN with DIFFERS-level
+nuances (see below).
+
+Ported (pure kernels; actor lifecycle, the common-data
+accessors, all RNG call order, foreground placement and
+clip calls, save access, effects/audio dispatch, and the
+held-balloon skeleton/animation setup stay in C):
+
+- The spawn-minute predicate (`(min % 5) == 3`, not the
+  commonly repeated "ends in 4"), the roll, the failure
+  increment (no clamp), the post-success probability,
+  and the LOOK_UP +0.25 bonus.
+- The wind-bucket mapping (`data_index_data` with the
+  sign-extending 0xF000 shift) and the entry-point
+  tables: 8 perimeter positions plus the variation
+  table, axis choice via `game_frame & 1`, variation =
+  sample × |offset| with the table's sign, and
+  `type_idx = game_frame % 5`.
+- The movement speed, the escape bounds (map edges plus
+  the station rectangle), the tree-interception
+  thresholds (cedar 484 vs 225), the screen-visibility
+  gate, the wall-hit y_offset update, and the
+  movement-timer gate.
+- The look-up distance gate (640.0), the deletion gate
+  (ground + 500), the reward branch (`RANDOM(5) != 0`
+  attempts furniture, otherwise/other-fruit on failure),
+  and the held-balloon hide predicate (200.0 above the
+  player).
+
+Deliberately NOT ported: `escape_timer`/`timer` are f32,
+not int (the brief was wrong — documented); the
+present-drop check is `escape_timer <= 1554`, not `==`;
+`fuwafuwa_cycle` is frame-rate scaled; the NULL guard
+checks `item_tree_fruit_drop_proc` while the call uses
+`fruit_set_proc` (kept as-is); the little-shake
+double-set; the draw callback's present-skip condition;
+the failed-roll state staying at CHK_SPAWN vs
+PENDING_SPAWN retrying every frame; the rare-list
+selection and `mFI_GetOtherFruit()` internals.
+
+C ABI (all `pc_`-prefixed, 17 exports):
+`pc_balloon_spawn_minute_ok`, `pc_balloon_roll_ok`,
+`pc_balloon_fail_increment`,
+`pc_balloon_post_success_percent`,
+`pc_balloon_wind_bucket`, `pc_balloon_entry_point`,
+`pc_balloon_type_idx`, `pc_balloon_speed`,
+`pc_balloon_escape_bounds`,
+`pc_balloon_tree_thresholds`,
+`pc_balloon_screen_visible`,
+`pc_balloon_wall_y_offset`,
+`pc_balloon_look_up_dist_ok`, `pc_balloon_delete_ok`,
+`pc_present_reward_branch`,
+`pc_player_balloon_hide_ok`, `pc_balloon_move_timer_ok`.
+No C callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
+### Runtime Port Progress: Cockroaches
+
+New `rust/src/cockroach.rs`, registered as `mod
+cockroach` in `rust/src/lib.rs`. Decomp-verified against
+`m_cockroach.c`, `m_cockroach.h`, `ac_house_goki.c`,
+`ac_house_goki.h` (GAFE01_00 Rev 0 USA). 19/19 sections
+PROVEN, 0 DIFFERS.
+
+Ported (pure kernels; RTC/`lbRTC_*` calls, house/cottage
+save writes, actor lifecycle, collision queries,
+`aMR_CLIP` calls, sound/effect creation,
+shadow/rendering, RNG call order, and the
+`mCkRh_DecideNowGokiFamilyCount` orchestration stay in
+C):
+
+- The infestation growth: strictly `day_gap > 6`, then
+  the clamped sum of the saved count and — when the
+  saved count is already positive — the entire day gap,
+  otherwise the gap minus 6.
+- The 0–10 clamp, the 0–3 visible-count math (with the
+  FALSE-on-clamp return), and the `arrange_idx & 3`
+  house index.
+- The stomp predicate: player exists, is moving,
+  strictly within 9.0f, and exactly at home Y (the
+  `aMR_CLIP` and bg-flag conditions stay in C).
+- The proximity predicate (strict 60.0f), the WAIT/MOVE
+  decision (with the `||` short-circuit), the move-
+  target offsets, the retail `RANDOM(1)` jump-angle bug
+  (always player angle + 4096), the `& 0xC000` cardinal
+  constraint, and the jump roll (0.5/0.2).
+- The timer/alpha/shadow steps (0.5/3.5/2.5 × dt), the
+  death flicker, and the AWAY/WAIT timer inits.
+
+Deliberately NOT ported: the USA cottage branch uses
+the pre-VER_GAFU01_00 path (copies current RTC y/m/d,
+no year-zero guard); the cottage add/remove branches
+write the count but return FALSE; `aHG_check_threshold`
+always returns FALSE (dead doorway branch); the
+wall-angle proc is a no-op within 20.0f of the player;
+the MOVE transition draws `RANDOM_F(5.0f)` twice; the
+saved-infestation-count lifecycle on stomp is untraced
+(actor death only decrements the transient visible
+count) — this port stays arithmetic-only.
+
+C ABI (all `pc_`-prefixed, 17 exports):
+`pc_cockroach_clamp_count`, `pc_cockroach_growth_count`,
+`pc_cockroach_visible_count`,
+`pc_cockroach_house_index`, `pc_goki_stomp_check`,
+`pc_goki_player_near`, `pc_goki_decide_wait_move`,
+`pc_goki_move_target`, `pc_goki_jump_angle_offset`,
+`pc_goki_wall_cardinal`, `pc_goki_should_jump`,
+`pc_goki_timer_step`, `pc_goki_alpha_step`,
+`pc_goki_shadow_step`, `pc_goki_death_visible`,
+`pc_goki_away_timer`, `pc_goki_wait_timer`. No C
+callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
+### Runtime Port Progress: Gyroids
+
+New `rust/src/haniwa.rs`, registered as `mod haniwa` in
+`rust/src/lib.rs`. Decomp-verified against
+`m_all_grow.c`, `m_all_grow_ovl.c`,
+`m_all_grow_ovl.h`, `m_haniwa_ovl.c`,
+`m_haniwa_ovl.h`, `m_haniwaPortrait_ovl.c`,
+`ac_haniwa.c`, `ac_haniwa_move.c_inc`, `ac_haniwa.h`,
+`m_home_h.h`, `m_common_data.h`, `m_name_table.h`,
+`m_field_info.c` (GAFE01_00 Rev 0 USA). 14/14 sections
+PROVEN.
+
+Ported (pure kernels; the `haniwa_scheduled` flag and
+RTC handling, foreground/deposit mutations,
+`mSP_RandomHaniwaSelect` until `FTR_NO_2_IDX` is
+traced, `mMsm_DepositItemBlock_cancel`, inventory
+transfers, dialogue/demo callbacks, state transitions,
+door requests, saves, rendering/collision, and the
+full portrait overlay stay in C):
+
+- The Haniwa item-range check (0x15B0–0x17AB,
+  computed from the X-macro expansion — verify against
+  the build before wiring).
+- The storage message selection: occupied slots by
+  exchange type (TRADE_0 → TADA/TADA2 by data0,
+  TRADE_1 → MISE, TRADE_2 → BERU2, TRADE_3 and others
+  → MISE via `default:`), empty slots → IKAGA/DONO2
+  by data0, and the remaining tag arms (DONO,
+  OIKURA).
+- The house index (`npc_id − 0xA004`), the proceeds
+  bag math (`money ≥ 99999 → (money−99999)/30000+1`),
+  the dialogue category in verbatim branch order
+  (NO_OWNER → NEED_FRIEND → PROCEEDS → NORMAL →
+  OTHER_OWNER) and its message table
+  {2356, 2357, 2341, 2344, 2350}.
+- The interruption recheck, the dig-path predicate
+  (a deposited non-hole tile returns the FG item
+  directly — the FG entry IS the haniwa item id, no
+  conversion exists), and the BERU2 price rebuild.
+
+Deliberately NOT ported: `mAGrw_OrderSetHaniwa` has no
+in-tree callers (the live arming path is the
+GROW_FIRST branch); the random selector's
+no-duplicates loop and `FTR_NO_2_IDX` mapping; the
+`@unused` `mHW_MSG_MOU`; the `hanwiaPortrait_ovl`
+decomp typo field; `mAGrw_SetDigItem` running
+`mAGrw_SpoilKabu` over the stored haniwa slots; the
+`mHW_MSG_DOREWO` interruption special case.
+
+C ABI (all `pc_`-prefixed, 10 exports):
+`pc_haniwa_item_valid`, `pc_haniwa_exchange_msg`,
+`pc_haniwa_tag_msg`, `pc_haniwa_house_idx`,
+`pc_haniwa_bell_bags`, `pc_haniwa_dialogue_category`,
+`pc_haniwa_dialogue_msg`, `pc_haniwa_interrupt_keep`,
+`pc_haniwa_dig_direct`, `pc_haniwa_beru2_rebuild`. No C
+callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
+### Runtime Port Progress: Insect actors (shared controller)
+
+New `rust/src/insect_actor.rs`, registered as `mod
+insect_actor` in `rust/src/lib.rs`. Decomp-verified
+against `ac_insect.c`, `ac_insect_h.h`,
+`ac_insect_data.c_inc`, `ac_insect_move.c_inc`,
+`ac_insect_clip.c_inc`, `ac_insect_draw.c_inc` plus
+all 14 `ac_ins_*.c` behavior files (GAFE01_00 Rev 0
+USA). 12/12 sections PROVEN; the 14 behavior-state
+machines themselves remain untraced as complete
+transition tables and stay in C.
+
+Architectural finding: the 14 `ac_ins_*.c` files are
+14 behavior programs shared by 41 insect types, not
+one-species implementations. Every insect shares
+`aINS_position_move`; the per-type `mv_proc` is the
+behavior program. Work slots are reused with
+different meanings per family and must not be given
+one shared semantic interpretation.
+
+Ported (pure kernels; pool slot ownership, field/actor
+iteration, actual movement, collision checks, catch
+registration, effects, lighting, cleanup, and all 14
+family state machines stay in C):
+
+- The 41-entry type→program table (all programs
+  verified used).
+- The catch-range rules: default 8.0; common/yellow
+  butterflies 24.0 unconditional; cicadas/bee and
+  all 8 beetle types 24.0 only when the player's
+  relative angle is within 90° (else 0.0); the
+  cockroach gets the facing test only when
+  `flag == 4`.
+- The stress radius addition table (`catch_ME_data`,
+  negative entries shrink the radius), the stress
+  band index and per-actor stress (max over
+  UNUSED/PLAYER/NPC/BG lists; only moving actors
+  contribute), and the patience step (decay is
+  dt-scaled, growth is not: `−= 0.5·dt` vs
+  `+= stress·0.5`, clamped 0/100).
+- The fade rules (most types −11 alpha/frame from
+  255; firefly's separate alpha2 path) and the
+  despawn predicate (released & invisible, or
+  > 600.0 in a different acre, both skipped while
+  the insect is the net-catch target).
+- Per-type shadow sizes (8.0/4.0/2.0/6.0).
+
+Brief corrections: butterfly/mosquito spawn is
+background height − 30.0f (brief said +30.0f); the
+chou habitat check rejects units whose high id
+digit is 5 (0x5xxx = houses/shops); the spider is
+MINO-only (dango's SPIDER case is unreachable dead
+code); the net-catch special case lives in the cull
+check, not registration; a stale decomp comment
+says "15 units" where the constant is 600.0f.
+
+C ABI (all `pc_`-prefixed, 12 exports):
+`pc_insect_program_for_type`,
+`pc_insect_catch_range`, `pc_insect_catch_me_radius`,
+`pc_insect_stress_idx`, `pc_insect_stress_calc`,
+`pc_insect_patience_step`, `pc_insect_fade_alpha`,
+`pc_insect_fade_done`, `pc_insect_firefly_alpha2`,
+`pc_insect_firefly_fade_done`,
+`pc_insect_despawn_check`, `pc_insect_shadow_size`.
+No C callers rewired yet, per the usual pattern. No
+test runs, per the standing rule.
+
+### Runtime Port Progress: Fish actors
+
+New `rust/src/fish_actor.rs`, registered as `mod
+fish_actor` in `rust/src/lib.rs`. Decomp-verified
+against `ac_gyoei.c`, `ac_gyoei.h`,
+`ac_gyoei_move.c_inc`, `ac_gyoei_draw.c_inc`,
+`ac_gyoei_clip.c_inc`, `ac_gyoei_type.c_inc`,
+`ac_gyoei_model.c_inc`, `ac_gyo_kage.c`,
+`ac_gyo_kage.h`, `ac_gyo_release.c`,
+`ac_gyo_release.h`, `ac_gyo_test.c`,
+`ac_gyo_kaseki.c` (GAFE01_00 Rev 0 USA). 11/11
+sections PROVEN or DIFFERS-with-correction.
+
+Architecture: swimming fish are *embedded
+controller slots* (two `aGYO_CTRL_ACTOR` slots in
+the `GYOEI_ACTOR`), not standalone actors per fish.
+The kage actor is a separate short-lived
+water-surface visual, not the ordinary ground
+shadow. The release actor is a standalone actor
+created on catch, linked to the float through
+`UKI_ACTOR.child_actor`.
+
+Ported (pure kernels; slot/actor allocation, clip
+callbacks, catch registration, float linkage,
+collision/background APIs, rendering,
+effects/sound, and the full test/kaseki state
+machines stay in C):
+
+- The 45-entry size/search/bite tables, the
+  shadow-scale table, the test/kaseki behavior
+  dispatch (with SALMON2→SALMON normalization),
+  and the rod-indexed search-area/bite-time
+  tables.
+- The release math: initial velocity toward the
+  water target, gravity, the water-contact
+  revert rule, the shrink/delete thresholds
+  (`powf(rate, dt)`), and the shadow-size formula
+  with the 6-entry correction arrays kept as-is.
+- The kage alpha, the ripple-argument switch, the
+  flee predicate, and the float search/bite
+  helpers.
+
+Brief corrections: `sizeof` values are GYOEI_ACTOR
+0x634, aGYO_CTRL_ACTOR 0x254, GYO_RELEASE_ACTOR
+0x1C0, `exist[4]` at 0x61C, `segment_type[4]` at
+0x620; the shadow-scale table is not in
+`ac_gyoei.c` itself; the regular and gold rod
+search-area tables are identical; the kage
+`draw_frame` wraps modularly and the ripple gate
+is a one-shot; `aGYR_empty_area` returns 0 when
+no segment is free; gyo_flags bit 0x10 is
+kaseki-only; the whale gets no flee ripple; the
+6-entry shadow-correction arrays carry a verbatim
+`@BUG` comment and were NOT extended.
+
+C ABI (all `pc_`-prefixed, 16 exports):
+`pc_fish_size_class`, `pc_fish_search_class`,
+`pc_fish_bite_class`, `pc_fish_shadow_scale`,
+`pc_fish_behavior_program`,
+`pc_fish_release_velocity`,
+`pc_fish_release_gravity`, `pc_fish_release_revert`,
+`pc_fish_release_shrink`, `pc_fish_release_shadow`,
+`pc_fish_kage_alpha`, `pc_fish_kage_ripple`,
+`pc_fish_flee`, `pc_fish_search_ok`,
+`pc_fish_bite_time`, plus ITM_FISH_START. No C
+callers rewired yet, per the usual pattern. No
+test runs, per the standing rule.
+
+### Runtime Port Progress: Bees (tree-shake helpers + bee_ant.rs audit fixes)
+
+Extended `rust/src/bee_ant.rs` (already registered).
+Decomp-verified against `ac_ghog.c`, `ac_ghog.h`,
+`ac_bee.c`, `m_player_main_shake_tree.c_inc`,
+`m_player_lib.c`, `bg_item_common.c_inc`
+(GAFE01_00 Rev 0 USA).
+
+The 2026-10-11 audit of the existing file found and
+fixed 4 bugs: `insect_type::ANT` was 41 (it is 38;
+41 is NONE), `COCKROACH` was 42 (it is 28); the bee
+player-status values were swapped (retail: ATTACK =
+1, ENTER_BUILDING = 2); the target frame ran on
+degree diffs instead of the retail s16 short-angle
+diff; the speed target was heading-dependent when
+retail's `abs_speed_angle` is always zeroed, making
+the speed target the constant 8.9f. The bee
+`step()` also gained a dt-scaled `step_dt()`
+(alpha, catch delay, bobbing), since retail scales
+several updates by `graph_dt_60fps_frames`.
+
+New tree-shake decision helpers (pure kernels; the
+shake-tree table, fruit-drop callback, actor
+allocation, FG mutation, honeycomb lifecycle, shock
+request, status-for-bee, ghog rendering/shadow,
+`atans_table`, net-catch/label APIs, catch-label
+transfer, sAdo sound, keyframe animation, and
+rendering stay in C):
+
+- `pc_bee_spawn_eligible` — the exact
+  `mPlib_able_birth_bee()` predicate (first intro,
+  reset flag, bee chase flag, title demo).
+- `pc_bee_shake_retry_step` — the five-count
+  retry: success → timer 0 + spawned; failure →
+  timer − dt clamped at 0.
+- `pc_bee_tree_revert` — new C ABI (none
+  existed): the normal tree, or −1.
+- `pc_bee_drop_valid` — x ≥ 0 and z ≥ 0 (Y not
+  checked in the source).
+- `pc_bee_shock_request` — bee_flag and frame ≥
+  30 → shock(24.0, bee angle).
+- `pc_bee_no_bee_status` — frame == 29.5 →
+  ATTACK status.
+- `pc_bee_force_catch` — (swing or stopped net)
+  and dist < 40.0; otherwise the table path at
+  24.0.
+- `pc_bee_speed_target` (8.9f),
+  `pc_bee_target_frame` (s16 diff).
+
+`ac_ghog.c` is not the tree-shake decision logic;
+it is the hive field-item/shadow visual and stays
+in C. No test runs, per the standing rule.
+
+### Runtime Port Progress: NES games (Famicom subsystem)
+
+New `rust/src/famicom.rs`, registered as `mod
+famicom` in `rust/src/lib.rs`. Decomp-verified
+against `famicom_emu.c`, `famicom.h`,
+`famicom_nesinfo.cpp`, `m_fbdemo.c`,
+`m_fbdemo_fade.c`, `m_fbdemo_triforce.c`,
+`m_fbdemo_wipe1.c`, and `ac_famicom_common.c`
+(GAFE01_00 Rev 0 USA). 5/5 sections PROVEN or
+DIFFERS-with-correction.
+
+Scope: the actual 6502 NES core, the GAME state
+handoff, XFB/display-manager switching, the audio
+lifecycle, the THA/zelda arena, controller
+polling, card I/O, the tag-parser side effects,
+fbdemo rendering, and the house message controller
+stay in C.
+
+Ported (pure kernels):
+
+- The 20-entry furniture tables (game ids with
+  the repeated final 14; GBA ids with 0xFF at
+  7/9/14/18/19), the furniture index, the
+  metadata index (`rom_no − 1`, kept separate
+  from GNO), and the debug ROM override.
+- The exit wrapper: the exact L+R+Z / L+R+X+Y
+  combos and the done/countdown/return machine.
+- The save-header and per-player-record checksum
+  validation and repair, including the looser
+  save-check version test.
+- The result→message mapping (7 distinct
+  results; NOFILE → 0x3071) and the ROM-kind
+  classification.
+- The retail-form transition math: fade
+  (timer gate, type-1 inversion, type-7 skip,
+  s8 start frames −6/−85), triforce (bit-decoded
+  texture/direction, truncated step), wipe1
+  (integer-division step, 612/333 clamps).
+
+Brief corrections: fbdemo draw binds segments
+0x0A/0x0B, not 3/4; the fade start frames are s8
+(−6/−85), not +250/+171; the decomp's `move()`
+functions carry PC-port dt-accumulators, but the
+retail-faithful simple form is ported here; the
+Excitebike/Soccer ordering is kept as-is; the
+`special_zelda()` BBRAM repair stays in C; and
+`scene.rs` omits `famicom_emu_cleanup` for the
+FamicomEmu scene entry (wiring follow-up, noted
+in the leftovers).
+
+C ABI (20 `pc_`-prefixed exports):
+`pc_famicom_ftr_idx`, `pc_famicom_game_id`,
+`pc_famicom_agb_id`, `pc_famicom_meta_idx`,
+`pc_famicom_debug_rom`, `pc_famicom_exit_combo`,
+`pc_famicom_exit_step`, `pc_famicom_rom_kind`,
+`pc_famicom_result_msg`, `pc_famicom_header_valid`,
+`pc_famicom_header_repair`, `pc_famicom_save_check`,
+`pc_famicom_record_valid`, `pc_famicom_record_repair`,
+`pc_fbdemo_fade_start`, `pc_fbdemo_fade_step`,
+`pc_fbdemo_triforce_type`, `pc_fbdemo_triforce_step`,
+`pc_fbdemo_wipe1_type`, `pc_fbdemo_wipe1_step`.
+No C callers rewired yet, per the usual pattern.
+No test runs, per the standing rule.
+
+### Runtime Port Progress: Bulletin boards
+
+New `rust/src/town_board.rs` and
+`rust/src/house_board.rs`, registered as `mod
+town_board` and `mod house_board` in
+`rust/src/lib.rs`. Decomp-verified against
+`m_notice.c`, `m_notice.h`, `m_notice_ovl.c`,
+`m_board_ovl.c`, `m_board_ovl.h`,
+`m_hboard_ovl.c`, `m_hboard_ovl.h`, `m_home_h.h`,
+and `save_check_take.c_inc` (GAFE01_00 Rev 0
+USA). 8/8 sections PROVEN.
+
+Key resolution: the real town-board writer is
+`m_notice_ovl.c`, not `m_board_ovl.c` — the
+latter is the *general letter-editing overlay*.
+Button A stamps the current RTC time into the
+post at editor *open*; on confirmation the post
+is written and the first-job errand is cleared.
+
+Ported (pure kernels; RTC comparison and save
+ownership, the editor/submenu flows, handbill ROM
+loading, font rendering, the mail/letter
+overlay, and the automatic-schedule date
+selection stay in C):
+
+- The 15-slot record model (0xC8 records: 192
+  message bytes + timestamp at 0xC0): the
+  first-empty-slot scan, the full-board shift
+  (records 1..14 → 0..13, whole-record copies),
+  and page clearing (CHAR_SPACE fill, not
+  zeroed).
+- The initial handbill ids {0x1E..0x21}, the
+  automatic-post time (06:00:00), and the
+  handbill-id formulas (0x1A4+id,
+  0x242+((day/7)&3)).
+- The house-board line check with the
+  font-width function injected (OK/NEWLINE/
+  OVER_WIDTH/OVER_STR_LEN), the 192-width /
+  4-line constraints, and the 128-byte message
+  layout.
+
+Insertion is FIFO by array position, not a
+timestamp sort. The save-validation loop checks
+only the contiguous occupied prefix, not all 15
+slots — preserved by construction.
+
+C ABI (all `pc_`-prefixed, 11 exports):
+`pc_board_first_empty`, `pc_board_shift_full`,
+`pc_board_clear_page`, `pc_board_init_handbill`,
+`pc_board_auto_post_time`,
+`pc_board_standard_handbill_id`,
+`pc_board_fishing_handbill_id`,
+`pc_hboard_line_check`. No C callers rewired yet,
+per the usual pattern. No test runs, per the
+standing rule.
+
+### Runtime Port Progress: Town map
+
+New `rust/src/town_map.rs`, registered as `mod
+town_map` in `rust/src/lib.rs`. Decomp-verified
+against `m_map_ovl.c`, `m_map_ovl.h`,
+`m_map_ovl_h.h`, and `m_field_make.h`
+(GAFE01_00 Rev 0 USA). 10/10 sections PROVEN,
+with one brief correction and one source-data gap.
+
+Key correction: the brief's "6x7 = 42 acres" is
+wrong. `FG_BLOCK_X_NUM` = 5, `FG_BLOCK_Z_NUM` =
+6, so the interior map is 5x6 = 30 acres.
+`mMP_BLOCKX_MAX`/`mMP_BLOCKZ_MAX` are only the
+texture-table scan bounds. Verified against the
+header.
+
+Source-data gap: `mMP_house_pos_list` (the three
+`(x, z)` villager-house positions) lives in a
+binary `.inc` asset absent from the decomp, so
+its contents are not recoverable here; the
+matching algorithm is ported with the table
+contents injected.
+
+Ported (pure kernels; overlay allocation and
+lifecycle, all save/field access, `mFI_`
+conversions, collision queries, NPC/player
+identity and name conversion, private/animal free
+checks, input callbacks, transitions, sound,
+font rendering, matrices, display lists,
+textures, palettes, and the resident-cache
+assembly stay in C):
+
+- The full `l_map_texture` table (108 entries,
+  compressed to 69 distinct `kan_tizu_*` texture
+  indices) and the `l_map_pal` table (palette 1
+  for exactly the 20 verified types, 0 elsewhere)
+  with `pc_map_tex_idx`/`pc_map_pal_idx`.
+- The full `pluss_bridge` table (19 non-0xFF
+  entries verified verbatim) and the saved-
+  bridge coordinate predicate in
+  `pc_map_bridge_type`.
+- `mMP_check_bg_kind`: rejects kinds 0-8, the
+  two border-cliff transitions (61, 62), and the
+  two tunnels (9, 10).
+- `mMP_check_layer`: 2/1/0/default-1, minus one
+  when `!mRF_CheckFieldStep3()`, clamped to zero.
+- `mMP_set_house_data`'s position lookup:
+  first entry with `x == ut_x && z == ut_z - 1`,
+  entry-0 fallback (`pc_map_house_pos_match`).
+- The ordered building-flag chain
+  (SHOP/POLICE/POST/SHRINE/STATION/DUMP/MUSEUM/
+  TAILORS/DOCK) as `pc_map_building_label`.
+- The pure selection/bounds kernel of
+  `mMP_move_Play` as `pc_map_cursor_step`: exit
+  on A/B/Start (X only when data0 == 1), then
+  C-left/down/up/right with bounds bx in
+  [0,4], bz in [0,5] and +/-22.0 target steps.
+- The 18-frame cursor pulse tables (brightness
+  for the green prim-color component; scale)
+  as `pc_map_cursor_pulse`.
+- Cursor init math (bx*22.0, -bz*22.0, frame 0),
+  the window-frame selection
+  (4->4T, 3->3T, 1->T, 0->1T, else 2T),
+  `mMP_get_label_cnt` (true count for NPC/
+  player, 1 for buildings), the house-icon
+  offsets ({5,13,17}/{−4,−11,−18} with %3//3),
+  and the two-entry town-name color table.
+
+Brief nuances preserved: the free-player name is
+`"free    "` (4 spaces); the villager sort is a
+swap-and-restart loop (stays in C); the cursor
+frame is ported in its N64 `++`/`%=` form rather
+than the PC dt-accumulating f32; and
+`get_player_actor_withoutCheck` vs the structure-
+exit-door position stays in C.
+
+C ABI (all `pc_`-prefixed, 14 exports):
+`pc_map_check_bg_kind`, `pc_map_tex_idx`,
+`pc_map_pal_idx`, `pc_map_bridge_type`,
+`pc_map_check_layer`, `pc_map_house_pos_match`,
+`pc_map_building_label`, `pc_map_cursor_step`,
+`pc_map_cursor_pulse`, `pc_map_cursor_init`,
+`pc_map_win_frame`, `pc_map_label_top_cnt`,
+`pc_map_house_offset`, `pc_map_land_color`. No C
+callers rewired yet, per the usual pattern. All 13 unit tests
+pass (two transcription bugs in the ported tables — a short
+bridge table and a swapped palette pair — were caught by the
+tests and fixed).
+
+### Runtime Port Progress: Diary
+
+New `rust/src/diary.rs`, registered as `mod
+diary` in `rust/src/lib.rs`. Decomp-verified
+against `m_diary.c`, `m_diary_ovl.c`,
+`include/m_diary.h`, and `include/m_card.h`
+(GAFE01_00 Rev 0 USA). 9/9 sections PROVEN.
+
+Key facts: entries are exactly 992 bytes of
+text with no date/player/checksum inside; the
+persistent container is `mCD_keep_diary_c`
+(`u16` checksum + `entries[4][12]`), 47,618
+bytes unpadded, `ALIGN_NEXT(..., 32)` = 47,648
+(0xBA20); the overlay selects
+`entries[data1][data3]` (player slot, month
+slot). Initialization is space-filled, not
+zero-filled (`bzero` then `mem_clear(...,
+CHAR_SPACE)`), because the editor measures
+text by trailing spaces.
+
+Ported (pure kernels; ARAM load/save, card
+serialization and checksums, `mFont_
+GetCodeWidth`, the shared editor and
+edit-end-check overlays, `chase_f()` easing,
+transitions, sounds, graphics, the static
+overlay object and its allocation, the
+calendar's open call, and controller polling
+stay in C):
+
+- `mDi_strlen`: the backward scan verbatim —
+  one-based position of the first byte
+  differing from `end_char`, 0 when all match,
+  never stopping at zero bytes.
+- `mDi_init_diary`: 992 bytes of `CHAR_SPACE`
+  (0x20).
+- Entry indexing: `2 + (player * 12 + month) *
+  992` byte offset within the diary structure.
+- `mDI_get_col_line_width`: the width-192 wrap
+  scan verbatim with the font-width lookup
+  injected — wrap on `width > 192` (strictly
+  greater), newline (205) consumed and tracked
+  separately, s16 counters, the 31→30 clamp
+  quirks (`cur_line_count = line_width + 1`).
+- `mDI_strLineCheck`: the 3/1/2/0 state
+  machine verbatim, including the
+  don't-advance-on-overflow rule.
+- Scroll limits: one-line ±1 within
+  `[0, line_count - 6]`; ten-line with the
+  strict `_18 - 10 > 0` test and clamping.
+- `mDI_Set_command_read`: the input-repeat
+  state machine as a pure step function —
+  fresh trigger sets delay 30 / repeat 26,
+  held input decrements and fires commands 2/3
+  (fast repeat `_30 = 3` when `_11 == 0`);
+  C-up/C-down edge triggers return commands
+  8/9.
+- The 12-entry month frame adjustment table
+  verbatim (0-based month: 0 = January, from
+  the calendar's `data3`).
+- The `mDI_move_Obey` confirmation branch:
+  `data1 == 0` writes the whole structure to
+  ARAM and opens the copy-warning overlay;
+  `data1 == 1` returns to editing with no
+  ARAM write.
+
+Brief nuances preserved: the `mDi_data_c`
+struct exists only as a comment in the decomp;
+`mCD_DIARY_SAVE_SIZE` (0xC000) is the card-
+file size, larger than the 0xBA20 structure;
+destruct frees through the static
+`diary_ovl_data.data`; the read→write scroll
+animates `_28` quadratically to exactly
+-100.0f.
+
+C ABI (all `pc_`-prefixed, 11 exports):
+`pc_di_strlen`, `pc_di_init_entry`,
+`pc_di_entry_offset`, `pc_di_wrap_scan`,
+`pc_di_line_check`, `pc_di_scroll_one`,
+`pc_di_scroll_ten`, `pc_di_repeat_step`,
+`pc_di_ten_line_cmd`, `pc_di_month_adjust`,
+`pc_di_confirm_branch`. No C callers rewired
+yet, per the usual pattern. No test runs, per
+the standing rule.
+
+### Runtime Port Progress: Passwords
+
+New `rust/src/password.rs`, registered as `mod
+password` in `rust/src/lib.rs`. Decomp-verified
+against `m_mail_password_check.c`,
+`include/m_mail_password_check.h`,
+`m_passwordMake_ovl.c`,
+`include/m_passwordMake_ovl.h`,
+`m_passwordChk_ovl.c`,
+`include/m_passwordChk_ovl.h`, the password
+paths of `m_editor_ovl.c`, and
+`ac_npc_shop_common.c` (GAFE01_00 Rev 0 USA).
+6/6 sections PROVEN, with brief corrections.
+
+Key facts: the overlays only collect fixed-size
+byte strings — make returns town[8]+player[8]
+(16 bytes), check returns line0[14]+line1[14]
+(28 bytes), both by `mem_copy` with no
+delimiters; `LAND_NAME_SIZE` = 8 and
+`PLAYER_NAME_LEN` = 8. The codec turns a
+21-byte payload into 28 six-bit characters
+(168 bits = 168 bits). Payload byte 0 packs
+type (bits 7-5), checksum (bits 4-3),
+hit_rate (bits 2-1), npc_type (bit 0); byte 1
+is the NPC code; bytes 2-9/10-17 are the two
+8-byte names; bytes 18-19 are the item ID;
+byte 20 is the RSA keysave. Checksum =
+(Σstr0 + Σstr1 + item + npc_code) & 3.
+
+Ported (pure kernels; overlay lifecycle and
+allocation, the shared editor state machine,
+sounds, warning windows, transitions, font
+rendering, ARAM/card I/O, player/town identity
+lookups, the item catalog and price checks,
+inventory mutation, NPC dialogue/reward flow,
+RNG, and the `pswd_famicom_list` extern stay
+in C):
+
+- The full encode pipeline verbatim:
+  passcode build → 256-entry substitution →
+  transposition (dir 1, table 0) → bit shuffle
+  stage 0 → RSA (`b^r mod pq` over 8
+  select-table bytes, 9th-bit keysave at byte
+  20, 256 primes verbatim) → nibble-selected
+  bit mixing → bit shuffle stage 1 →
+  transposition (dir 0, table 1) → LSB-first
+  21-byte→28-symbol packing → 64-character
+  `usable_to_fontnum` alphabet mapping.
+- The exact inverse decode pipeline,
+  including the 0→O / 1→l normalization and
+  the font→symbol lookup that keeps scanning
+  (last match wins).
+- All tables verbatim: 256 primes, 256-entry
+  substitution, 16×8 bit-select indices, 32
+  transposition strings (NUL-inclusive
+  lengths; key byte 18 for table 0, 9 for
+  table 1), 64-char alphabet, 64-entry
+  allowed-character set.
+- The `// @fakematch` bit routines
+  (bit_shift skipping the key byte,
+  bit_reverse, bit_arrange_reverse,
+  bit_shuffle/decode) ported literally.
+- Payload unpack (`mMpswd_password`) with the
+  MAGAZINE npc_type-bit fold into
+  hit_rate_index bit 2, and the zuru checksum
+  check.
+- The fixed-width 14-byte line editor:
+  insert/shift state machine, password
+  backspace (including the line1→line0
+  switch), the `line1[13] != SPACE` charset-
+  validation gate, and the all-28-bytes
+  allowed check.
+- Make-flow helpers (space init, town-
+  nonempty gate) and check-init prefill from
+  the 28-byte data2.
+- Mail-body code extraction
+  (`mMpswd_restore_code`): SYMBOL_KEY opening
+  check, newline-pair scan, byte-14 newline
+  strip.
+
+Brief corrections: the check overlay
+pre-fills its lines from `menu_info->data2`,
+not spaces; POPULAR forces hit_rate = 4 with
+a `// potential bug?` comment (it collides
+with the checksum bits); unknown types fall
+back to USER without resetting hit_rate/
+npc_code; the magazine hit-rate table is f32
+`{80.0, 60.0, 30.0, 0.0, 100.0}` with the
+RANDOM_F draw only in that path; the shop
+send call is `mMpswd_make_password(str, 0x4,
+0x1, recip, town, item, 0x0, 0x0)` with
+inventory consumed on commit.
+
+C ABI (all `pc_`-prefixed, 17 exports):
+`pc_pw_make_password`, `pc_pw_decode_code`,
+`pc_pw_unpack`, `pc_pw_zuru_ok`,
+`pc_pw_usable_letter`, `pc_pw_make_can_advance`,
+`pc_pw_line_insert`, `pc_pw_backspace`,
+`pc_pw_needs_charset_check`, `pc_pw_all_usable`,
+`pc_pw_make_init`, `pc_pw_check_init`,
+`pc_pw_extract_code`. No C callers rewired
+yet, per the usual pattern. All 10 unit tests
+pass.
+
+### Runtime Port Progress: Notice-board overlay & scheduler
+
+New `rust/src/notice_overlay.rs`, registered as
+`mod notice_overlay` in `rust/src/lib.rs`.
+Decomp-verified against `m_notice_ovl.c`,
+`include/m_notice_ovl.h`, `m_notice.c`, and
+`include/m_notice.h` (GAFE01_00 Rev 0 USA).
+14/14 sections PROVEN, with brief corrections.
+
+Key facts: the record layer (first-empty
+scan, FIFO shift, page clear, init handbills,
+auto-post time, handbill-id formulas) was
+already ported in `town_board.rs` and is not
+duplicated; the handbill composer primitives
+live in `npc_reply.rs`. This module covers the
+overlay state machine and the auto-post
+scheduler.
+
+Ported (pure kernels; RTC compares and
+save/common reads-writes, the shared editor
+and edit-end overlays, font-width lookup,
+handbill ROM loading, fishing-result mail,
+furniture selection, treasure placement,
+animal-memory queries, first-job quest
+mutation, sounds/music, graphics, easing,
+transitions, and overlay allocation stay
+in C):
+
+- Navigation (`mNT_Play_page_read`) with the
+  exact else-if priority: C-left → −1,
+  C-right → +1, C-down → jump to slot 0,
+  C-up → jump to newest, A → begin write,
+  B/Start → exit. `move_time = min(|move_page|,
+  3)` with the integer-division page steps
+  (first step `move_page/move_time`, later
+  forward/backward forms).
+- Stick-area classification (0.2 threshold,
+  eight signed-angle sectors, CENTER=8) and
+  the 9-entry `kei_win_st_tex_tbl` as
+  texture-slot indices with repeats
+  preserved.
+- The notice line-check state machine
+  (codes 0–3, strict width > 192, font widths
+  injected).
+- Page-number display (`page_no+1`, working
+  post capped at 15), the invalid-month → 13
+  header rule, and the confirmation branches
+  (0 = commit, 1 = re-edit, else discard).
+- The 43-entry auto-post date table verbatim
+  (including the brief-missed 0x18–0x1A
+  fall-fair entries and the 0xFFFF unused
+  slots), the packed-date operate arithmetic
+  (equinox/DST additions carry into the month
+  byte), the selection sort, the near-old
+  cursor walk with the renew-hour tiebreak,
+  and the reverse-indexed decide selection
+  (fishing days first, then standard entries
+  walking backward with year wrap).
+- The USA treasure gate sequence (renew-hour,
+  3-day interval, checked-today, animal
+  count, 0.4 RNG draw — all injected) and the
+  pitfall/lottery/event pick from a single
+  draw.
+
+C ABI (all `pc_`-prefixed, 15 exports):
+`pc_notice_nav_step`, `pc_notice_move_time`,
+`pc_notice_first_step`,
+`pc_notice_later_step`,
+`pc_notice_stick_area`, `pc_notice_kei_tex`,
+`pc_notice_line_check`, `pc_notice_page_no`,
+`pc_notice_month_idx`, `pc_notice_confirm`,
+`pc_notice_operate_dates`,
+`pc_notice_sort_pairs`,
+`pc_notice_last_valid_idx`,
+`pc_notice_near_old_cursor`,
+`pc_notice_decide`, `pc_notice_treasure_ok`,
+`pc_notice_treasure_pick`. No C callers
+rewired yet, per the usual pattern. All 8
+unit tests pass.
+
+### Runtime Port Progress: Address book
+
+New `rust/src/address_book.rs`, registered as
+`mod address_book` in `rust/src/lib.rs`.
+Decomp-verified against `m_address_ovl.c` and
+`include/m_address_ovl.h` (GAFE01_00 Rev 0
+USA). All sections PROVEN, with one
+significant brief correction: the brief's
+section 3 described the *notice* overlay's
+struct (`notice_ovl_s`); the real address
+overlay struct is `address_ovl_s` with
+`page_bitfield`, `page_count`, `proc_idx`,
+`curIdx`, `nextIdx`, `selected_entry`,
+`show_museum_address`, `editor_move_down`,
+`page_entry_count[3]`, `pos_x`/`speed_x`,
+`pile[3]`/`goal_pile[3]`,
+`player_mail_name[PLAYER_NUM+1]`,
+`animal_mail_name[ANIMAL_NUM_MAX]`, and the
+editor display-list handoff pointer.
+
+Key facts: the book is rebuilt on open, not
+saved. The player page holds the other valid
+player identities in ascending slot order
+(active slot skipped, empty slots excluded by
+the personal-ID check) with the museum entry
+appended after them when eligible
+(`show_museum_address` explicitly FALSE
+otherwise). Villagers qualify only with a
+non-free identity AND a memory entry for the
+current player; the first eight fill NPC page
+0, the rest NPC page 1.
+
+Ported (pure kernels; save/RTC access,
+identity checks, museum eligibility, NPC
+memory queries, name conversion and header
+copy, the shared editor/board overlays,
+sounds, display lists, transitions, easing,
+and overlay allocation stay in C):
+
+- Player-list builder (active-slot skip,
+  validity filter, museum append).
+- Villager 8-entry paging.
+- Page model: bitfield built MSB-first,
+  initial page (player else NPC0 else
+  refusal), `mAD_PROC_REFUSE` on an empty
+  book ("Your address book is empty!").
+- `mAD_get_nextIdx` verbatim (-1 on a single
+  page; ±1 with wrap, at most two candidates,
+  first set bit wins).
+- Recipient resolution (player → selected,
+  NPC1 → 8 + selected, else selected) using
+  the raw 0/2 comparisons from the C.
+- Context-sensitive B (cancel vs header
+  focus), the header_pos==1 WAIT reset, and
+  the pile targets ({0,5,0}/{5,0,5} for two
+  pages, rotated {0,5,10} for three).
+
+C ABI (all `pc_`-prefixed, 8 exports):
+`pc_ad_player_list`, `pc_ad_npc_pages`,
+`pc_ad_page_model`, `pc_ad_get_next_idx`,
+`pc_ad_resolve`, `pc_ad_b_cancel`,
+`pc_ad_wait_reset`, `pc_ad_pile_init`. No C
+callers rewired yet, per the usual pattern.
+All 7 unit tests pass.
+
+### Runtime Port Progress: Pause (debug helper)
+
+New `rust/src/pause.rs`, registered as `mod
+pause` in `rust/src/lib.rs`. Decomp-verified
+against `m_pause.c`, `include/m_pause.h`,
+`m_play.c`, and `zurumode.h` (ACGC-PC-Port
+tree, GAFE01_00 Rev 0 USA base). 9/9 sections
+PROVEN, with one significant brief correction.
+
+Key finding: `m_pause.c` is not a pause-menu
+UI. It is a tiny debug-mode-gated input/state
+helper with no graphics, options, or overlay
+state machine: it returns 1 when the gameplay
+update may proceed and 0 when it stays gated,
+and the caller inverts the result.
+
+Brief correction: the brief's `int timer` /
+`++timer > 8` matches the retail N64 form,
+but the PC-port tree carries `f32 timer` with
+a separate dt-accumulation block (`timer +=
+dt_num_60fps_frames` while Z+R held without a
+fresh R press; return check tests `timer >
+8.0f` strictly). The port follows the tree.
+
+Ported (`PauseState { enabled: i32, timer:
+f32 }`, 8 bytes, `repr(C)`; pad `now`/`on`
+bitfields and dt injected so the kernel stays
+engine-free; the `ZURUMODE2_ENABLED()` gate,
+the `!Pause_proc` inversion, dt sourcing, the
+separate `g_pc_paused` coarse pause, and pad
+polling stay in C):
+
+- `pc_pause_init` (`Pause_ct`): zero the
+  state.
+- `pc_pause_proc`: R held + D-pad Down newly
+  pressed toggles `enabled` before the return
+  check; Z+R held without fresh R accumulates
+  dt; returns 1 (and resets the timer) when
+  disabled or when Z is held with a fresh R
+  press or the timer past 8.0, else 0.
+
+C ABI: `pc_pause_init`, `pc_pause_proc`. No C
+callers rewired yet, per the usual pattern.
+All 7 unit tests pass.
+
+### Runtime Port Progress: Selection/choice UI
+
+New `rust/src/choice.rs`, registered as `mod
+choice` in `rust/src/lib.rs`. Decomp-verified
+against `m_choice.c` (+ its `.c_inc` state
+files), `m_msg_cursol.c_inc`, `m_select.c`,
+and their headers (ACGC-PC-Port tree,
+GAFE01_00 Rev 0 USA base). 14/14 sections
+PROVEN, with corrections.
+
+Key distinction: `m_choice.c` is the shared
+dialogue/prompt widget; `m_select.c`
+("FOREST MAP SELECT") is a separate debug
+scene launcher, not the generic list UI. Only
+its index wraparound is ported.
+
+Ported (pure kernels; message-window
+embedding, font widths, ROM/ARAM loading,
+control-code substitution, the `mMsg`
+dispatch, sounds, graphics, easing, and all
+of `m_select.c`'s scene launching stay in C):
+
+- Option admission (`Set`/`Add_choice_data`):
+  non-null, 0 < len <= 16, free slot;
+  trailing-space effective length; exactly
+  `len` bytes copied with no row clearing.
+- Cursor step with verbatim clamping (no
+  wrap; empty list yields -1).
+- The 5-state auto-repeat machine with float
+  dt (18.0 wait, 9.0 repeat), fresh-direction
+  immediate move, release reset, and cursor-
+  sound suppression on clamping.
+- B-flag rules (`no_b_flag` enables the
+  B-to-last-option shortcut) and close-path
+  selection (confirm vs short/long zoom-down
+  + `NO_ZOOMDOWN` flag).
+- Determination commit (16-byte copy +
+  recorded length + confirmed index; cursor
+  and result stay separate fields).
+- Debug-selector wraparound.
+
+Brief corrections: constructor sets
+`choice_num = 6` (zero reset only in the Set
+path); D-pad Up/Down also drive the cursor;
+repeat uses dt accumulation; appear/
+disappear animate via dt to 10.2f.
+
+C ABI (all `pc_`-prefixed, 8 exports):
+`pc_choice_begin`, `pc_choice_add_option`,
+`pc_choice_cursor_step`,
+`pc_choice_repeat_step`,
+`pc_choice_b_shortcut`,
+`pc_choice_determination`,
+`pc_choice_close_kind`, `pc_select_wrap`. No
+C callers rewired yet, per the usual pattern.
+All 6 unit tests pass.
 
 ### Runtime Port Progress: Birthdays, Event NPC Placement, Holiday Scenery
 
