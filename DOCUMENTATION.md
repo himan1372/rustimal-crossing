@@ -4786,8 +4786,10 @@ C ABI (all `pc_`-prefixed, 14 exports):
 `pc_map_cursor_pulse`, `pc_map_cursor_init`,
 `pc_map_win_frame`, `pc_map_label_top_cnt`,
 `pc_map_house_offset`, `pc_map_land_color`. No C
-callers rewired yet, per the usual pattern. No
-test runs, per the standing rule.
+callers rewired yet, per the usual pattern. All 13 unit tests
+pass (two transcription bugs in the ported tables — a short
+bridge table and a swapped palette pair — were caught by the
+tests and fixed).
 
 ### Runtime Port Progress: Diary
 
@@ -4872,6 +4874,255 @@ C ABI (all `pc_`-prefixed, 11 exports):
 `pc_di_confirm_branch`. No C callers rewired
 yet, per the usual pattern. No test runs, per
 the standing rule.
+
+### Runtime Port Progress: Passwords
+
+New `rust/src/password.rs`, registered as `mod
+password` in `rust/src/lib.rs`. Decomp-verified
+against `m_mail_password_check.c`,
+`include/m_mail_password_check.h`,
+`m_passwordMake_ovl.c`,
+`include/m_passwordMake_ovl.h`,
+`m_passwordChk_ovl.c`,
+`include/m_passwordChk_ovl.h`, the password
+paths of `m_editor_ovl.c`, and
+`ac_npc_shop_common.c` (GAFE01_00 Rev 0 USA).
+6/6 sections PROVEN, with brief corrections.
+
+Key facts: the overlays only collect fixed-size
+byte strings — make returns town[8]+player[8]
+(16 bytes), check returns line0[14]+line1[14]
+(28 bytes), both by `mem_copy` with no
+delimiters; `LAND_NAME_SIZE` = 8 and
+`PLAYER_NAME_LEN` = 8. The codec turns a
+21-byte payload into 28 six-bit characters
+(168 bits = 168 bits). Payload byte 0 packs
+type (bits 7-5), checksum (bits 4-3),
+hit_rate (bits 2-1), npc_type (bit 0); byte 1
+is the NPC code; bytes 2-9/10-17 are the two
+8-byte names; bytes 18-19 are the item ID;
+byte 20 is the RSA keysave. Checksum =
+(Σstr0 + Σstr1 + item + npc_code) & 3.
+
+Ported (pure kernels; overlay lifecycle and
+allocation, the shared editor state machine,
+sounds, warning windows, transitions, font
+rendering, ARAM/card I/O, player/town identity
+lookups, the item catalog and price checks,
+inventory mutation, NPC dialogue/reward flow,
+RNG, and the `pswd_famicom_list` extern stay
+in C):
+
+- The full encode pipeline verbatim:
+  passcode build → 256-entry substitution →
+  transposition (dir 1, table 0) → bit shuffle
+  stage 0 → RSA (`b^r mod pq` over 8
+  select-table bytes, 9th-bit keysave at byte
+  20, 256 primes verbatim) → nibble-selected
+  bit mixing → bit shuffle stage 1 →
+  transposition (dir 0, table 1) → LSB-first
+  21-byte→28-symbol packing → 64-character
+  `usable_to_fontnum` alphabet mapping.
+- The exact inverse decode pipeline,
+  including the 0→O / 1→l normalization and
+  the font→symbol lookup that keeps scanning
+  (last match wins).
+- All tables verbatim: 256 primes, 256-entry
+  substitution, 16×8 bit-select indices, 32
+  transposition strings (NUL-inclusive
+  lengths; key byte 18 for table 0, 9 for
+  table 1), 64-char alphabet, 64-entry
+  allowed-character set.
+- The `// @fakematch` bit routines
+  (bit_shift skipping the key byte,
+  bit_reverse, bit_arrange_reverse,
+  bit_shuffle/decode) ported literally.
+- Payload unpack (`mMpswd_password`) with the
+  MAGAZINE npc_type-bit fold into
+  hit_rate_index bit 2, and the zuru checksum
+  check.
+- The fixed-width 14-byte line editor:
+  insert/shift state machine, password
+  backspace (including the line1→line0
+  switch), the `line1[13] != SPACE` charset-
+  validation gate, and the all-28-bytes
+  allowed check.
+- Make-flow helpers (space init, town-
+  nonempty gate) and check-init prefill from
+  the 28-byte data2.
+- Mail-body code extraction
+  (`mMpswd_restore_code`): SYMBOL_KEY opening
+  check, newline-pair scan, byte-14 newline
+  strip.
+
+Brief corrections: the check overlay
+pre-fills its lines from `menu_info->data2`,
+not spaces; POPULAR forces hit_rate = 4 with
+a `// potential bug?` comment (it collides
+with the checksum bits); unknown types fall
+back to USER without resetting hit_rate/
+npc_code; the magazine hit-rate table is f32
+`{80.0, 60.0, 30.0, 0.0, 100.0}` with the
+RANDOM_F draw only in that path; the shop
+send call is `mMpswd_make_password(str, 0x4,
+0x1, recip, town, item, 0x0, 0x0)` with
+inventory consumed on commit.
+
+C ABI (all `pc_`-prefixed, 17 exports):
+`pc_pw_make_password`, `pc_pw_decode_code`,
+`pc_pw_unpack`, `pc_pw_zuru_ok`,
+`pc_pw_usable_letter`, `pc_pw_make_can_advance`,
+`pc_pw_line_insert`, `pc_pw_backspace`,
+`pc_pw_needs_charset_check`, `pc_pw_all_usable`,
+`pc_pw_make_init`, `pc_pw_check_init`,
+`pc_pw_extract_code`. No C callers rewired
+yet, per the usual pattern. All 10 unit tests
+pass.
+
+### Runtime Port Progress: Notice-board overlay & scheduler
+
+New `rust/src/notice_overlay.rs`, registered as
+`mod notice_overlay` in `rust/src/lib.rs`.
+Decomp-verified against `m_notice_ovl.c`,
+`include/m_notice_ovl.h`, `m_notice.c`, and
+`include/m_notice.h` (GAFE01_00 Rev 0 USA).
+14/14 sections PROVEN, with brief corrections.
+
+Key facts: the record layer (first-empty
+scan, FIFO shift, page clear, init handbills,
+auto-post time, handbill-id formulas) was
+already ported in `town_board.rs` and is not
+duplicated; the handbill composer primitives
+live in `npc_reply.rs`. This module covers the
+overlay state machine and the auto-post
+scheduler.
+
+Ported (pure kernels; RTC compares and
+save/common reads-writes, the shared editor
+and edit-end overlays, font-width lookup,
+handbill ROM loading, fishing-result mail,
+furniture selection, treasure placement,
+animal-memory queries, first-job quest
+mutation, sounds/music, graphics, easing,
+transitions, and overlay allocation stay
+in C):
+
+- Navigation (`mNT_Play_page_read`) with the
+  exact else-if priority: C-left → −1,
+  C-right → +1, C-down → jump to slot 0,
+  C-up → jump to newest, A → begin write,
+  B/Start → exit. `move_time = min(|move_page|,
+  3)` with the integer-division page steps
+  (first step `move_page/move_time`, later
+  forward/backward forms).
+- Stick-area classification (0.2 threshold,
+  eight signed-angle sectors, CENTER=8) and
+  the 9-entry `kei_win_st_tex_tbl` as
+  texture-slot indices with repeats
+  preserved.
+- The notice line-check state machine
+  (codes 0–3, strict width > 192, font widths
+  injected).
+- Page-number display (`page_no+1`, working
+  post capped at 15), the invalid-month → 13
+  header rule, and the confirmation branches
+  (0 = commit, 1 = re-edit, else discard).
+- The 43-entry auto-post date table verbatim
+  (including the brief-missed 0x18–0x1A
+  fall-fair entries and the 0xFFFF unused
+  slots), the packed-date operate arithmetic
+  (equinox/DST additions carry into the month
+  byte), the selection sort, the near-old
+  cursor walk with the renew-hour tiebreak,
+  and the reverse-indexed decide selection
+  (fishing days first, then standard entries
+  walking backward with year wrap).
+- The USA treasure gate sequence (renew-hour,
+  3-day interval, checked-today, animal
+  count, 0.4 RNG draw — all injected) and the
+  pitfall/lottery/event pick from a single
+  draw.
+
+C ABI (all `pc_`-prefixed, 15 exports):
+`pc_notice_nav_step`, `pc_notice_move_time`,
+`pc_notice_first_step`,
+`pc_notice_later_step`,
+`pc_notice_stick_area`, `pc_notice_kei_tex`,
+`pc_notice_line_check`, `pc_notice_page_no`,
+`pc_notice_month_idx`, `pc_notice_confirm`,
+`pc_notice_operate_dates`,
+`pc_notice_sort_pairs`,
+`pc_notice_last_valid_idx`,
+`pc_notice_near_old_cursor`,
+`pc_notice_decide`, `pc_notice_treasure_ok`,
+`pc_notice_treasure_pick`. No C callers
+rewired yet, per the usual pattern. All 8
+unit tests pass.
+
+### Runtime Port Progress: Address book
+
+New `rust/src/address_book.rs`, registered as
+`mod address_book` in `rust/src/lib.rs`.
+Decomp-verified against `m_address_ovl.c` and
+`include/m_address_ovl.h` (GAFE01_00 Rev 0
+USA). All sections PROVEN, with one
+significant brief correction: the brief's
+section 3 described the *notice* overlay's
+struct (`notice_ovl_s`); the real address
+overlay struct is `address_ovl_s` with
+`page_bitfield`, `page_count`, `proc_idx`,
+`curIdx`, `nextIdx`, `selected_entry`,
+`show_museum_address`, `editor_move_down`,
+`page_entry_count[3]`, `pos_x`/`speed_x`,
+`pile[3]`/`goal_pile[3]`,
+`player_mail_name[PLAYER_NUM+1]`,
+`animal_mail_name[ANIMAL_NUM_MAX]`, and the
+editor display-list handoff pointer.
+
+Key facts: the book is rebuilt on open, not
+saved. The player page holds the other valid
+player identities in ascending slot order
+(active slot skipped, empty slots excluded by
+the personal-ID check) with the museum entry
+appended after them when eligible
+(`show_museum_address` explicitly FALSE
+otherwise). Villagers qualify only with a
+non-free identity AND a memory entry for the
+current player; the first eight fill NPC page
+0, the rest NPC page 1.
+
+Ported (pure kernels; save/RTC access,
+identity checks, museum eligibility, NPC
+memory queries, name conversion and header
+copy, the shared editor/board overlays,
+sounds, display lists, transitions, easing,
+and overlay allocation stay in C):
+
+- Player-list builder (active-slot skip,
+  validity filter, museum append).
+- Villager 8-entry paging.
+- Page model: bitfield built MSB-first,
+  initial page (player else NPC0 else
+  refusal), `mAD_PROC_REFUSE` on an empty
+  book ("Your address book is empty!").
+- `mAD_get_nextIdx` verbatim (-1 on a single
+  page; ±1 with wrap, at most two candidates,
+  first set bit wins).
+- Recipient resolution (player → selected,
+  NPC1 → 8 + selected, else selected) using
+  the raw 0/2 comparisons from the C.
+- Context-sensitive B (cancel vs header
+  focus), the header_pos==1 WAIT reset, and
+  the pile targets ({0,5,0}/{5,0,5} for two
+  pages, rotated {0,5,10} for three).
+
+C ABI (all `pc_`-prefixed, 8 exports):
+`pc_ad_player_list`, `pc_ad_npc_pages`,
+`pc_ad_page_model`, `pc_ad_get_next_idx`,
+`pc_ad_resolve`, `pc_ad_b_cancel`,
+`pc_ad_wait_reset`, `pc_ad_pile_init`. No C
+callers rewired yet, per the usual pattern.
+All 7 unit tests pass.
 
 ## File Reference
 

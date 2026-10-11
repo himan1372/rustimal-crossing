@@ -155,7 +155,7 @@ pub const MAP_PAL_TABLE: [u8; MAP_BLOCK_TYPE_NUM as usize] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
     1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0,
 ];
@@ -169,15 +169,15 @@ pub const MAP_PAL_TABLE: [u8; MAP_BLOCK_TYPE_NUM as usize] = [
 pub const MAP_PLUSS_BRIDGE: [u8; MAP_BLOCK_TYPE_NUM as usize] = {
     const N: u8 = 0xFF;
     [
-        N, N, N, N, N, N, N, N, N, N, N, N,
-        N, 86, N, N, N, N, N, N, N, N, N, N,
-        88, 89, N, 92, 93, 87, N, N, 90, 91,
-        105, 106, 107, N, N, N, 47, 48, 49, 50,
-        51, 52, 53, N, N, N, N, N, N, N, N, N,
-        N, N, N, N, N, N, N, N, N, N, 82, N,
-        N, N, N, N, N, N, N, N, N, N, N, N,
-        N, N, N, N, N, N, N, N, N, N, N, N,
-        N, N, N, N, N, N, N, N, N, N, N, N,
+          N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,
+          N,  86,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,
+         88,  89,   N,  92,  93,  87,   N,   N,  90,  91, 105, 106,
+        107,   N,   N,   N,  47,  48,  49,  50,  51,  52,  53,   N,
+          N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,
+          N,   N,   N,   N,  82,   N,   N,   N,   N,   N,   N,   N,
+          N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,
+          N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,
+          N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,   N,
     ]
 };
 
@@ -508,7 +508,8 @@ mod tests {
         // spot checks against l_map_texture / l_map_pal
         assert_eq!(pc_map_tex_idx(0), 0); // BORDER_CLIFF_TOP -> f_TA
         assert_eq!(pc_map_tex_idx(11), 1); // TRACKS_STATION -> tst1
-        assert_eq!(pc_map_tex_idx(39), 26); // FLAT -> r1
+        assert_eq!(pc_map_tex_idx(39), 0); // FLAT -> f_TA
+        assert_eq!(pc_map_tex_idx(40), 26); // RIVER_SOUTH -> r1
         assert_eq!(pc_map_tex_idx(100), 68); // PORT -> mwf
         assert_eq!(pc_map_tex_idx(108), -1);
         for k in [11, 12, 13, 14, 63, 64, 65, 66, 67, 68, 82, 83, 84, 85, 86, 100, 101, 102, 103, 104] {
@@ -516,7 +517,7 @@ mod tests {
         }
         assert_eq!(pc_map_pal_idx(39), 0);
         assert_eq!(pc_map_pal_idx(40), 0);
-        assert_eq!(pc_map_pal_idx(107), -1);
+        assert_eq!(pc_map_pal_idx(108), -1);
     }
 
     #[test]
