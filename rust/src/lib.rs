@@ -102,6 +102,7 @@ mod catalog;
 mod design;
 mod melody;
 mod museum_display;
+mod name_editor;
 mod shop_interior;
 mod house_interior;
 mod event_day;
