@@ -2849,6 +2849,51 @@ logic, Joan's actor and transaction, Nook's shop transaction, the
 field-growth spoilage passes, the event-manager callbacks, and the
 RNG.
 
+### Runtime Port Progress: Lost-and-Found Storage & Police Station
+
+New `rust/src/lost_found.rs`, registered as `mod lost_found` in
+`rust/src/lib.rs`. Decomp-verified against `m_police_box.c`,
+`ac_police_box.c`, `ac_police_box_move.c_inc`,
+`bg_police_item_move.c_inc`, `m_npc.c`, `m_start_data_init.c`,
+`m_all_grow_ovl.c`, `ac_event_manager.c` (GAFE01_00 Rev 0 USA). All 12
+brief claims checked verbatim; no corrections. Nuances carried: the
+brief's `mPB_keep_item()` caller list was incomplete — 8 more call
+sites found (br_shop, douzou, event_manager, house, shop_level,
+m_field_info, m_start_data_init, and m_police_box itself); bulk
+collection has FOUR cases (POOL, SHRINE, STATION, PLAYER), not two;
+the double `mPB_police_box_init` call is version-gated — exactly one
+compiles for GAFE01_00; the display Y function takes `(pos, 1.0f)`;
+the in-place compaction is proven safe by the `keep_item <= item_buf`
+invariant.
+
+Ported (pure buffer/data kernels; the save array, the field state,
+the item-name decoding, the item selectors, and the RNG stay in C):
+
+- The stored-item count (scans all 20, never stops at holes).
+- The order-preserving compaction, safe for in-place use.
+- Single-item insertion with the FIFO eviction (the ITEM1/FTR type
+  filter stays in C as a gate argument); appends at the count, not
+  the first hole.
+- The floor-display coordinate table with the exact nibble usage
+  (x = low nibble, z = high nibble).
+- The station light expression and its angle targets/chase rate.
+- The reserved-ID range test, the door constants, and the init slot
+  layout.
+
+Scope split: the sibling `police` module keeps Booker's interaction
+math and the bulk-merge index math; this module owns the storage
+buffer operations and the building.
+
+C ABI (all `pc_`-prefixed, 7 exports): `pc_lf_count`,
+`pc_lf_compact`, `pc_lf_insert`, `pc_lf_display_x`,
+`pc_lf_display_z`, `pc_lf_station_light_on`, `pc_lf_is_rsvpolice`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the save mutations, the bulk acre collection, the
+random generation, the display draw calls, the door transitions, and
+the item-name decoding.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
