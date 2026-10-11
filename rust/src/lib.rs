@@ -105,6 +105,7 @@ mod museum_display;
 mod shop_interior;
 mod house_interior;
 mod event_day;
+mod aprilfool;
 mod countdown;
 mod halloween;
 mod fireworks;
