@@ -82,7 +82,7 @@ pub struct DefenceWallInfo {
     pub wall_name1: WallName,
 }
 
-const R: f32 = 0.7071067811865476;
+const R: f32 = core::f32::consts::FRAC_1_SQRT_2;
 
 /// `defence_wall_info[8]` — verbatim.
 pub const DEFENCE_WALL_INFO: [DefenceWallInfo; 8] = [

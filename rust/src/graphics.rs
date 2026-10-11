@@ -65,6 +65,7 @@ pub extern "C" fn pc_gbi_emu64_create() -> *mut interpreter::Emu64 {
 
 /// Destroy an interpreter instance.
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)] // null-checked C handle
 pub extern "C" fn pc_gbi_emu64_destroy(emu: *mut interpreter::Emu64) {
     if !emu.is_null() {
         // SAFETY: handle came from pc_gbi_emu64_create.
@@ -74,6 +75,7 @@ pub extern "C" fn pc_gbi_emu64_destroy(emu: *mut interpreter::Emu64) {
 
 /// Install a segment base (`gSPSegment`).
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)] // null-checked C handle
 pub extern "C" fn pc_gbi_set_segment(emu: *mut interpreter::Emu64, seg: u8, base: u32) {
     if !emu.is_null() {
         // SAFETY: handle came from pc_gbi_emu64_create.
@@ -116,6 +118,7 @@ pub extern "C" fn pc_gbi_gx_dl_valid(addr: usize, size: usize) -> u8 {
 
 /// Commands processed by the interpreter (diagnostic counter).
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)] // null-checked C handle
 pub extern "C" fn pc_gbi_cmds_processed(emu: *const interpreter::Emu64) -> u64 {
     if emu.is_null() {
         return 0;

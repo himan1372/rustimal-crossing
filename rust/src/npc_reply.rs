@@ -768,8 +768,8 @@ impl HandbillzComposer {
 
         self.force_art = article::NUM;
         // Retail bug: this clears force_art again instead of capital_flag,
-        // so a set capital_flag persists (see load_init).
-        self.capital_flag = self.capital_flag;
+        // so a set capital_flag persists (see load_init). capital_flag is
+        // deliberately left untouched here.
 
         cut_len
     }

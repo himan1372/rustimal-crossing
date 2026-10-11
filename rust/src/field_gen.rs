@@ -473,6 +473,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::erasing_op, clippy::identity_op)] // row * 7 + col indices
     fn base_and_height() {
         assert_eq!(BASE_BLOCKS.len(), 70);
         // Player house at (3,2), station at (3,1), ocean row at z=8.

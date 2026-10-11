@@ -64,7 +64,7 @@ pub struct ForbidVecData {
     pub wall_name: u8,
 }
 
-const SQRT2_2: f32 = 0.7071067811865476;
+const SQRT2_2: f32 = core::f32::consts::FRAC_1_SQRT_2;
 
 /// `mCoBG_make_vector_table[8]` — verbatim.
 pub const MAKE_VECTOR_TABLE: [ForbidVecData; 8] = [

@@ -177,6 +177,8 @@ pub extern "C" fn pc_kamakura_sin_point_half(
     let midpoint = (start + end) * 0.5;
     let nf = now_frame as f32;
     let halfpoint = (end - midpoint).abs();
+    // The C uses the literal 3.14f (ac_kamakura_indoor.c), not PI.
+    #[allow(clippy::approx_constant)]
     let percent = ((nf - sf) * 3.14) / m;
     let angle = (percent * 10430.378) as i16;
     if start >= end {

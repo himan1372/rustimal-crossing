@@ -183,7 +183,7 @@ pub fn search_wall_flag(
 /// Slate normal selection: SLATE_UP compares leftUp vs rightDown,
 /// SLATE_DOWN compares leftDown vs rightUp.
 pub fn slate_normal(wall_name: WallName, o: CornerOffsets) -> ([f32; 2], f32) {
-    const R: f32 = 0.7071067811865476;
+    const R: f32 = core::f32::consts::FRAC_1_SQRT_2;
     match wall_name {
         WallName::SlateUp => {
             if o.left_up > o.right_down {
