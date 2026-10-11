@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 122 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 123 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -146,6 +146,7 @@ candidate for a future pure-kernel port once its boundary is verified.
 - **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
   `ac_birth_control.c` (not started).
 - **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
+- **Balloon follow-ups** — the NULL-guard/call mismatch in the present drop (`item_tree_fruit_drop_proc` guard vs `fruit_set_proc` call); the little-shake double-set comment; the draw callback's present-skip condition; the rare-list selection internals and `mFI_GetOtherFruit()`; the `anim_frame`/`dt` accumulators.
 - **Mushroom follow-ups** — the column-refill logic when `possible_cols` hits 0;
   the per-row candidate bitfields and the `mMsr_SetBlockMashroom` scan order
   (incl. the "bruh" early break); `lbRTC_IsOverTime` future-timestamp handling;
@@ -173,8 +174,8 @@ candidate for a future pure-kernel port once its boundary is verified.
 ✅ **Mushrooms** — fall mushroom spawning. → `mushroom.rs`
 `m_mushroom.c`, `m_mushroom.h` (target count, time conversions, rounding, tree eligibility, offsets, exclusions, cleanup eligibility, clear-all/share distribution; mushroom-season row 48 in `event_day.rs`). NOTE: no mushroom furniture mechanism exists in the decomp — the system only ever places ITM_FOOD_MUSHROOM.
 
-**Balloon presents** — floating balloon gifts.
-`m_fuusen.c`, `ac_fuusen.c`, `ac_balloon.c`
+✅ **Balloon presents** — floating balloon gifts. → `balloon.rs`
+`m_fuusen.c`, `ac_fuusen.c`, `ac_balloon.c` (spawn minute/roll/increment math, wind bucket + entry-point tables, movement/escape/tree predicates, present-drop gates, reward branch, held-balloon hide predicate)
 
 **Cockroaches** — infestation when away, stomping.
 `m_cockroach.c`, `ac_house_goki.c`
