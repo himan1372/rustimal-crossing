@@ -475,7 +475,7 @@ pub extern "C" fn pc_md_fish_info(fish_bit: *const u8, fish_no: i32) -> u8 {
     if fish_bit.is_null() {
         return 0;
     }
-    let bits = unsafe { std::slice::from_raw_parts(fish_bit, super::category::FISH_BIT_NUM) };
+    let bits = unsafe { std::slice::from_raw_parts(fish_bit, category::FISH_BIT_NUM) };
     collection::fish_info(bits, fish_no)
 }
 
@@ -484,7 +484,7 @@ pub extern "C" fn pc_md_insect_info(insect_bit: *const u8, insect_no: i32) -> u8
     if insect_bit.is_null() {
         return 0;
     }
-    let bits = unsafe { std::slice::from_raw_parts(insect_bit, super::category::INSECT_BIT_NUM) };
+    let bits = unsafe { std::slice::from_raw_parts(insect_bit, category::INSECT_BIT_NUM) };
     collection::insect_info(bits, insect_no)
 }
 
@@ -493,7 +493,7 @@ pub extern "C" fn pc_md_set_fish_donor(fish_bit: *mut u8, fish_no: i32, donor: u
     if fish_bit.is_null() {
         return 0;
     }
-    let bits = unsafe { std::slice::from_raw_parts_mut(fish_bit, super::category::FISH_BIT_NUM) };
+    let bits = unsafe { std::slice::from_raw_parts_mut(fish_bit, category::FISH_BIT_NUM) };
     collection::set_fish_donor(bits, fish_no, donor) as i32
 }
 
@@ -502,7 +502,7 @@ pub extern "C" fn pc_md_set_insect_donor(insect_bit: *mut u8, insect_no: i32, do
     if insect_bit.is_null() {
         return 0;
     }
-    let bits = unsafe { std::slice::from_raw_parts_mut(insect_bit, super::category::INSECT_BIT_NUM) };
+    let bits = unsafe { std::slice::from_raw_parts_mut(insect_bit, category::INSECT_BIT_NUM) };
     collection::set_insect_donor(bits, insect_no, donor) as i32
 }
 
@@ -511,8 +511,8 @@ pub extern "C" fn pc_md_count_displayed_fish(fish_bit: *const u8) -> i32 {
     if fish_bit.is_null() {
         return 0;
     }
-    let bits = unsafe { std::slice::from_raw_parts(fish_bit, super::category::FISH_BIT_NUM) };
-    collection::count_displayed(bits, super::category::FISH_NUM) as i32
+    let bits = unsafe { std::slice::from_raw_parts(fish_bit, category::FISH_BIT_NUM) };
+    collection::count_displayed(bits, category::FISH_NUM) as i32
 }
 
 #[no_mangle]
@@ -520,8 +520,8 @@ pub extern "C" fn pc_md_count_displayed_insect(insect_bit: *const u8) -> i32 {
     if insect_bit.is_null() {
         return 0;
     }
-    let bits = unsafe { std::slice::from_raw_parts(insect_bit, super::category::INSECT_BIT_NUM) };
-    collection::count_displayed(bits, super::category::INSECT_NUM) as i32
+    let bits = unsafe { std::slice::from_raw_parts(insect_bit, category::INSECT_BIT_NUM) };
+    collection::count_displayed(bits, category::INSECT_NUM) as i32
 }
 
 #[no_mangle]
@@ -534,9 +534,9 @@ pub extern "C" fn pc_md_delete_presented_fish_insect(
         return;
     }
     let fbits =
-        unsafe { std::slice::from_raw_parts_mut(fish_bit, super::category::FISH_BIT_NUM) };
+        unsafe { std::slice::from_raw_parts_mut(fish_bit, category::FISH_BIT_NUM) };
     let ibits =
-        unsafe { std::slice::from_raw_parts_mut(insect_bit, super::category::INSECT_BIT_NUM) };
+        unsafe { std::slice::from_raw_parts_mut(insect_bit, category::INSECT_BIT_NUM) };
     collection::delete_presented_by_player(fbits, ibits, player_no)
 }
 
