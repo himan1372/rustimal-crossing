@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 128 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 130 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -146,6 +146,9 @@ candidate for a future pure-kernel port once its boundary is verified.
 - **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
   `ac_birth_control.c` (not started).
 - **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
+- **Bulletin-board follow-ups** — the complete automatic-post batch trigger and its
+  saved-time update; the 43-entry announcement date table and five-post batch
+  selection; whether other code validates or normalizes the house message.
 - **NES follow-ups** — the nesinfo tag-stream parser for all 19 titles; the
   `special_zelda()` BBRAM repair; exact acquisition conditions for every NES
   furniture item; the scene.rs FamicomEmu `cleanup_fn: None` wiring gap vs C's
@@ -235,8 +238,9 @@ fbdemo transition math; the 6502 core and wrapper stay in C)
 **GBA Island** — link-cable island, minigames, islanders.
 `m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`
 
-**Bulletin boards** — town board and house board posts.
-`m_board_ovl.c`, `m_hboard_ovl.c`
+✅ **Bulletin boards** — town board and house board posts. → `town_board.rs`
+(15-slot record kernels: first-empty scan, full-board shift, page clear, init
+handbills, auto-post time) + `house_board.rs` (128-byte message line check)
 
 **Town map** — the map overlay UI.
 `m_map_ovl.c`
