@@ -4216,6 +4216,69 @@ C ABI (all `pc_`-prefixed, 14 exports):
 callers rewired yet, per the usual pattern. No test runs,
 per the standing rule.
 
+### Runtime Port Progress: Balloon Presents
+
+New `rust/src/balloon.rs`, registered as `mod balloon`
+in `rust/src/lib.rs`. Decomp-verified against
+`m_fuusen.c`, `m_fuusen.h`, `m_common_data.h`,
+`m_play.c`, `ac_fuusen.c`, `ac_fuusen.h`, `ac_balloon.c`,
+`ac_balloon.h`, `m_private.c`, `m_name_table.h` (GAFE01_00
+Rev 0 USA). 17/17 sections PROVEN with DIFFERS-level
+nuances (see below).
+
+Ported (pure kernels; actor lifecycle, the common-data
+accessors, all RNG call order, foreground placement and
+clip calls, save access, effects/audio dispatch, and the
+held-balloon skeleton/animation setup stay in C):
+
+- The spawn-minute predicate (`(min % 5) == 3`, not the
+  commonly repeated "ends in 4"), the roll, the failure
+  increment (no clamp), the post-success probability,
+  and the LOOK_UP +0.25 bonus.
+- The wind-bucket mapping (`data_index_data` with the
+  sign-extending 0xF000 shift) and the entry-point
+  tables: 8 perimeter positions plus the variation
+  table, axis choice via `game_frame & 1`, variation =
+  sample × |offset| with the table's sign, and
+  `type_idx = game_frame % 5`.
+- The movement speed, the escape bounds (map edges plus
+  the station rectangle), the tree-interception
+  thresholds (cedar 484 vs 225), the screen-visibility
+  gate, the wall-hit y_offset update, and the
+  movement-timer gate.
+- The look-up distance gate (640.0), the deletion gate
+  (ground + 500), the reward branch (`RANDOM(5) != 0`
+  attempts furniture, otherwise/other-fruit on failure),
+  and the held-balloon hide predicate (200.0 above the
+  player).
+
+Deliberately NOT ported: `escape_timer`/`timer` are f32,
+not int (the brief was wrong — documented); the
+present-drop check is `escape_timer <= 1554`, not `==`;
+`fuwafuwa_cycle` is frame-rate scaled; the NULL guard
+checks `item_tree_fruit_drop_proc` while the call uses
+`fruit_set_proc` (kept as-is); the little-shake
+double-set; the draw callback's present-skip condition;
+the failed-roll state staying at CHK_SPAWN vs
+PENDING_SPAWN retrying every frame; the rare-list
+selection and `mFI_GetOtherFruit()` internals.
+
+C ABI (all `pc_`-prefixed, 17 exports):
+`pc_balloon_spawn_minute_ok`, `pc_balloon_roll_ok`,
+`pc_balloon_fail_increment`,
+`pc_balloon_post_success_percent`,
+`pc_balloon_wind_bucket`, `pc_balloon_entry_point`,
+`pc_balloon_type_idx`, `pc_balloon_speed`,
+`pc_balloon_escape_bounds`,
+`pc_balloon_tree_thresholds`,
+`pc_balloon_screen_visible`,
+`pc_balloon_wall_y_offset`,
+`pc_balloon_look_up_dist_ok`, `pc_balloon_delete_ok`,
+`pc_present_reward_branch`,
+`pc_player_balloon_hide_ok`, `pc_balloon_move_timer_ok`.
+No C callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
