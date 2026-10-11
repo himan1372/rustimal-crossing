@@ -251,6 +251,90 @@ pub extern "C" fn pc_kamakura_save_byte_valid(save_byte: u8) -> bool {
     save_byte != 0xFF
 }
 
+// ---------------------------------------------------------------------------
+// Follow-ups resolved (claude, 2026-10-12)
+// Sources: ac-decomp ac_kamakura*.c, ac_kamakura_indoor.c,
+// m_event_map_npc.c, m_event_schedule.c_inc, ac_quest_talk_normal_init.c;
+// diffed against the PC port.
+// ---------------------------------------------------------------------------
+
+/// PC `k_indoor->anim_frame`: += dt, wrapped at 1024 (retail used the
+/// unbounded `game->frame_counter`). Drives the candle texture flip
+/// (`(frame / 6) & 1`) and the two-layer texture scroll.
+pub fn indoor_anim_frame(frame: f32, dt: f32) -> f32 {
+    let mut f = frame + dt;
+    while f >= 1024.0 {
+        f -= 1024.0;
+    }
+    f
+}
+
+/// Candle texture index for an animation frame.
+pub fn candle_tex(frame: u32) -> usize {
+    ((frame / 6) & 1) as usize
+}
+
+/// Soba steam (`eEC_EFFECT_SOBA_YUGE`, 42 units above the mochi table):
+/// retail every 8th `game_frame`; PC `graph_dt_period_elapsed(.., 8.0)`.
+/// The PC accumulator is a function-local `static`, shared by every
+/// igloo interior instance.
+pub fn steam_retail(game_frame: u32) -> bool {
+    game_frame & 7 == 0
+}
+pub const STEAM_PERIOD: f32 = 8.0;
+
+/// Window-light chase step per frame (PC: multiplied by dt).
+pub const LIGHT_CHASE_STEP: f32 = 0.019532442;
+
+/// Outdoor igloo despawn: retail when the player is in any other acre,
+/// PC only when more than one acre away (borderless).
+pub fn igloo_despawns(dx_blocks: i32, dz_blocks: i32, pc: bool) -> bool {
+    if pc {
+        dx_blocks.abs() > 1 || dz_blocks.abs() > 1
+    } else {
+        dx_blocks != 0 || dz_blocks != 0
+    }
+}
+
+/// (type, start frame, start scale, start ofs_y, end frame, end scale, end ofs_y).
+pub type MochiKey = (i32, i16, [f32; 3], f32, i16, [f32; 3], f32);
+
+/// `aKI_mochi_anime_data`: (type, start frame, start scale xyz, start
+/// ofs_y, end frame, end scale xyz, end ofs_y). Defined but never
+/// referenced in the decomp; it describes a 1400-frame squash/stretch loop
+/// of the mochi (type 0 = grow, 1 = shrink, 2 = hold).
+pub const MOCHI_ANIME_DATA: [MochiKey; 10] = [
+    (2, 0, [70.0, 40.0, 70.0], -9.0, 240, [70.0, 40.0, 70.0], -9.0),
+    (0, 240, [70.0, 40.0, 70.0], -9.0, 380, [85.0, 75.0, 85.0], -4.5),
+    (2, 380, [85.0, 75.0, 85.0], -4.5, 420, [85.0, 75.0, 85.0], -4.5),
+    (0, 420, [85.0, 75.0, 85.0], -4.5, 600, [100.0, 100.0, 100.0], 0.0),
+    (2, 600, [100.0, 100.0, 100.0], 0.0, 760, [100.0, 100.0, 100.0], 0.0),
+    (1, 760, [100.0, 100.0, 100.0], 0.0, 810, [70.0, 40.0, 70.0], -9.0),
+    (2, 810, [70.0, 40.0, 70.0], -9.0, 970, [70.0, 40.0, 70.0], -9.0),
+    (0, 970, [70.0, 40.0, 70.0], -9.0, 1210, [100.0, 100.0, 100.0], 0.0),
+    (2, 1210, [100.0, 100.0, 100.0], 0.0, 1330, [100.0, 100.0, 100.0], 0.0),
+    (1, 1330, [100.0, 100.0, 100.0], 0.0, 1400, [70.0, 40.0, 70.0], -9.0),
+];
+
+/// Camper selection (`mEvMN_GetNpcJointEv` -> `mEvMN_GetNpcIdx`): the
+/// kamakura map entry has `normal_npc_max = 1` and selection type 0, the
+/// only type that exists (`mEvMN_GetNpcIdxRandom`). It is one random
+/// resident, already ported in `event_map_npc.rs`. Called from
+/// `ac_set_npc_manager.c` when the event's save area is set up.
+pub const CAMPER_COUNT: usize = 1;
+
+/// `mEv_EVENT_RUMOR_KAMAKURA` / `mEv_EVENT_KAMAKURA` (m_event.h).
+pub const EVENT_RUMOR_KAMAKURA: i32 = 2;
+pub const EVENT_KAMAKURA: i32 = 3;
+/// Rumor schedule row: Jan 2 00:00 (multi-day) to Feb 23 20:00.
+pub const RUMOR_WINDOW: ((u8, u8, u8), (u8, u8, u8)) = ((1, 2, 0), (2, 23, 20));
+
+/// Villagers only pass on the igloo rumor in winter
+/// (`ac_quest_talk_normal_init.c`).
+pub fn rumor_talkable(season_is_winter: bool) -> bool {
+    season_is_winter
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,5 +402,20 @@ mod tests {
         assert_eq!(pc_kamakura_trade_list(false, false, 99, 7), 7);
         assert!(pc_kamakura_save_byte_valid(0));
         assert!(!pc_kamakura_save_byte_valid(0xFF));
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn igloo_followups() {
+        assert_eq!(indoor_anim_frame(1023.5, 1.0), 0.5);
+        assert_eq!(candle_tex(6), 1);
+        assert!(steam_retail(16) && !steam_retail(17));
+        assert!(igloo_despawns(1, 0, false) && !igloo_despawns(1, 0, true));
+        assert_eq!(MOCHI_ANIME_DATA.last().unwrap().4, 1400);
+        assert_eq!((EVENT_RUMOR_KAMAKURA, EVENT_KAMAKURA), (2, 3));
     }
 }

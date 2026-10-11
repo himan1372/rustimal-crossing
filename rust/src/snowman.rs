@@ -306,6 +306,129 @@ pub extern "C" fn pc_snowman_head_is_a(speed_a: f32, speed_b: f32) -> bool {
     speed_a >= speed_b
 }
 
+// ---------------------------------------------------------------------------
+// Follow-ups resolved (claude, 2026-10-12)
+// Sources: ac-decomp ac_snowman.c, ac_event_manager.c (snowman_start),
+// m_event.c (mEv_snowman_born_check, check_ymdh_range, after_n_day).
+// `REWARD_ITEMS` above is verified: the 12 ids match FTR_START(...) /
+// ITM_CARPET25 / ITM_WALL25 compiled from m_name_table.h with gcc.
+// ---------------------------------------------------------------------------
+
+/// Event common-area slot each ball keeps its rolled distance in
+/// (`mEv_get_common_area(SNOWMAN_SEASON, part)`): ball A -> part 0,
+/// everything else -> part 1. A missing area is reserved and the distance
+/// starts at 0; a combined, moved, in-hole or off-map ball clears it on
+/// destruction, otherwise the distance is written back.
+pub fn move_dist_part(npc_id: u16) -> usize {
+    if npc_id == ETC_SNOWMAN_BALL_A {
+        0
+    } else {
+        1
+    }
+}
+
+/// Whether the destructor keeps the ball's progress for next time.
+pub fn keeps_move_dist(combined: bool, in_hole: bool, moved: bool, position_ok: bool) -> bool {
+    !combined && !in_hole && !moved && position_ok
+}
+
+/// `aSMAN_FG_Position_Get` probe offsets (unit size 40): centre, then the
+/// 4 sides, then the 4 diagonals.
+pub const FG_PROBE: [(f32, f32); 9] = [
+    (0.0, 0.0),
+    (40.0, 0.0),
+    (-40.0, 0.0),
+    (0.0, 40.0),
+    (0.0, -40.0),
+    (40.0, 40.0),
+    (-40.0, 40.0),
+    (40.0, -40.0),
+    (-40.0, -40.0),
+];
+pub const RSV_NO: u16 = 0xFFFF;
+pub const RSV_WALL_NO: u16 = 0xFFFE;
+/// `mCoBG_ATTRIBUTE_STONE` / `_WOOD` values passed in by the caller.
+pub fn fg_spot_ok(fg: Option<u16>, height_gap: bool, attr_is_stone_or_wood: bool, ground_dy: f32) -> bool {
+    // @BUG: the C dereferences mFI_GetUnitFG(pos) without a NULL check; a
+    // probe outside the field (None here) would crash on hardware. The
+    // model rejects it instead.
+    match fg {
+        None => false,
+        Some(item) => {
+            !height_gap && item != RSV_NO && item != RSV_WALL_NO && !attr_is_stone_or_wood && ground_dy < 60.0
+        }
+    }
+}
+
+/// Reward mail handbill index for table index `rnd` (0x202 + rnd); the
+/// mail uses paper `ITM_PAPER12` (0x200C) and is only sent for a PERFECT
+/// snowman when the post office has room and the player is a resident.
+pub fn reward_mail_idx(rnd: i32) -> i32 {
+    REWARD_MAIL_BASE + rnd
+}
+
+/// Head-jump height above the body (`aSMAN_process_combine_head_jump_init`):
+/// 0.6 x (head radius + body radius), radius = scale x 20 + 10.
+pub fn head_jump_height(head_norm: f32, body_norm: f32) -> f32 {
+    ((head_norm * 20.0 + 10.0) + (body_norm * 20.0 + 10.0)) * 0.6
+}
+
+/// Parabolic arc for frame t (0..60): `(8t - t^2 / 7.5) * 25` model units,
+/// peaking at t = 30 (3000) and landing at t = 60. Position meanwhile moves
+/// linearly by 1/60 of the offset per frame.
+pub fn head_jump_ofs_y(t: i32) -> f32 {
+    let t = t as f32;
+    (t * 8.0 + t * -(1.0 / 7.5) * t) * 25.0
+}
+
+/// Landing dust (frame 60): 5 `eEC_EFFECT_DUST` puffs at -90, -45, 0, 45,
+/// 90 degrees (short angles), 0.7 x head radius below the head centre.
+pub const DUST_ANGLES: [i16; 5] = [-16384, -8192, 0, 8192, 16384];
+pub fn dust_drop(head_norm: f32) -> f32 {
+    (head_norm * 20.0 + 10.0) * 0.7
+}
+
+/// Snowman placeholders that block a new pair of balls (`snowman_start`).
+pub const SNOWMAN_START_BLOCKERS: [u16; 3] = [0xA008, 0xA00B, 0xA00E];
+
+/// Packed `mEv_ymdh_u` (big-endian layout; the PC port swaps the struct
+/// fields so `raw` keeps this order on x86).
+pub fn ymdh(year: u8, month: u8, day: u8, hour: u8) -> u32 {
+    (year as u32) << 24 | (month as u32) << 16 | (day as u32) << 8 | hour as u32
+}
+
+/// `mEv_snowman_born_check`: a new pair of balls may appear unless "now"
+/// lies in [last snowman, end], where end = 05:00 on the same day if it was
+/// finished before 06:00, otherwise 05:00 the next day (year rolls over
+/// on Jan 1). The range is inclusive of hour 5, so new balls appear from
+/// 06:00. `days_in_month` = `last_day_of_month`.
+pub fn snowman_born_allowed(now: (u8, u8, u8, u8), last: (u8, u8, u8, u8), days_in_month: impl Fn(u8) -> u8) -> bool {
+    let (ly, lm, ld, lh) = last;
+    let (mut ey, mut em, mut ed) = (ly, lm, ld);
+    if lh >= 6 {
+        let mut d = ld + 1;
+        let mut m = lm;
+        if d > days_in_month(lm) {
+            d -= days_in_month(lm);
+            m = if lm == 12 { 1 } else { lm + 1 };
+        }
+        if (m, d) == (1, 1) {
+            ey = (ly + 1) % 100;
+        }
+        em = m;
+        ed = d;
+    }
+    let now_raw = ymdh(now.0, now.1, now.2, now.3);
+    !(ymdh(ly, lm, ld, lh) <= now_raw && now_raw <= ymdh(ey, em, ed, 5))
+}
+
+/// `snowman_start` (event manager, SNOWMAN_SEASON): if no SNOWMAN0/3/6
+/// placeholder exists and the born check passes, spawn ball A (place id
+/// 0x64) and ball B (0x65) in free blocks.
+pub fn snowman_start_spawns(blocker_present: bool, born_allowed: bool) -> Option<[(u16, u8); 2]> {
+    (!blocker_present && born_allowed).then_some([(ETC_SNOWMAN_BALL_A, 0x64), (ETC_SNOWMAN_BALL_B, 0x65)])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,5 +520,29 @@ mod tests {
         assert!(pc_snowman_head_is_a(2.0, 2.0)); // ties go to A
         assert!(!pc_snowman_head_is_a(1.0, 2.0));
         assert_eq!(PUSH_ANGLE_MAX, (55.0f32 * 65536.0 / 360.0) as i32);
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn snowman_followups() {
+        assert_eq!(move_dist_part(ETC_SNOWMAN_BALL_A), 0);
+        assert_eq!(move_dist_part(ETC_SNOWMAN_BALL_B), 1);
+        assert!(!fg_spot_ok(None, false, false, 0.0));
+        assert!(fg_spot_ok(Some(0), false, false, 10.0));
+        assert!((head_jump_ofs_y(30) - 3000.0).abs() < 0.01);
+        assert!(head_jump_ofs_y(60).abs() < 1e-3);
+        assert_eq!(reward_mail_idx(11), 0x20D);
+        let dim = |m: u8| if m == 2 { 28 } else { 31 };
+        // Built Dec 31 at 20:00: blocked until Jan 1 05:59 of the next year.
+        assert!(!snowman_born_allowed((26, 1, 1, 5), (25, 12, 31, 20), dim));
+        assert!(snowman_born_allowed((26, 1, 1, 6), (25, 12, 31, 20), dim));
+        // Built at 03:00: allowed again from 06:00 the same day.
+        assert!(!snowman_born_allowed((26, 1, 10, 5), (26, 1, 10, 3), dim));
+        assert!(snowman_born_allowed((26, 1, 10, 6), (26, 1, 10, 3), dim));
+        assert!(snowman_start_spawns(true, true).is_none());
     }
 }

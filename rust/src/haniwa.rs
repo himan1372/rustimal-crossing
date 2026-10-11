@@ -31,20 +31,20 @@
 //! returns it directly with no conversion;
 //! `mSP_RandomHaniwaSelect` is a no-duplicates loop and
 //! the `count > HANIWA_NUM` escape is dead for the
-//! 3-item call; `mHW_MSG_MOU` is marked @unused;
-//! `mAGrw_SetDigItem` runs `mAGrw_SpoilKabu` over the
-//! stored haniwa slots during field renewal; the
-//! HANIWA_START/END numerics are computed from the
-//! X-macro expansion — verify against the build before
-//! wiring.
+//! 3-item call (name-table HANIWA_NUM is 127);
+//! `mHW_MSG_MOU` is set (literal 6) by
+//! `mTG_present_open_proc` when pockets are full;
+//! `mAGrw_SpoilAllPossession` (not SetDigItem) spoils
+//! turnips in the stored haniwa slots during field
+//! renewal; HANIWA_START/END verified with gcc
+//! (claude 2026-10-12, see the follow-up section).
 
-/// Haniwa item id range (computed from the X-macro
-/// expansion: enum base 0x0FFF, 4 entries/X, 364 X
-/// entries before COMMON000; 127 haniwa = COMMON000–
-/// COMMON126). Verify against the build before wiring.
+/// Haniwa item id range (COMMON000–COMMON126 south..west;
+/// verified by compiling m_name_table.h with gcc).
 pub const HANIWA_START: i32 = 0x15B0;
 pub const HANIWA_END: i32 = 0x17AB;
-/// Buried gyroids requested per renewal.
+/// Buried gyroids requested per renewal (`mAGrw_HANIWA_NUM`;
+/// the name-table `HANIWA_NUM` is `HANIWA_KIND_NUM` = 127).
 pub const HANIWA_NUM: i32 = 3;
 /// Household storage slots and message length.
 pub const HANIWA_ITEM_HOLD_NUM: i32 = 4;
@@ -67,7 +67,7 @@ pub const MSG_DONO2: i32 = 2;
 pub const MSG_OIKURA: i32 = 3;
 pub const MSG_KASIKO: i32 = 4;
 pub const MSG_DOREWO: i32 = 5;
-pub const MSG_MOU: i32 = 6; // @unused — not set anywhere
+pub const MSG_MOU: i32 = 6; // set as literal 6 by mTG_present_open_proc (pockets full)
 pub const MSG_OKANE: i32 = 7;
 pub const MSG_MAIDO: i32 = 8;
 pub const MSG_TADA: i32 = 9;
@@ -245,6 +245,238 @@ pub extern "C" fn pc_haniwa_beru2_rebuild(displayed_price: u32, extra_data: u32)
     displayed_price != extra_data
 }
 
+// ---------------------------------------------------------------------------
+// Follow-ups resolved (claude, 2026-10-12)
+// Sources: ac-decomp m_shop.c (mSP_RandomHaniwaSelect), m_haniwa_ovl.c
+// (interrupt messages), m_tag_ovl.c (gyroid storage trade/buy),
+// m_all_grow_ovl.c (mAGrw_SetHaniwa, mAGrw_SpoilKabu,
+// mAGrw_SpoilAllPossession). IDs compiled from the real m_name_table.h with
+// mingw32 gcc. The PC port is unchanged for all of these except
+// ac_haniwa_move.c_inc (dt only).
+//
+// Corrections to the notes above:
+// - `HANIWA_NUM` above (3) is `mAGrw_HANIWA_NUM` (gyroids buried per
+//   renewal). The name-table `HANIWA_NUM` is 127 = `HANIWA_KIND_NUM`.
+// - HANIWA_START/END are verified: gcc gives 0x15B0 / 0x17AB.
+// - `mHW_MSG_MOU` (6) is not unused: `mTG_present_open_proc` sets
+//   `msg_interrupt_idx = 6` (literal) when the pockets are full.
+// - `mAGrw_SetDigItem` does not spoil anything. The sweep over the stored
+//   gyroid slots is `mAGrw_SpoilAllPossession`, run right after
+//   SetDigItem during field renewal.
+// ---------------------------------------------------------------------------
+
+/// Name-table `HANIWA_NUM`: distinct gyroid kinds (COMMON000..COMMON126).
+pub const HANIWA_KIND_NUM: i32 = 127;
+/// Last south-facing gyroid id (`HANIWA_START + FTR_NO_2_IDX(126)`).
+pub const HANIWA_LAST_SOUTH: i32 = 0x17A8;
+/// Interrupt-message duration in frames.
+pub const INTERRUPT_FRAMES: i32 = 120;
+
+/// `FTR_NO_2_IDX`: furniture items come in 4 rotations.
+pub const fn ftr_no_2_idx(f: i32) -> i32 {
+    f << 2
+}
+
+/// `mSP_RandomHaniwaSelect`: `count` south-facing gyroid ids with no
+/// duplicates; `random(n)` is `RANDOM(n)`. Duplicates are only accepted
+/// when `count > 127`, so the escape is dead for the 3-gyroid renewal.
+pub fn random_haniwa_select(count: usize, mut random: impl FnMut(i32) -> i32) -> Vec<i32> {
+    let mut list: Vec<i32> = Vec::with_capacity(count);
+    for _ in 0..count {
+        loop {
+            let haniwa = HANIWA_START + ftr_no_2_idx(random(HANIWA_KIND_NUM));
+            if !list.contains(&haniwa) || count > HANIWA_KIND_NUM as usize {
+                list.push(haniwa);
+                break;
+            }
+        }
+    }
+    list
+}
+
+/// Interrupt message state (`msg_interrupt_idx`, `msg_time`, table/sub).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InterruptMsg {
+    pub idx: i32,
+    pub time: i32,
+    pub table: i32,
+    pub sub: i32,
+}
+
+/// Tag cursor state seen by the interrupt logic. `tag_table`/`tag_col`
+/// describe `tags[sel_tag_idx]` and are only read when it is valid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TagCursor {
+    pub sel_tag_idx: i32,
+    pub ret_tag_idx: i32,
+    pub tag_table: i32,
+    pub tag_col: i32,
+}
+
+/// `mHW_make_message_interrupt`: returns the message to show this frame.
+/// It returns the *previous* index even on the frame it is cleared.
+/// DOREWO ("which one?") survives while no tag is open and is dropped
+/// once the selected tag points elsewhere; other messages are also
+/// dropped when the tag stack returns.
+pub fn interrupt_message_step(m: &mut InterruptMsg, t: &TagCursor) -> i32 {
+    let shown = m.idx;
+    if m.time - 1 < 0 {
+        m.idx = -1;
+    }
+    m.time -= 1;
+    let moved = t.tag_table != m.table || t.tag_col != m.sub;
+    if shown != MSG_DOREWO {
+        if t.sel_tag_idx == 0 {
+            if moved {
+                m.idx = -1;
+            }
+        } else if t.ret_tag_idx == t.sel_tag_idx {
+            m.idx = -1;
+        }
+    } else if t.sel_tag_idx != -1 && moved {
+        m.idx = -1;
+    }
+    shown
+}
+
+/// `mHW_haniwa_ovl_init`: `data0 == 1` opens with DOREWO for 120 frames.
+pub fn interrupt_on_open(data0: i32, haniwa_table: i32) -> InterruptMsg {
+    if data0 == 1 {
+        InterruptMsg { idx: MSG_DOREWO, time: INTERRUPT_FRAMES, table: haniwa_table, sub: 0 }
+    } else {
+        InterruptMsg { idx: -1, time: 0, table: 0, sub: 0 }
+    }
+}
+
+/// Bell-bag items in the order `mTG_present_open_proc` spends them.
+pub const MONEY_ITEMS: [(u16, u32); 4] = [(0x2103, 100), (0x2100, 1000), (0x2101, 10000), (0x2102, 30000)];
+
+/// `mTG_itemNo_to_amount`.
+pub fn money_item_amount(item: u16) -> u32 {
+    MONEY_ITEMS.iter().find(|m| m.0 == item).map_or(0, |m| m.1)
+}
+
+/// Result of buying a gyroid-stored item.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HaniwaBuy {
+    /// No empty normal pocket: message 6 (`mHW_MSG_MOU`).
+    PocketsFull,
+    /// Wallet + bell bags < price: `mHW_MSG_OKANE`.
+    NotEnough,
+    /// Bought (`mHW_MSG_MAIDO`): new wallet, pocket slots of the bags
+    /// spent, and the slot that receives the item.
+    Bought { wallet: u32, spent_slots: Vec<usize>, item_slot: usize },
+}
+
+/// `mTG_present_open_proc`. `pockets` = (item, condition is NORMAL).
+/// Bags are spent smallest denomination first, scanning the pockets for
+/// each denomination; any change goes back to the wallet. The item goes to
+/// the first empty slot found *before* the bags were spent.
+pub fn haniwa_buy(wallet: u32, pockets: &[(u16, bool)], price: u32) -> HaniwaBuy {
+    let Some(item_slot) = pockets.iter().position(|&(it, normal)| it == 0 && normal) else {
+        return HaniwaBuy::PocketsFull;
+    };
+    let total: i64 = wallet as i64
+        + pockets.iter().filter(|p| p.1).map(|p| money_item_amount(p.0) as i64).sum::<i64>();
+    if total - (price as i64) < 0 {
+        return HaniwaBuy::NotEnough;
+    }
+    let mut keep = wallet as i64 - price as i64;
+    let mut spent = Vec::new();
+    for &(name, amount) in MONEY_ITEMS.iter() {
+        if keep >= 0 {
+            break;
+        }
+        for (k, &(it, normal)) in pockets.iter().enumerate() {
+            if normal && it == name && !spent.contains(&k) {
+                keep += amount as i64;
+                spent.push(k);
+                if keep >= 0 {
+                    break;
+                }
+            }
+        }
+    }
+    HaniwaBuy::Bought { wallet: keep as u32, spent_slots: spent, item_slot }
+}
+
+/// Wallet roll-up animation after a paid trade: `None` = instant
+/// (|change| < 42), else the per-frame step over 42 frames, nudged toward
+/// zero when it is a multiple of 5 so the last digits visibly roll.
+pub fn money_roll_step(change: i32) -> Option<i32> {
+    if change.abs() < 42 {
+        return None;
+    }
+    let mut step = change / 42;
+    if step.abs() % 5 == 0 {
+        step += if step > 0 { -1 } else { 1 };
+    }
+    Some(step)
+}
+
+/// Turnip ids (`ITM_KABU_*`, gcc-evaluated).
+pub const ITM_KABU_START: u16 = 0x2F00;
+pub const ITM_KABU_END: u16 = 0x2F04;
+pub const ITM_KABU_SPOILED: u16 = 0x2F03;
+
+/// `mAGrw_SpoilKabu`: any ITEM1 item in category KABU (0x2Fxx) becomes
+/// spoiled, unconditionally when `grow_spoil` is None (possessions) or
+/// when the grow info says so. Returns whether the item was a turnip.
+pub fn spoil_kabu(item: &mut u16, grow_spoil: Option<bool>) -> bool {
+    let is_kabu = (*item >> 12) == 2 && ((*item & 0x0F00) >> 8) == 0xF;
+    if is_kabu && grow_spoil.unwrap_or(true) {
+        *item = ITM_KABU_SPOILED;
+    }
+    is_kabu
+}
+
+/// `mAGrw_CheckSpoilKabuTime`: days added to the purchase time to reach
+/// the next Sunday (Sunday itself adds 0); turnips spoil once the clock
+/// passes that point (at the purchase hour).
+pub fn days_until_spoil(weekday: u8) -> u8 {
+    if weekday != 0 && weekday < 7 {
+        7 - weekday
+    } else {
+        0
+    }
+}
+
+/// Places `mAGrw_SpoilAllPossession` touches when turnips spoil.
+pub const SPOIL_SCOPE: [&str; 4] = [
+    "every player's pockets (plus the foreigner's)",
+    "every room and layer of every house",
+    "the 4 gyroid storage slots of every house",
+    "not the island: mAGrw_SpoilKabuIsland is called from Kapp'n's boat",
+];
+
+/// `mAGrw_SetHaniwa` block choice for each gyroid: `candidates[b]` = number
+/// of free units in block b (0 = not usable). QUIRK: when only one block
+/// remains it is not consumed, so later gyroids can land in the same block.
+pub fn haniwa_blocks(candidates: &mut [u8], gyroids: usize, mut random: impl FnMut(i32) -> i32) -> Vec<usize> {
+    let mut usable = candidates.iter().filter(|&&c| c != 0).count() as i32;
+    let mut out = Vec::new();
+    for _ in 0..gyroids {
+        if usable == 0 {
+            break;
+        }
+        let mut selected = random(usable);
+        for (b, c) in candidates.iter_mut().enumerate() {
+            if *c != 0 {
+                if selected <= 0 {
+                    out.push(b);
+                    if usable > 1 {
+                        usable -= 1;
+                        *c = 0;
+                    }
+                    break;
+                }
+                selected -= 1;
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,5 +556,50 @@ mod tests {
         assert!(pc_haniwa_beru2_rebuild(100, 200));
         assert!(!pc_haniwa_beru2_rebuild(200, 200));
         assert_eq!(INTERRUPT_MSG_TIME, 120);
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn ids_and_select() {
+        assert_eq!(HANIWA_START + ftr_no_2_idx(126), HANIWA_LAST_SOUTH);
+        let mut seq = [5, 5, 9, 0].into_iter();
+        let l = random_haniwa_select(3, |_| seq.next().unwrap());
+        assert_eq!(l, vec![0x15B0 + 20, 0x15B0 + 36, 0x15B0]);
+    }
+
+    #[test]
+    fn interrupt_and_buy() {
+        let mut m = interrupt_on_open(1, 7);
+        let t = TagCursor { sel_tag_idx: -1, ret_tag_idx: -1, tag_table: 0, tag_col: 0 };
+        assert_eq!(interrupt_message_step(&mut m, &t), MSG_DOREWO);
+        assert_eq!(m.idx, MSG_DOREWO);
+        let moved = TagCursor { sel_tag_idx: 0, ret_tag_idx: -1, tag_table: 1, tag_col: 0 };
+        assert_eq!(interrupt_message_step(&mut m, &moved), MSG_DOREWO);
+        assert_eq!(m.idx, -1);
+        // 500 wallet + a 1000 bag + a 100 bag, price 1200: 100 bag first.
+        let pockets = [(0x2100u16, true), (0x2103, true), (0, true)];
+        assert_eq!(haniwa_buy(500, &pockets, 1200), HaniwaBuy::Bought { wallet: 400, spent_slots: vec![1, 0], item_slot: 2 });
+        assert_eq!(haniwa_buy(0, &pockets, 5000), HaniwaBuy::NotEnough);
+        assert_eq!(haniwa_buy(0, &[(1, true)], 0), HaniwaBuy::PocketsFull);
+        assert_eq!(money_roll_step(30), None);
+        assert_eq!(money_roll_step(420), Some(9));
+    }
+
+    #[test]
+    fn spoil_and_blocks() {
+        let mut k = 0x2F00;
+        assert!(spoil_kabu(&mut k, None));
+        assert_eq!(k, ITM_KABU_SPOILED);
+        let mut k2 = 0x2F01;
+        assert!(spoil_kabu(&mut k2, Some(false)));
+        assert_eq!(k2, 0x2F01);
+        assert_eq!(days_until_spoil(0), 0);
+        assert_eq!(days_until_spoil(3), 4);
+        let mut c = [0, 2, 0];
+        assert_eq!(haniwa_blocks(&mut c, 3, |_| 0), vec![1, 1, 1]);
     }
 }

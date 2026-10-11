@@ -556,7 +556,6 @@ pub extern "C" fn pc_notice_treasure_pick(rng: f32) -> c_int {
     }
 }
 
-#[cfg(test)]
 /// Bulletin-board batch-trigger, board-write, and save-check kernels
 /// (`m_notice.c`, `save_check_take.c_inc`).
 ///
@@ -698,6 +697,7 @@ pub extern "C" fn pc_notice_font_char_bad(c: u8) -> c_int {
     (c == NOTICE_FONT_CHAR_CONTROL_CODE || c == NOTICE_FONT_CHAR_MESSAGE_TAG) as c_int
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

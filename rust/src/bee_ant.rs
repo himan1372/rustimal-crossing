@@ -987,7 +987,6 @@ pub extern "C" fn pc_ant_substrate_ok(fg_item: u16) -> u8 {
     matches!(fg_item, item::FOOD_CANDY | item::KABU_SPOILED) as u8
 }
 
-#[cfg(test)]
 /// Bee/ant easing and lifecycle kernels (`m_lib.c`, `ac_bee.c`,
 /// `ac_ant.c`).
 ///
@@ -1393,6 +1392,7 @@ pub extern "C" fn pc_ant_calc_scale(scales: *mut f32, step: f32, target: f32) {
         assert_eq!(s[2], s[0]);
     }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

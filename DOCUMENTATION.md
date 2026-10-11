@@ -5877,6 +5877,67 @@ C ABI (all `pc_`-prefixed, 9 exports):
 yet, per the usual pattern. All 5 unit
 tests pass.
 
+## Follow-ups: gyroid, cockroach, balloon, town map, diary, mushroom, igloo, snowman (2026-10-12, claude)
+
+These resolve the eight follow-up items in `docs/need-to-port.md`. Each
+module gains a "Follow-ups resolved" section before its tests, plus a
+`followup_tests` module (written, not run). ac-decomp was the primary
+source and ACGC-PC-Port the secondary one. IDs were compiled from the
+real `m_name_table.h` with mingw32 gcc.
+
+Build fixes found along the way:
+- `lib.rs` had silently lost 32 `mod` lines. 31 went in `1abae7bd` and
+  `aprilfool` in `f2c6a5f9`, so those modules (game_math, calendar,
+  buildings, notice_overlay, choice, …) were not compiled at all. They
+  are re-registered. `letter_score_tables` is intentionally included
+  via `#[path]` from `letter_score.rs`.
+- Three files had a new section inserted between `#[cfg(test)]` and
+  `mod tests`. This made real items test-only: `bee_ant.rs`
+  `pc_calc_ease` (an exported C symbol), `famicom.rs` NES tag constants,
+  and `notice_overlay.rs` `NOTICE_HANDBILL_BASE`. The attribute now sits
+  directly on `mod tests`.
+
+Highlights (full detail in each module and in `docs/need-to-port.md`):
+- Gyroids:
+  - `HANIWA_START`/`END` verified (0x15B0/0x17AB).
+  - `mHW_MSG_MOU` is used (pockets full).
+  - The turnip spoil over the stored slots is `mAGrw_SpoilAllPossession`.
+  - Buy flow, money roll, and the last-block reuse quirk.
+- Cockroaches:
+  - The saved count grows at player-data load.
+  - Stomping permanently removes one.
+  - `aMR_CheckDannaKill` ignores FTR1 furniture.
+- Balloons:
+  - Stuck balloon if the unit lookup fails.
+  - One-sided shake.
+  - Present resolves on pickup (80% rare furniture, else biased fruit).
+- Town map:
+  - Exact house-pos lookup rules (asset still absent).
+  - Scan starts at (1,1).
+  - Retail vs PC cursor counters.
+- Diary:
+  - On the next-land load path, the original-design block overwrites
+    the diary buffer.
+  - The read→write panel overshoots to -101.4 for one frame.
+  - Layout rules are exact.
+- Mushrooms:
+  - The player-acre exclusion removes a whole row and column.
+  - The column refill is dead code.
+  - Clearing counts both time directions.
+- Igloo:
+  - PC frame and steam accumulators.
+  - The unused mochi table is recorded.
+  - Rumor row: event 2, told only in winter.
+- Snowman:
+  - Born-check packing.
+  - New balls appear from 06:00.
+  - Head-jump arc and dust.
+  - The FG probe's NULL deref is modelled.
+
+`cargo check` is clean (host + i686, lib and tests). `cargo clippy` has
+0 errors, and none of its warnings fall in the new sections. No
+`pc_*` symbols are duplicated. Tests are written but not run.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

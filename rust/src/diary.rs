@@ -419,6 +419,185 @@ pub extern "C" fn pc_di_confirm_branch(data1: c_int) -> c_int {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Follow-ups resolved (claude, 2026-10-12)
+// Sources: ac-decomp m_diary_ovl.c, m_card.c (diary load/repair),
+// m_flashrom.c (checksums). PC port: m_diary_ovl.c differs only in
+// formatting/dt (8 lines).
+// ---------------------------------------------------------------------------
+
+/// `mFRm_ReturnCheckSum`: wrapping sum of the big-endian u16 words; a
+/// block is valid when the sum (including its stored checksum) is 0. An
+/// odd byte size returns 0, i.e. "valid" (unreachable: sizes are 32-aligned).
+pub fn return_checksum(bytes: &[u8]) -> u16 {
+    if bytes.len() & 1 != 0 {
+        return 0;
+    }
+    bytes.as_chunks::<2>().0.iter().fold(0u16, |a, w| a.wrapping_add(u16::from_be_bytes(*w)))
+}
+
+/// `mFRm_GetFlatCheckSum`: the value to store so the block sums to 0.
+pub fn flat_checksum(bytes: &[u8], now_checksum: u16) -> u16 {
+    let c = return_checksum(bytes).wrapping_sub(now_checksum);
+    (!c).wrapping_add(1)
+}
+
+/// What ends up in `l_keepDiary` after the "next land" load path
+/// (`mCD_SaveStation_NextLand_load_others`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiaryLoad {
+    /// The card's diary block (checksum 0).
+    Diary,
+    /// Freshly initialised (all spaces).
+    Blank,
+    /// BUG: the original-design block was copied into `l_keepDiary`
+    /// (`@BUG - this should be &l_keepOriginal`). With a corrupt diary it
+    /// stays there and is later pushed to ARAM as the diary.
+    OriginalDesignBytes,
+}
+
+/// Diary repair outcome. The other load path (`mCD_load_set_others_common`)
+/// simply skips the ARAM copy when the checksum fails, leaving the
+/// initialised diary in place.
+pub fn diary_after_load(diary_ok: bool, original_ok: bool, bugfix: bool) -> DiaryLoad {
+    if diary_ok {
+        DiaryLoad::Diary
+    } else if original_ok && !bugfix {
+        DiaryLoad::OriginalDesignBytes
+    } else {
+        DiaryLoad::Blank
+    }
+}
+
+/// Fixed scroll speeds (units/frame): page jump / single line.
+pub const SCROLL_FAST: f32 = 16.0 / 3.0;
+pub const SCROLL_SLOW: f32 = 16.0 / 7.0;
+/// Speed caps of the distance-scaled chase: read 8, editing 2.
+pub const SCROLL_CAP_READ: f32 = 8.0;
+pub const SCROLL_CAP_WRITE: f32 = 2.0;
+
+/// Distance-scaled speed used by all three roll controls: double beyond
+/// 9 units (capped), halve below 7 (floored at 1).
+pub fn scaled_speed(speed: f32, d: f32, cap: f32) -> f32 {
+    if d > 9.0 {
+        (speed * 2.0).min(cap)
+    } else if d < 7.0 {
+        (speed * 0.5).max(1.0)
+    } else {
+        speed
+    }
+}
+
+/// Scroll target for line `col` (`(col - 2) * 16` with `col = 2 + line`).
+pub fn scroll_aim(line: i32) -> f32 {
+    line as f32 * 16.0
+}
+
+/// `mDI_Play_read_to_write_scroll` button-panel slide: `_28 = -0.6 n^2`
+/// while above -100, then clamped. QUIRK: n = 13 gives -101.4, so the
+/// panel overshoots for one frame before snapping to -100.
+pub fn panel_slide_step(cur: f32, n: &mut i32) -> f32 {
+    if cur > -100.0 {
+        let v = *n as f32 * -0.6 * *n as f32;
+        *n += 1;
+        v
+    } else {
+        -100.0
+    }
+}
+
+/// `mDI_Play_write` exit: scroll line = min(written lines, `_24`); the
+/// editor cursor row/column are copied to `_46`/`_48` (restored when the
+/// player chooses to keep writing, `_18 = _46`).
+pub fn write_exit_line(lines: i16, read_line: i16) -> i16 {
+    lines.min(read_line)
+}
+
+/// Body layout limits (`mDI_set_writing_body`).
+pub const BODY_WIDTH: i32 = 192;
+pub const BODY_LINES: usize = 31;
+pub const LINE_HEIGHT: f32 = 16.0;
+
+/// One laid-out line: byte range and whether it ended with a newline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BodyLine {
+    pub start: usize,
+    pub len: usize,
+}
+
+/// Layout of the diary body. `width_of` = `mFont_GetCodeWidth`.
+/// `editing` = PLAY + write mode, the only state that keeps trailing
+/// newlines in the drawn length. Returns the lines and whether the cursor
+/// goes to the start of the next line. That happens after a trailing
+/// newline or when the next glyph would not fit, but never on line 31
+/// (`i != 30`).
+///
+/// QUIRKS: for an empty entry the C reads `text[-1]` (unguarded) when
+/// deciding whether to trim a newline; this model treats it as "no
+/// newline". In read mode, text ending in a newline makes the C draw the
+/// final empty line with `line_len = -1` (0 - 1); the model skips it,
+/// which matches the visible result.
+pub fn layout_body(text: &[u8], newline: u8, editing: bool, width_of: impl Fn(u8) -> i32) -> (Vec<BodyLine>, bool) {
+    let mut lines = Vec::new();
+    let mut p = 0usize;
+    for i in 0..BODY_LINES {
+        let start = p;
+        let mut width = 0;
+        let mut len = 0usize;
+        let cmd = loop {
+            if p >= text.len() {
+                break 3;
+            }
+            if text[p] == newline {
+                p += 1;
+                len += 1;
+                break 1;
+            }
+            width += width_of(text[p]);
+            if width > BODY_WIDTH {
+                break 2;
+            }
+            p += 1;
+            len += 1;
+        };
+        if cmd == 3 {
+            let prev_nl = p > 0 && text[p - 1] == newline;
+            let next_w = text.get(p).map_or(0, |&c| width_of(c));
+            let wrap = i != BODY_LINES - 1 && ((p != start && prev_nl) || width + next_w > BODY_WIDTH);
+            if !editing && prev_nl && len > 0 {
+                len -= 1;
+            }
+            if len != 0 {
+                lines.push(BodyLine { start, len });
+            }
+            return (lines, wrap);
+        }
+        if cmd == 1 && !editing {
+            len -= 1;
+        }
+        if len != 0 {
+            lines.push(BodyLine { start, len });
+        }
+    }
+    (lines, false)
+}
+
+/// `month_tex_table` (`dia_win_<month>_tex_rgb_ia8`, IA8 16x64).
+pub const MONTH_TEX: [&str; 12] = [
+    "dia_win_january_tex_rgb_ia8",
+    "dia_win_february_tex_rgb_ia8",
+    "dia_win_march_tex_rgb_ia8",
+    "dia_win_april_tex_rgb_ia8",
+    "dia_win_may_tex_rgb_ia8",
+    "dia_win_june_tex_rgb_ia8",
+    "dia_win_july_tex_rgb_ia8",
+    "dia_win_august_tex_rgb_ia8",
+    "dia_win_september_tex_rgb_ia8",
+    "dia_win_october_tex_rgb_ia8",
+    "dia_win_november_tex_rgb_ia8",
+    "dia_win_december_tex_rgb_ia8",
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,5 +783,43 @@ mod tests {
     fn confirm_branch() {
         assert_eq!(pc_di_confirm_branch(0), DIARY_CONFIRM_WRITE);
         assert_eq!(pc_di_confirm_branch(1), DIARY_CONFIRM_REEDIT);
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn checksums_and_load() {
+        let mut data = vec![0x12u8, 0x34, 0xAB, 0xCD, 0, 0];
+        let c = flat_checksum(&data, 0);
+        data[4..6].copy_from_slice(&c.to_be_bytes());
+        assert_eq!(return_checksum(&data), 0);
+        assert_eq!(diary_after_load(false, true, false), DiaryLoad::OriginalDesignBytes);
+        assert_eq!(diary_after_load(false, true, true), DiaryLoad::Blank);
+        assert_eq!(diary_after_load(true, false, false), DiaryLoad::Diary);
+    }
+
+    #[test]
+    fn scroll_and_layout() {
+        assert_eq!(scaled_speed(5.0, 20.0, SCROLL_CAP_READ), 8.0);
+        assert_eq!(scaled_speed(1.5, 3.0, SCROLL_CAP_WRITE), 1.0);
+        let (mut cur, mut n) = (0.0f32, 0);
+        let mut frames = Vec::new();
+        for _ in 0..16 {
+            cur = panel_slide_step(cur, &mut n);
+            frames.push(cur);
+        }
+        assert!((frames[13] + 101.4).abs() < 1e-3);
+        assert_eq!(frames[14], -100.0);
+        let w = |_| 12;
+        let (lines, wrap) = layout_body(b"ab\ncd\n", b'\n', false, w);
+        assert_eq!(lines, vec![BodyLine { start: 0, len: 2 }, BodyLine { start: 3, len: 2 }]);
+        assert!(!wrap); // already on the new line
+        let long = [b'x'; 20];
+        let (lines, _) = layout_body(&long, b'\n', true, w);
+        assert_eq!(lines[0].len, 16);
+        assert_eq!(MONTH_TEX.len(), 12);
     }
 }

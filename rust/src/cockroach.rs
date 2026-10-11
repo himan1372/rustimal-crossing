@@ -256,6 +256,121 @@ pub extern "C" fn pc_goki_wait_timer(rng: f32) -> f32 {
     5.0 + rng * 5.0
 }
 
+// ---------------------------------------------------------------------------
+// Follow-ups resolved (claude, 2026-10-12)
+// Sources: ac-decomp m_cockroach.c, ac_my_room_goki.c_inc,
+// ac_my_room.c (aMR_SetClip / aMR_CheckDannaKill), ac_house_goki.c,
+// m_start_data_init.c, m_card.c / m_shop.c (mCkRh_SavePlayTime callers).
+// m_cockroach.c and the room code are identical on PC; ac_house_goki.c
+// only gains dt scaling.
+//
+// Call chain:
+// 1. Player data load (`m_start_data_init.c`, both the normal path and
+//    the "loaded while travelling" path) calls
+//    `mCkRh_DecideNowGokiFamilyCount(player_no)`. This is not on house
+//    entry: the saved house count grows once per load.
+// 2. Room entry: `aMR_GokiInfoCt` (first my_room move) resets the visible
+//    count and spawns min(saved, 3) actors. Each spawn moves one roach
+//    from "saved" to "visible" (`MinusGokiN` + `CalcCanLookGokiCount(1)`).
+//    The first one appears next to the player in the player's own rooms
+//    and triggers the one-time scare.
+// 3. Stomping (`aHG_dead_init`) only does `CalcCanLookGokiCount(-1)`.
+// 4. Leaving (`aMR_GokiInfoDt`) adds the still-visible ones back
+//    (`PlussGokiN_NowRoom(visible)`).
+//    So yes: a stomped cockroach is gone for good, and the saved count
+//    drops by one.
+// 5. The play time is only saved by `mCkRh_SavePlayTime` (card saves,
+//    shop renewal). Loading twice without saving re-applies the growth.
+// ---------------------------------------------------------------------------
+
+/// Saved + visible cockroach bookkeeping for one room visit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GokiVisit {
+    /// `homes[].goki.num` (or the cottage's).
+    pub saved: i32,
+    /// `Common can_look_goki_count`.
+    pub visible: i32,
+}
+
+impl GokiVisit {
+    /// `mCkRh_CalcCanLookGokiCount`: clamps to 0..=3; false when clamped.
+    pub fn calc_visible(&mut self, delta: i32) -> bool {
+        let c = self.visible + delta;
+        if c < 0 {
+            self.visible = 0;
+            false
+        } else if c > CAN_LOOK_NUM {
+            self.visible = CAN_LOOK_NUM;
+            false
+        } else {
+            self.visible = c;
+            true
+        }
+    }
+
+    /// `aMR_GokiInfoCt`: number of spawns attempted on entry
+    /// (`spawned_ok` = whether each attempt actually made an actor).
+    pub fn enter_room(&mut self, mut spawned_ok: impl FnMut(usize) -> bool) {
+        self.visible = 0;
+        let max = self.saved.min(3);
+        for i in 0..max as usize {
+            if spawned_ok(i) {
+                self.calc_visible(1);
+                self.saved = (self.saved - 1).clamp(0, MAX_NUM);
+            }
+        }
+    }
+
+    /// `aHG_dead_init`.
+    pub fn stomp(&mut self) {
+        self.calc_visible(-1);
+    }
+
+    /// `aMR_GokiInfoDt`.
+    pub fn leave_room(&mut self) {
+        self.saved = (self.saved + self.visible).clamp(0, MAX_NUM);
+    }
+}
+
+/// `mCkRh_DecideNowGokiFamilyCount` growth for one house. QUIRK: once a
+/// house has any roach, the whole day gap is added, not `gap - 6`.
+pub fn decide_count(saved: i32, day_gap: i32) -> i32 {
+    if day_gap > INTERVAL_DAYS {
+        let add = if saved > 0 { day_gap } else { day_gap - INTERVAL_DAYS };
+        (saved + add).clamp(0, MAX_NUM)
+    } else {
+        saved
+    }
+}
+
+/// Island cottage: the Australian build skips the update when the saved
+/// year is 0; US/JP compute a gap from year 0, which fills the cottage
+/// to the maximum.
+pub fn cottage_update_applies(aus: bool, saved_year: u16) -> bool {
+    !(aus && saved_year == 0)
+}
+
+pub const FTR0_START: u16 = 0x1000;
+pub const ITEM1_NO_START: u16 = 0x2000;
+pub const RSV_FE1F: u16 = 0xFE1F;
+
+/// `aMR_CheckDannaKill` id gate: a roach dies when it is inside a solid
+/// furniture's edge collision. BUG: only FTR0 ids are tested (inclusive of
+/// 0x2000), so FTR1 furniture (0x3000+) never kills.
+pub fn danna_kill_candidate(fg: u16) -> bool {
+    (FTR0_START..=ITEM1_NO_START).contains(&fg) || fg == RSV_FE1F
+}
+
+/// `aHG_check_dead`: killed by furniture, a BG flag, or the moving
+/// player within 9 units while it is on its home height.
+pub fn goki_dead(furniture_kill: bool, bg_flag: bool, player_moving: bool, dist_xz: f32, on_home_y: bool) -> bool {
+    furniture_kill || bg_flag || (player_moving && dist_xz < STOMP_DIST && on_home_y)
+}
+
+/// The clip hook is registered by `aMR_SetClip` as
+/// `my_room->clip.check_danna_kill_proc = &aMR_CheckDannaKill`.
+pub const DANNA_KILL_REGISTRATION: &str = "aMR_SetClip -> clip.check_danna_kill_proc";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,5 +452,25 @@ mod tests {
         assert!(!pc_goki_death_visible(39.0)); // 39 & 2 == 2
         assert_eq!(pc_goki_away_timer(0.5), 30.0);
         assert_eq!(pc_goki_wait_timer(0.5), 7.5);
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn visit_cycle() {
+        let mut v = GokiVisit { saved: 5, visible: 0 };
+        v.enter_room(|_| true);
+        assert_eq!((v.saved, v.visible), (2, 3));
+        v.stomp();
+        v.leave_room();
+        assert_eq!(v.saved, 4);
+        assert_eq!(decide_count(0, 7), 1);
+        assert_eq!(decide_count(1, 7), 8);
+        assert_eq!(decide_count(9, 20), 10);
+        assert!(danna_kill_candidate(0x1000) && danna_kill_candidate(0x2000) && !danna_kill_candidate(0x3000));
+        assert!(!cottage_update_applies(true, 0) && cottage_update_applies(false, 0));
     }
 }

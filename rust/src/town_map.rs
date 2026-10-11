@@ -487,6 +487,152 @@ pub extern "C" fn pc_map_land_color(data0: c_int, out: *mut u8) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Follow-ups resolved (claude, 2026-10-12)
+// Source: ac-decomp m_map_ovl.c; PC port diff = cursor_frame only.
+// `mMP_house_pos_list` contents are still a binary asset absent from the
+// decomp. The lookup rules below (terminator, 3 entries, defaults) are
+// exact; the table data must be injected.
+// ---------------------------------------------------------------------------
+
+pub const BLOCKX_MAX: usize = 6;
+pub const BLOCKZ_MAX: usize = 7;
+pub const CURSOR_FRAMES: i32 = 18;
+pub const BLOCK_SIZE_F: f32 = 22.0;
+/// `fgblock_name` that terminates `mMP_house_pos_list`.
+pub const HOUSE_POS_TERMINATOR: u16 = 0x03B8;
+
+/// One `mMP_HousePos_c` row: FG block name + three (ut_x, ut_z, idx).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HousePosRow {
+    pub fgblock_name: u16,
+    pub entries: [(u8, u8, u8); 3],
+}
+
+/// House label slot for a villager house (`mMP_set_house_data`):
+/// match the block, then the entry whose (ut_x, ut_z) equals the house
+/// door unit with `ut_z - 1`; default `entries[0]`. QUIRK: a block missing
+/// from the list falls back to the *first row's* `entries[0]`.
+pub fn house_pos_idx(list: &[HousePosRow], fgblock: u16, home_ut_x: u8, home_ut_z: u8) -> u8 {
+    let first = list.first().map_or(0, |r| r.entries[0].2);
+    for row in list.iter().take_while(|r| r.fgblock_name != HOUSE_POS_TERMINATOR) {
+        if row.fgblock_name == fgblock {
+            return row
+                .entries
+                .iter()
+                .find(|e| e.0 == home_ut_x && e.1 as i32 == home_ut_z as i32 - 1)
+                .map_or(row.entries[0].2, |e| e.2);
+        }
+    }
+    first
+}
+
+/// Retail cursor animation counter (`++`, wrap with `%=`).
+pub fn cursor_frame_retail(frame: i32) -> i32 {
+    let f = frame + 1;
+    if f >= CURSOR_FRAMES {
+        f % CURSOR_FRAMES
+    } else {
+        f.max(0)
+    }
+}
+
+/// PC cursor counter: f32 += dt, wrap by subtraction; draw uses `(int)`.
+pub fn cursor_frame_pc(frame: f32, dt: f32) -> f32 {
+    let f = frame + dt;
+    if f >= CURSOR_FRAMES as f32 {
+        f - CURSOR_FRAMES as f32
+    } else {
+        f.max(0.0)
+    }
+}
+
+/// `mMP_make_max_no_table`: scans interior acres bz 1..7, bx 1..6 (the
+/// first is block (1,1), not (0,1) as the decomp comment suggests),
+/// keeps only kinds passing `mMP_check_bg_kind`, and substitutes the bridge
+/// variant on the bridge acre. Returns up to `count` texture kinds.
+pub fn make_max_no_table(
+    count: usize,
+    block_type: impl Fn(usize, usize) -> u8,
+    is_map_kind: impl Fn(u8) -> bool,
+    bridge_variant: impl Fn(usize, usize, u8) -> Option<u8>,
+    flat: u8,
+) -> Vec<u8> {
+    let mut out = vec![flat; count];
+    let mut j = 0;
+    for bz in 1..BLOCKZ_MAX {
+        for bx in 1..BLOCKX_MAX {
+            let t = block_type(bx, bz);
+            if is_map_kind(t) {
+                out[j] = bridge_variant(bx, bz, t).unwrap_or(t);
+                j += 1;
+            }
+            if j >= count {
+                return out;
+            }
+        }
+    }
+    out
+}
+
+/// `mMP_check_layer`: layer 0/1/2 (from `mCoBG_Height2GetLayer`) -> label
+/// layer 2/1/0, one lower in non-step-3 towns, floored at 0.
+pub fn map_layer(height_layer: i32, step3: bool) -> i32 {
+    let l = match height_layer {
+        0 => 2,
+        2 => 0,
+        _ => 1,
+    };
+    (if step3 { l } else { l - 1 }).max(0)
+}
+
+/// Player label slots: residents in save order, skipping the player who is
+/// still in the first-day intro; the rest read "free" (sex -1).
+pub fn player_label_slots(exists: [bool; 4], is_current: [bool; 4], first_intro: bool) -> [Option<usize>; 4] {
+    let mut out = [None; 4];
+    let mut n = 0;
+    for i in 0..4 {
+        if exists[i] && (!is_current[i] || !first_intro) {
+            out[n] = Some(i);
+            n += 1;
+        }
+    }
+    out
+}
+
+/// Villager sort inside a block: bubble sort by layer that restarts from
+/// the start after every swap (`j = -1`). Stable; lower layers first.
+pub fn sort_by_layer(layers: &mut [i32]) {
+    let mut j = 0;
+    while j + 1 < layers.len() {
+        if layers[j] > layers[j + 1] {
+            layers.swap(j, j + 1);
+            j = 0;
+        } else {
+            j += 1;
+        }
+    }
+}
+
+/// `mMP_move_Wait` cursor easing: `add_calc(0.7, 19.0, 1.8)` on both
+/// axes; settles when both remainders are below 0.1.
+pub fn cursor_ease(cur: &mut (f32, f32), target: (f32, f32)) -> bool {
+    let rx = crate::game_math::add_calc(&mut cur.0, target.0, 0.7, 19.0, 1.8);
+    let rz = crate::game_math::add_calc(&mut cur.1, target.1, 0.7, 19.0, 1.8);
+    rx.abs() < 0.1 && rz.abs() < 0.1
+}
+
+/// Where the "you are here" acre comes from (`mMP_set_init_data`):
+/// indoors with a pending door the exit-door position, else the player.
+pub fn init_from_exit_door(field_is_fg: bool, next_scene_id: i32) -> bool {
+    !field_is_fg && next_scene_id != 0
+}
+
+/// Field label precedence in `mMP_set_field_data` (only for blocks with no
+/// resident labels).
+pub const FIELD_LABEL_ORDER: [&str; 9] =
+    ["shop", "police", "post office", "shrine", "station", "dump", "museum", "tailor", "dock"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -649,5 +795,32 @@ mod tests {
         assert_eq!(out, [255, 0, 255, 255]);
         pc_map_land_color(1, out.as_mut_ptr());
         assert_eq!(out, [60, 60, 255, 255]);
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn map_followups() {
+        let list = [
+            HousePosRow { fgblock_name: 0x100, entries: [(1, 1, 7), (5, 5, 8), (9, 9, 9)] },
+            HousePosRow { fgblock_name: 0x200, entries: [(2, 2, 3), (4, 4, 4), (6, 6, 5)] },
+            HousePosRow { fgblock_name: HOUSE_POS_TERMINATOR, entries: [(0, 0, 0); 3] },
+        ];
+        assert_eq!(house_pos_idx(&list, 0x200, 4, 5), 4);
+        assert_eq!(house_pos_idx(&list, 0x200, 4, 4), 3);
+        assert_eq!(house_pos_idx(&list, 0x999, 0, 0), 7);
+        assert_eq!(cursor_frame_retail(17), 0);
+        assert_eq!(cursor_frame_pc(17.5, 1.0), 0.5);
+        let t = make_max_no_table(30, |bx, bz| (bz * 10 + bx) as u8, |_| true, |_, _, _| None, 0);
+        assert_eq!((t[0], t[29]), (11, 65));
+        assert_eq!(map_layer(0, false), 1);
+        let mut l = [2, 0, 1, 0];
+        sort_by_layer(&mut l);
+        assert_eq!(l, [0, 0, 1, 2]);
+        assert_eq!(player_label_slots([true, false, true, true], [true, false, false, false], true), [Some(2), Some(3), None, None]);
+        assert!(init_from_exit_door(false, 5) && !init_from_exit_door(true, 5));
     }
 }

@@ -319,6 +319,107 @@ pub extern "C" fn pc_balloon_move_timer_ok(timer: f32) -> bool {
     timer <= 0.0
 }
 
+// ---------------------------------------------------------------------------
+// Follow-ups resolved (claude, 2026-10-12)
+// Sources: ac-decomp ac_fuusen.c, m_fuusen.c, m_private.c
+// (mPr_DummyPresentToTruePresent), m_field_info.c (mFI_GetOtherFruit),
+// m_hand_ovl.c. PC port: ac_fuusen.c only (timers become f32 * dt; the
+// present-draw test becomes `<=` because of float timers).
+// ---------------------------------------------------------------------------
+
+/// Caught in a tree (`aFSN_wood_stop_init`): it hangs for 18000 frames
+/// (5 minutes) before escaping.
+pub const ESCAPE_TIMER_WOOD_STOP: f32 = 18000.0 + ESCAPE_TIMER;
+/// Map-edge escape box (world units) and the station-acre box.
+pub const ESCAPE_EDGE: (f32, f32, f32, f32) = (660.0, 3820.0, 660.0, 4460.0);
+pub const ESCAPE_STATION: (f32, f32, f32, f32) = (2040.0, 2440.0, 800.0, 960.0);
+
+/// `aFSN_moving` escape test (only once `escape_timer` has run out).
+pub fn should_escape(x: f32, z: f32) -> bool {
+    let (x0, x1, z0, z1) = ESCAPE_EDGE;
+    let (sx0, sx1, sz0, sz1) = ESCAPE_STATION;
+    x <= x0 || x >= x1 || z <= z0 || z >= z1 || ((sx0..=sx1).contains(&x) && (sz0..=sz1).contains(&z))
+}
+
+/// Outcome of one `aFSN_escape` frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentDrop {
+    /// `fruit_set_proc(ITM_PRESENT, ...)` was called; `count = 1`.
+    Dropped,
+    /// Nothing happened this frame; the drop is retried next frame.
+    Retry,
+    /// Already dropped.
+    Done,
+}
+
+/// `aFSN_escape` present drop. QUIRK: the guard tests
+/// `item_tree_fruit_drop_proc != NULL` but then calls `fruit_set_proc`
+/// (a NULL `fruit_set_proc` behind a valid drop proc would crash).
+/// If the unit lookup fails, `count` stays 0. The present is then never
+/// dropped, and since deletion needs `count == 1`, the balloon is never
+/// deleted while it rises.
+pub fn present_drop(count: i32, drop_proc_present: bool, unit_ok: bool) -> PresentDrop {
+    if count != 0 {
+        PresentDrop::Done
+    } else if drop_proc_present && unit_ok {
+        PresentDrop::Dropped
+    } else {
+        PresentDrop::Retry
+    }
+}
+
+/// Balloon deletion check in `aFSN_escape`.
+pub fn escape_delete(count: i32, y: f32, ground_y: f32) -> bool {
+    count == 1 && y > ground_y + 500.0
+}
+
+/// `aFSN_wood_stop` little shake: rotation.z for this frame. The `-500`
+/// branch is immediately overwritten with 0 ("set again???"), so the shake
+/// is one-sided: 4 frames at +500, 4 frames upright.
+pub fn little_shake_rotation_z(count: i32) -> i16 {
+    if count & 4 == 0 {
+        500
+    } else {
+        0
+    }
+}
+
+/// `aFSN_actor_draw` present visibility. Retail compares the integer timer
+/// with `==`, the PC port with `<=` on its float timer.
+pub fn draw_present(escaping: bool, escape_timer: f32, count: i32, pc: bool) -> bool {
+    let timer_hit = if pc { escape_timer <= ESCAPE_TIMER } else { escape_timer == ESCAPE_TIMER };
+    !escaping || timer_hit || count == 0
+}
+
+pub const ITM_FOOD_START: u16 = 0x2800;
+pub const ITM_FOOD_ORANGE: u16 = 0x2804;
+
+/// `mFI_GetOtherFruit` with `roll = RANDOM(4)`. Retail: a roll equal to
+/// the town fruit becomes the next fruit, so that fruit gets 50% and
+/// oranges only appear in peach towns. `bugfix` = the decomp's BUGFIXES
+/// branch (`>=`), 25% each.
+pub fn other_fruit(roll: u16, town_fruit: u16, bugfix: bool) -> u16 {
+    let mut f = ITM_FOOD_START | (roll & 3);
+    if (bugfix && f >= town_fruit) || (!bugfix && f == town_fruit) {
+        f += 1;
+    }
+    f
+}
+
+/// `mPr_DummyPresentToTruePresent`, run when the present goes into the
+/// pockets (not when it is opened). `roll5 = RANDOM(5)`: 1-4 (80%) picks
+/// from the town's rare furniture list (`mSP_SelectRandomItem_New` RARE);
+/// 0, or an empty rare pick, falls back to a non-native fruit.
+pub fn true_present(roll5: i32, rare_pick: Option<u16>, fruit_roll: u16, town_fruit: u16) -> u16 {
+    let rare = if roll5 != 0 { rare_pick } else { None };
+    rare.unwrap_or_else(|| other_fruit(fruit_roll, town_fruit, false))
+}
+
+/// PC `fuwafuwa_cycle` step (retail +250 per frame).
+pub fn fuwafuwa_step(cycle: i16, dt: f32) -> i16 {
+    cycle.wrapping_add((250.0 * dt) as i16)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,5 +507,31 @@ mod tests {
         assert!(!pc_present_reward_branch(3, false));
         assert!(pc_player_balloon_hide_ok(500.0, 100.0));
         assert!(!pc_player_balloon_hide_ok(300.0, 100.0));
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn balloon_followups() {
+        assert_eq!(present_drop(0, true, false), PresentDrop::Retry);
+        assert_eq!(present_drop(0, true, true), PresentDrop::Dropped);
+        assert!(!escape_delete(0, 9999.0, 0.0));
+        assert_eq!(little_shake_rotation_z(0), 500);
+        assert_eq!(little_shake_rotation_z(4), 0);
+        assert!(draw_present(true, 1554.0, 1, false));
+        assert!(!draw_present(true, 1553.0, 1, false));
+        assert!(draw_present(true, 1553.0, 1, true));
+        // Apple town (0x2800): a roll of 0 becomes cherry; orange unreachable.
+        assert_eq!(other_fruit(0, 0x2800, false), 0x2801);
+        assert!((0..4).all(|r| other_fruit(r, 0x2800, false) != ITM_FOOD_ORANGE));
+        assert_eq!(other_fruit(3, 0x2803, false), ITM_FOOD_ORANGE);
+        assert_eq!(other_fruit(3, 0x2800, true), ITM_FOOD_ORANGE);
+        assert_eq!(true_present(0, Some(0x1234), 1, 0x2800), 0x2801);
+        assert_eq!(true_present(2, None, 1, 0x2800), 0x2801);
+        assert_eq!(true_present(2, Some(0x1234), 1, 0x2800), 0x1234);
+        assert!(should_escape(2200.0, 900.0) && !should_escape(2000.0, 2000.0));
     }
 }

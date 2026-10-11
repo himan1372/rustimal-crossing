@@ -509,7 +509,6 @@ pub extern "C" fn pc_fbdemo_wipe1_step(
     done
 }
 
-#[cfg(test)]
 /// nesinfo tag-stream parser kernels (`famicom_nesinfo.cpp`).
 ///
 /// The stream is a compact binary command stream: each tag is a 3-byte
@@ -733,6 +732,7 @@ pub const FFC_DISKSYSTEM_IDX: u8 = 19;
         assert_eq!(FFC_AGB_TABLE[19], 0xFF);
     }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

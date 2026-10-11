@@ -339,6 +339,103 @@ pub extern "C" fn pc_mushroom_share_random_step(
     assigned
 }
 
+// ---------------------------------------------------------------------------
+// Follow-ups resolved (claude, 2026-10-12)
+// Source: ac-decomp m_mushroom.c (identical on the PC port). Tree ids
+// compiled from m_name_table.h with mingw32 gcc.
+// ---------------------------------------------------------------------------
+
+/// `mMsr_Set15Minites`: floor the minute to a quarter hour.
+pub fn floor_quarter(min: u8) -> u8 {
+    [45u8, 30, 15, 0].into_iter().find(|&q| min >= q).unwrap_or(0)
+}
+
+/// `mMsr_GetFirstClearMushroomNum` on absolute minute stamps: the number
+/// of quarter-hour steps between the two times, in EITHER direction.
+/// A clock set backwards (a "future" saved stamp) also clears mushrooms.
+/// (`lbRTC_IntervalTime` returns minutes here.)
+pub fn first_clear_num(rtc_minutes: i64, mush_minutes: i64) -> u32 {
+    let q = |m: i64| m - m.rem_euclid(60) + floor_quarter(m.rem_euclid(60) as u8) as i64;
+    ((q(rtc_minutes) - q(mush_minutes)).abs() / 15) as u32
+}
+
+/// `mMsr_GetMushroomNum`: 5 - min/15 during 08:xx (5,4,3,2), 1 from
+/// 09:00 to 09:14, else 0; only on a new day or when forced `active`.
+pub fn mushrooms_to_place(hour: u8, min: u8, active: bool, same_day: bool) -> i32 {
+    if !(active || !same_day) {
+        return 0;
+    }
+    match hour {
+        8 => 5 - (min / 15) as i32,
+        9 if min < 15 => 1,
+        _ => 0,
+    }
+}
+
+/// `mMsr_SetMushroomNum` acre filter. BUG: `bx != pbx-1 && bz != pbz-1`
+/// excludes the player's whole column AND row (a cross of acres), not
+/// just the acre the player stands in. `player_bx/bz` are 1-based block
+/// numbers (border included).
+pub fn acre_is_candidate(bx: i32, bz: i32, player_bx: i32, player_bz: i32) -> bool {
+    bx != player_bx - 1 && bz != player_bz - 1
+}
+
+/// Offsets around a tree (`area_table`): left, right, below-left,
+/// below, below-right.
+pub const AROUND_TREE: [i32; 5] = [-1, 1, 15, 16, 17];
+
+/// Unit index a spot offset lands on. QUIRK: trees in column 0 are
+/// accepted (`ut_x < 15` is the only bound), so the -1 and +15 offsets
+/// wrap to column 15 of the row above / same row.
+pub fn spot_unit(ut_x: i32, ut_z: i32, offset: i32) -> (i32, i32) {
+    let i = ut_z * 16 + ut_x + offset;
+    (i.rem_euclid(16), i.div_euclid(16))
+}
+
+/// Trees a mushroom can grow under (gcc ids): plain/cedar/golden trees,
+/// fruit-bearing trees and money trees.
+pub const MUSHROOM_TREES: [u16; 14] = [
+    0x0804, 0x080C, 0x0814, 0x081C, 0x0824, 0x082C, 0x0831, 0x0836, 0x083B, 0x0853, 0x085B, 0x0861, 0x0868, 0x0867,
+];
+
+/// `mMsr_CheckAroundTree` without the neighbour test: tree kind + the
+/// `ut_x < 15 && ut_z < 15` bound.
+pub fn tree_can_host(item: u16, ut_x: u8, ut_z: u8) -> bool {
+    ut_x < 15 && ut_z < 15 && MUSHROOM_TREES.contains(&item)
+}
+
+/// One `mMsr_SetMushroomNum` pick: the `selected`-th set bit of
+/// `col_bits`. QUIRK: neither `possible_cols` nor the bitfield is updated
+/// after a pick, so the "refill when possible_cols hits 0" branch is dead
+/// and the same column can be picked again. Rows are then chosen
+/// uniformly among rows with candidates (`mMsr_SetLineMushroom`), not
+/// weighted by tree count; stale per-acre counts can make a pick place
+/// nothing.
+pub fn pick_column(col_bits: u8, selected: i32) -> Option<usize> {
+    let mut s = selected;
+    for bx in 0..5 {
+        if (col_bits >> bx) & 1 == 1 {
+            if s <= 0 {
+                return Some(bx);
+            }
+            s -= 1;
+        }
+    }
+    None
+}
+
+/// `mMsr_SetBlockMashroom` "bruh" break: setting `ut_z = UT_Z_NUM` and
+/// breaking ends both loops after the selected tree (no further scan).
+pub fn select_tree(candidates: &[(u8, u8)], selected: i32) -> Option<(u8, u8)> {
+    candidates.get(selected.max(0) as usize).copied()
+}
+
+/// Startup cleanup (`mMsr_FirstClearMushroom`): passes player acre (0, 0)
+/// to `mMsr_ClearMushrooms`, which is outside the 1-based range, so no
+/// acre is spared. It also never checks that mushroom season is active;
+/// it only clears and stamps the time (and sets `active` on a new day).
+pub const FIRST_CLEAR_PLAYER_ACRE: (i32, i32) = (0, 0);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -467,5 +564,27 @@ mod tests {
             1
         );
         assert_eq!(&share[..3], &[2, 2, 1]);
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn mushroom_followups() {
+        assert_eq!(floor_quarter(44), 30);
+        assert_eq!(first_clear_num(8 * 60 + 50, 8 * 60), 3);
+        assert_eq!(first_clear_num(8 * 60, 8 * 60 + 50), 3);
+        assert_eq!(mushrooms_to_place(8, 0, false, false), 5);
+        assert_eq!(mushrooms_to_place(8, 59, false, false), 2);
+        assert_eq!(mushrooms_to_place(9, 10, true, true), 1);
+        assert_eq!(mushrooms_to_place(9, 10, false, true), 0);
+        // Player in block (3,3) -> fg (2,2): the whole row and column are skipped.
+        assert!(!acre_is_candidate(2, 0, 3, 3) && !acre_is_candidate(0, 2, 3, 3) && acre_is_candidate(0, 0, 3, 3));
+        assert_eq!(spot_unit(0, 4, -1), (15, 3));
+        assert_eq!(spot_unit(0, 4, 15), (15, 4));
+        assert!(tree_can_host(0x0804, 0, 0) && !tree_can_host(0x0804, 15, 0));
+        assert_eq!(pick_column(0b10110, 1), Some(2));
     }
 }
