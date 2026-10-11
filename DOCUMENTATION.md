@@ -2263,6 +2263,46 @@ uniqueness retry), the insect-spawn spirit override, `aEGH_not_collect_get`
 reward selection (22 collection lists + RNG), weed-clear/roof-paint
 side effects, and the handover choreography.
 
+### Runtime Port Progress: Blanca the Faceless Cat (ac_npc_mask_cat.c)
+
+New `rust/src/blanca.rs`, registered as `mod blanca` in `rust/src/lib.rs`.
+Decomp-verified against `m_event.c`, `ac_event_manager.c`,
+`ac_npc_mask_cat_move.c_inc`, `m_scene.c`, `m_name_table.h`, `m_npc.h`,
+`m_private.h`, `m_mask_cat.h` (GAFE01_00 Rev 0 USA). All 10 brief claims
+checked verbatim before porting; no corrections needed. The `// Blanca`
+source comment in `m_npc.c` proves the English name directly.
+
+Two special-NPC ids, one mask-cat actor family: `SP_NPC_MASK_CAT`
+(0xD075) is the regular event visitor; `SP_NPC_MASK_CAT2` (0xD076) is
+the travel-scene slot (Blanca or Rover). They use different registration
+paths and must not be collapsed.
+
+Ported (pure kernels; scheduler, mask registry, actor lifecycle, talk
+state machine, travel selection, RNG, and save mutations stay in C):
+
+- Talk message ids: first talk `talk_idx * 4 + 0x31E4` (pre-increment
+  idx, verbatim); repeat `0x31E5 + 4 * (talk_idx - 1) + RANDOM(3)`
+  with `talk_idx <= 0` clamped to 1 (roll stays in C, passed in).
+- Birthday-branch weekday set: Sun/Mon/Wed/Fri rejected
+  (`mMC_check_birth_day` minus the save read).
+- Cloth item: `ITM_CLOTH_START` (0x2400) `+ cloth_no`
+  (`regist_mask_maskcat`); travel-scene guard writes `cloth_no` back
+  only when the selected cloth is in `[0x2400, 0x24FF)` (strict),
+  else `EMPTY_NO`.
+- Constants: `TALK_IDX_MAX` 10, `FLAG_MASK_CAT_SCHEDULED` 1<<0.
+
+C ABI (all `pc_`-prefixed): `pc_blanca_first_talk_msg`,
+`pc_blanca_repeat_talk_msg`, `pc_blanca_birth_day_ok`,
+`pc_blanca_cloth_item`, `pc_blanca_travel_cloth_no`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `mMC_check_birth` (resets save at talk max),
+`mMC_check_delete` (±1 week expiry), `gohome_mask_start` selection
+order vs the returning-animal event, `mNpc_RegistMaskNpc`, the
+`init_weekly_event` MASK_NPC override, and the SCENE_START_DEMO3
+Blanca/Rover toggle.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
