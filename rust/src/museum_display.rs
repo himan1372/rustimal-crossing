@@ -42,6 +42,8 @@ pub mod category {
 pub mod donor {
     pub const NONE: u8 = 0;
     pub const PLAYER1: u8 = 1;
+    pub const PLAYER2: u8 = 2;
+    pub const PLAYER3: u8 = 3;
     pub const PLAYER4: u8 = 4;
     pub const DELETED_PLAYER: u8 = 5;
 }
@@ -331,6 +333,81 @@ pub mod exterior {
     pub const CHASE_RATE: f32 = 0.019532442;
 }
 
+
+/// Fish/insect collection tracking (`m_museum_display.c`).
+///
+/// The museum donation state: 40 fish + 40 insect species, each a 4-bit donor
+/// status (see `donor`). This is town-wide collection data with player
+/// attribution — NOT a per-player "caught" history. There is no separate
+/// encyclopedia-style catch table in the decomp.
+pub mod collection {
+    use super::{bit_store, is_donated, query};
+    use super::category::{FISH_NUM, INSECT_NUM};
+    use super::donor;
+
+    /// `mMmd_FishInfo`: validated getter. Out-of-range returns 0.
+    pub fn fish_info(fish_bit: &[u8], fish_no: i32) -> u8 {
+        query(fish_bit, fish_no, FISH_NUM)
+    }
+
+    /// `mMmd_InsectInfo`: validated getter. Out-of-range returns 0.
+    pub fn insect_info(insect_bit: &[u8], insect_no: i32) -> u8 {
+        query(insect_bit, insect_no, INSECT_NUM)
+    }
+
+    /// `mMmd_SetFish` core: validate 0..40, clear nibble, write donor.
+    /// (The C version also requires a local player; the caller passes the
+    /// already-validated donor value.) Returns false if index invalid.
+    pub fn set_fish_donor(fish_bit: &mut [u8], fish_no: i32, donor: u8) -> bool {
+        if fish_no >= 0 && (fish_no as usize) < FISH_NUM {
+            bit_store(fish_bit, fish_no as u8, donor);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `mMmd_SetInsect` core: same contract as `set_fish_donor`.
+    pub fn set_insect_donor(insect_bit: &mut [u8], insect_no: i32, donor: u8) -> bool {
+        if insect_no >= 0 && (insect_no as usize) < INSECT_NUM {
+            bit_store(insect_bit, insect_no as u8, donor);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `mMmd_CountDisplayedFish` / `mMmd_CountDisplayedInsect` core:
+    /// counts species whose donor is PLAYER1..=DELETED_PLAYER (deleted
+    /// donors still count toward the total).
+    pub fn count_displayed(bits: &[u8], count: usize) -> u32 {
+        (0..count)
+            .filter(|&i| is_donated(query(bits, i as i32, count)))
+            .count() as u32
+    }
+
+    /// `mMmd_DeletePresentedByPlayer` core (fish+insect): rewrites any entry
+    /// donated by `player_no` to DELETED_PLAYER. The species stays counted
+    /// as donated; only the attribution changes.
+    pub fn delete_presented_by_player(
+        fish_bit: &mut [u8],
+        insect_bit: &mut [u8],
+        player_no: u8,
+    ) {
+        let target = player_no + 1; // donor value = player index + 1
+        for i in 0..FISH_NUM {
+            if query(fish_bit, i as i32, FISH_NUM) == target {
+                bit_store(fish_bit, i as u8, donor::DELETED_PLAYER);
+            }
+        }
+        for i in 0..INSECT_NUM {
+            if query(insect_bit, i as i32, INSECT_NUM) == target {
+                bit_store(insect_bit, i as u8, donor::DELETED_PLAYER);
+            }
+        }
+    }
+}
+
 // ---- C ABI ----
 // All pc_-prefixed: the C originals stay compiled; these are staged kernels.
 
@@ -390,6 +467,77 @@ pub extern "C" fn pc_md_museum_light_on(now_sec: u32) -> u8 {
 #[no_mangle]
 pub extern "C" fn pc_md_fossil_display_item(fossil_idx: u8, rotation: u8) -> u16 {
     fossil_item::donated(fossil_idx, rotation)
+}
+
+
+#[no_mangle]
+pub extern "C" fn pc_md_fish_info(fish_bit: *const u8, fish_no: i32) -> u8 {
+    if fish_bit.is_null() {
+        return 0;
+    }
+    let bits = unsafe { std::slice::from_raw_parts(fish_bit, super::category::FISH_BIT_NUM) };
+    collection::fish_info(bits, fish_no)
+}
+
+#[no_mangle]
+pub extern "C" fn pc_md_insect_info(insect_bit: *const u8, insect_no: i32) -> u8 {
+    if insect_bit.is_null() {
+        return 0;
+    }
+    let bits = unsafe { std::slice::from_raw_parts(insect_bit, super::category::INSECT_BIT_NUM) };
+    collection::insect_info(bits, insect_no)
+}
+
+#[no_mangle]
+pub extern "C" fn pc_md_set_fish_donor(fish_bit: *mut u8, fish_no: i32, donor: u8) -> i32 {
+    if fish_bit.is_null() {
+        return 0;
+    }
+    let bits = unsafe { std::slice::from_raw_parts_mut(fish_bit, super::category::FISH_BIT_NUM) };
+    collection::set_fish_donor(bits, fish_no, donor) as i32
+}
+
+#[no_mangle]
+pub extern "C" fn pc_md_set_insect_donor(insect_bit: *mut u8, insect_no: i32, donor: u8) -> i32 {
+    if insect_bit.is_null() {
+        return 0;
+    }
+    let bits = unsafe { std::slice::from_raw_parts_mut(insect_bit, super::category::INSECT_BIT_NUM) };
+    collection::set_insect_donor(bits, insect_no, donor) as i32
+}
+
+#[no_mangle]
+pub extern "C" fn pc_md_count_displayed_fish(fish_bit: *const u8) -> i32 {
+    if fish_bit.is_null() {
+        return 0;
+    }
+    let bits = unsafe { std::slice::from_raw_parts(fish_bit, super::category::FISH_BIT_NUM) };
+    collection::count_displayed(bits, super::category::FISH_NUM) as i32
+}
+
+#[no_mangle]
+pub extern "C" fn pc_md_count_displayed_insect(insect_bit: *const u8) -> i32 {
+    if insect_bit.is_null() {
+        return 0;
+    }
+    let bits = unsafe { std::slice::from_raw_parts(insect_bit, super::category::INSECT_BIT_NUM) };
+    collection::count_displayed(bits, super::category::INSECT_NUM) as i32
+}
+
+#[no_mangle]
+pub extern "C" fn pc_md_delete_presented_fish_insect(
+    fish_bit: *mut u8,
+    insect_bit: *mut u8,
+    player_no: u8,
+) {
+    if fish_bit.is_null() || insect_bit.is_null() {
+        return;
+    }
+    let fbits =
+        unsafe { std::slice::from_raw_parts_mut(fish_bit, super::category::FISH_BIT_NUM) };
+    let ibits =
+        unsafe { std::slice::from_raw_parts_mut(insect_bit, super::category::INSECT_BIT_NUM) };
+    collection::delete_presented_by_player(fbits, ibits, player_no)
 }
 
 #[cfg(test)]
@@ -524,4 +672,53 @@ mod tests {
         assert_eq!(exterior::ENTER_POS, (240, 0, 440));
         assert_eq!(exterior::EXIT_WIPE, 0x2168);
     }
+
+    #[test]
+    fn collection_fish_insect() {
+        use super::collection;
+        use super::donor;
+
+        // Nibble packing: index 0 = low nibble of byte 0, index 1 = high nibble.
+        let mut fish = [0u8; 21];
+        assert!(collection::set_fish_donor(&mut fish, 0, donor::PLAYER1));
+        assert!(collection::set_fish_donor(&mut fish, 1, donor::PLAYER2));
+        assert_eq!(fish[0], 0x21); // low=1, high=2
+        assert_eq!(collection::fish_info(&fish, 0), donor::PLAYER1);
+        assert_eq!(collection::fish_info(&fish, 1), donor::PLAYER2);
+        // Adjacent species in the same byte don't clobber each other.
+        assert!(collection::set_fish_donor(&mut fish, 0, donor::PLAYER3));
+        assert_eq!(collection::fish_info(&fish, 1), donor::PLAYER2);
+
+        // Invalid indices: getter returns 0, setter returns false.
+        assert_eq!(collection::fish_info(&fish, 40), 0);
+        assert_eq!(collection::fish_info(&fish, -1), 0);
+        assert!(!collection::set_fish_donor(&mut fish, 40, donor::PLAYER1));
+        assert_eq!(collection::insect_info(&[0u8; 21], 39), donor::NONE);
+
+        // Highest index (39): high nibble of byte 19.
+        let mut insect = [0u8; 21];
+        assert!(collection::set_insect_donor(&mut insect, 39, donor::PLAYER4));
+        assert_eq!(insect[19], 0x40);
+        assert_eq!(collection::insect_info(&insect, 39), donor::PLAYER4);
+
+        // Count: deleted donors still count.
+        let mut f2 = [0u8; 21];
+        collection::set_fish_donor(&mut f2, 0, donor::PLAYER1);
+        collection::set_fish_donor(&mut f2, 1, donor::DELETED_PLAYER);
+        collection::set_fish_donor(&mut f2, 2, donor::NONE);
+        assert_eq!(collection::count_displayed(&f2, 40), 2);
+
+        // DeletePresentedByPlayer: rewrites to DELETED_PLAYER, keeps count.
+        let mut f3 = [0u8; 21];
+        let mut i3 = [0u8; 21];
+        collection::set_fish_donor(&mut f3, 5, donor::PLAYER2); // player_no 1
+        collection::set_fish_donor(&mut f3, 6, donor::PLAYER1); // player_no 0
+        collection::set_insect_donor(&mut i3, 7, donor::PLAYER2);
+        collection::delete_presented_by_player(&mut f3, &mut i3, 1);
+        assert_eq!(collection::fish_info(&f3, 5), donor::DELETED_PLAYER);
+        assert_eq!(collection::fish_info(&f3, 6), donor::PLAYER1); // untouched
+        assert_eq!(collection::insect_info(&i3, 7), donor::DELETED_PLAYER);
+        assert_eq!(collection::count_displayed(&f3, 40), 2); // still counts
+    }
 }
+
