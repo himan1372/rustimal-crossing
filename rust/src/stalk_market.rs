@@ -62,7 +62,7 @@ pub mod joan {
     pub const NPC: u16 = 0xD007;
     /// Purchase quantities and their turnip items.
     pub const SUM: [u32; 4] = [1, 10, 50, 100];
-    pub const KABU_NO: [u16; 3] = [item::KABU_10, item::KABU_50, item::KABU_100];
+    pub const KABU_NO: [u16; 3] = [super::item::KABU_10, super::item::KABU_50, super::item::KABU_100];
     /// Transaction quantities; index 3 (the exit choice) is 0.
     pub const SELL_SUM: [u32; 4] = [10, 50, 100, 0];
     pub const TYPE_NUM: u8 = 4;

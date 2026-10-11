@@ -37,7 +37,7 @@ pub const SECONDS_IN_HOUR: i32 = 3600;
 pub const SECONDS_IN_DAY: i32 = 86400;
 
 /// `mTM_TIME2SEC(h, m, s)`.
-pub fn time2sec(h: i32, m: i32, s: i32) -> i32 {
+pub const fn time2sec(h: i32, m: i32, s: i32) -> i32 {
     h * SECONDS_IN_HOUR + m * SECONDS_IN_MINUTE + s
 }
 

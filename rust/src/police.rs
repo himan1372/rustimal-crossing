@@ -86,7 +86,7 @@ pub mod act {
 pub const RSV_POLICE_ITEM_0: u16 = 0xF128;
 
 /// 67.5 degrees in the s16 short-angle unit used by the actor code:
-/// `DEG2SHORT_ANGLE2(67.5f)` = 67.5 * 65536 / 360 = 12288.
+/// `DEG2SHORT_ANGLE2(67.5f32)` = 67.5 * 65536 / 360 = 12288.
 pub const ANGLE_67_5_DEG: i16 = 12288;
 
 /// Copper's ordinary talk table (`aPOL_set_norm_talk_info_talk_request`).
@@ -177,7 +177,7 @@ pub fn hint_later_msg(idx: u8) -> u16 {
 
 /// Aerobics entry gate (`aPOL_think_main_proc`), verbatim: not rain,
 /// 06:00 ≤ now < 07:00, player outside 67.5° (`ABS(d_angle) > 12288`).
-/// The `RANDOM_F(1.0f) < 0.05f` roll stays in C — this gate decides
+/// The `RANDOM_F(1.0f32) < 0.05f32` roll stays in C — this gate decides
 /// whether the roll happens.
 pub fn copper_aerobics_gate(now_sec: u32, not_rain: bool, abs_angle: i16) -> bool {
     not_rain
@@ -187,10 +187,10 @@ pub fn copper_aerobics_gate(now_sec: u32, not_rain: bool, abs_angle: i16) -> boo
 }
 
 /// Aerobics animation selection (`aPOL_taisou_act_init_proc`): three
-/// sequences with loop counts {2, 4, 1}, morph −8.0f. The RANDOM(3)
+/// sequences with loop counts {2, 4, 1}, morph −8.0f32. The RANDOM(3)
 /// index stays in C.
 pub const AEROBICS_LOOPS: [u8; 3] = [2, 4, 1];
-pub const AEROBICS_MORPH: f32 = -8.0f;
+pub const AEROBICS_MORPH: f32 = -8.0f32;
 
 /// Aerobics exit: loop count exhausted, or the player back within 67.5°.
 pub fn copper_aerobics_done(loop_flag: i16, abs_angle: i16) -> bool {
@@ -200,14 +200,14 @@ pub fn copper_aerobics_done(loop_flag: i16, abs_angle: i16) -> bool {
 /// Sleepy entry gate (`aPOL_think_main_proc`), verbatim: 02:00 ≤ now <
 /// 04:00 and the player at least 60 units away. It is an `else if` on
 /// the aerobics condition — evaluated only when NOT (not-rain AND
-/// 06:00–07:00). The `RANDOM_F(1.0f) < 0.05f` roll stays in C.
+/// 06:00–07:00). The `RANDOM_F(1.0f32) < 0.05f32` roll stays in C.
 pub fn copper_sleepy_gate(now_sec: u32, dist_xz: f32) -> bool {
-    now_sec >= 2 * 3600 && now_sec < 4 * 3600 && dist_xz >= 60.0f
+    now_sec >= 2 * 3600 && now_sec < 4 * 3600 && dist_xz >= 60.0f32
 }
 
 /// Sleepy animation sequencing (`aPOL_set_animation`): step 0 → NEMU1
-/// (morph −16.0f), step 1 → GYAFUN1 (morph −2.0f), 5 loops each.
-pub const SLEEPY_MORPH: [f32; 2] = [-16.0f, -2.0f];
+/// (morph −16.0f32), step 1 → GYAFUN1 (morph −2.0f32), 5 loops each.
+pub const SLEEPY_MORPH: [f32; 2] = [-16.0f32, -2.0f32];
 pub const SLEEPY_LOOPS: u8 = 5;
 
 /// Booker's zone (`aPOL2_get_zone`), verbatim: `uz` clamped to 2–6,
@@ -227,7 +227,7 @@ pub fn booker_zone(ux: i32, uz: i32) -> u8 {
 
 /// Booker's movement decision (`aPOL2_decide_next_move_act`), verbatim
 /// against the SQUARED distance — the expressions are kept as written:
-/// `dist < (SQ(50.0f)−50.0f)` = 2450.0 and `dist < (SQ(70.0f)+100.0f)` =
+/// `dist < (SQ(50.0f32)−50.0f32)` = 2450.0 and `dist < (SQ(70.0f32)+100.0f32)` =
 /// 5000.0. Do not simplify.
 ///
 /// Quirk preserved: the same-zone far case returns RUN_PL_OTHER_ZONE,
@@ -236,15 +236,15 @@ pub fn booker_move_action(dist_sq: f32, same_zone: bool, collided: bool) -> u8 {
     if collided {
         return act::WAIT;
     }
-    if dist_sq < (50.0f * 50.0f - 50.0f) {
+    if dist_sq < (50.0f32 * 50.0f32 - 50.0f32) {
         act::WAIT
     } else if !same_zone {
-        if dist_sq < (70.0f * 70.0f + 100.0f) {
+        if dist_sq < (70.0f32 * 70.0f32 + 100.0f32) {
             act::WALK_PL_OTHER_ZONE
         } else {
             act::RUN_PL_OTHER_ZONE
         }
-    } else if dist_sq < (70.0f * 70.0f + 100.0f) {
+    } else if dist_sq < (70.0f32 * 70.0f32 + 100.0f32) {
         act::WALK_PL_SAME_ZONE
     } else {
         act::RUN_PL_OTHER_ZONE
@@ -296,7 +296,7 @@ pub const BOOKER_FULL_MSG: u16 = 0x0781;
 /// Dummy foreground position used on a successful pickup.
 pub const PICKUP_DUMMY_POS: (f32, f32, f32) = (20.0, 0.0, 20.0);
 
-/// Forced-generation category from the `(int)(fqrand() * 100.0f)` roll,
+/// Forced-generation category from the `(int)(fqrand() * 100.0f32)` roll,
 /// verbatim thresholds: ≤85 goods, ≤90 item, ≤95 flower, ≤100 umbrella.
 pub fn force_category(roll: u8) -> u8 {
     if roll <= 85 {

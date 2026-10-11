@@ -324,7 +324,7 @@ mod tests {
         assert_eq!(id::POST_MAN, 0xD011);
         assert_eq!(id::POST_GIRL2, 0xD012);
         assert_eq!(name_idx::PELLY, 0x20D);
-        assert_eq!(name_idx::PHYLIS, 0x20E);
+        assert_eq!(name_idx::PHYLLIS, 0x20E);
         assert_eq!(name_idx::PETE, 0x20F);
     }
 
@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(pete_start_action(0), 0); // ENTER
         assert_eq!(pete_start_action(1), 11); // FLY_UP
         assert_eq!(april::PELLY, 0x0007);
-        assert_eq!(april::PHYLIS, 0x0008);
+        assert_eq!(april::PHYLLIS, 0x0008);
         assert_eq!(april::PETE, 0x0009);
         assert_eq!(cap::MAIL_STORAGE_SIZE, 5);
         assert_eq!(cap::HOME_MAILBOX_SIZE, 10);

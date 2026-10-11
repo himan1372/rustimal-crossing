@@ -7,10 +7,10 @@
 //! (GAFE01_00 Rev 0 USA decomp). All 10 brief claims checked verbatim;
 //! only two precision nuances vs the brief:
 //!
-//! - The rudder-step halving is `(s16)(step * 0.5f)` (float multiply,
-//!   truncate), not `/ 2.0f`.
+//! - The rudder-step halving is `(s16)(step * 0.5f32)` (float multiply,
+//!   truncate), not `/ 2.0f32`.
 //! - The vertical "reversal" sets the velocity *cap* (`max_velocity_y`
-//!   ±0.1f) and re-rolls gravity; it does not flip the current velocity.
+//!   ±0.1f32) and re-rolls gravity; it does not flip the current velocity.
 //!
 //! Architecture: the boat actor, the boat-demo controller, Kapp'n's NPC
 //! actor, the player demo requests, the frame-driven handshakes, the
@@ -31,7 +31,7 @@ pub mod gba {
 
 /// `DEG2SHORT_ANGLE` (`include/m_lib.h`).
 pub fn deg2short(deg: f32) -> i16 {
-    (deg * (65536.0f32 / 360.0f)) as i16
+    (deg * (65536.0f32 / 360.0f32)) as i16
 }
 
 /// Fixed route checkpoints (`aBT_chk_point[]`), (x, z) with the source's
@@ -53,8 +53,8 @@ pub mod route {
     pub const LAST_POINT_IDX: [i32; 2] = [7, 0];
     /// First checkpoint per direction (`aBT_move_init`).
     pub const FIRST_CHK_POINT: [i32; 2] = [1, 6];
-    /// Initial Y angles: `DEG2SHORT_ANGLE(-45.0f)` = 0xE000,
-    /// `DEG2SHORT_ANGLE(135.0f)` = 0x6000.
+    /// Initial Y angles: `DEG2SHORT_ANGLE(-45.0f32)` = 0xE000,
+    /// `DEG2SHORT_ANGLE(135.0f32)` = 0x6000.
     pub const INIT_ANGLE_Y: [i16; 2] = [-8192, 24576];
     /// `aBT_actor_ct`: `block_z == 6` → to-island, otherwise from-island.
     pub const TO_ISLAND_BLOCK_Z: u8 = 6;
@@ -145,9 +145,9 @@ pub fn second_part_msg(pattern: u8, sing_2nd_part: u8) -> u16 {
 /// USA FRAMERATE identity values (`include/types.h`; the PAL branch
 /// adjusts, USA is identity).
 pub mod timer {
-    /// `aBT_calc_speed` travel target: `FRAMERATE_ADJ(0.625f)`.
+    /// `aBT_calc_speed` travel target: `FRAMERATE_ADJ(0.625f32)`.
     pub const TRAVEL_SPEED: f32 = 0.625;
-    /// `aBT_calc_speed` endpoint approach step: `FRAMERATE_SELECT(0.0017f, 0.0021f)` picks the 60 Hz value.
+    /// `aBT_calc_speed` endpoint approach step: `FRAMERATE_SELECT(0.0017f32, 0.0021f32)` picks the 60 Hz value.
     pub const APPROACH_STEP: f32 = 0.0017;
     /// Song timer: `FRAMERATE_TIMER(930)`.
     pub const SONG_TIMER: f32 = 930.0;
@@ -216,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn deg2short() {
+    fn deg2short_angles() {
         assert_eq!(deg2short(-45.0), -8192); // 0xE000
         assert_eq!(deg2short(135.0), 24576); // 0x6000
         assert_eq!(route::INIT_ANGLE_Y, [deg2short(-45.0), deg2short(135.0)]);

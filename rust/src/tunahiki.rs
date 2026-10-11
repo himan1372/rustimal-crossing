@@ -59,7 +59,7 @@ pub const FLAG_TALK0: u16 = 1 << 5;
 pub const FLAG_TALK_ALL: u16 = 0x03E0;
 /// Rope-shake bit (15).
 pub const FLAG_SHAKE: u16 = 1 << 15;
-/// Rope pull increment per controller update: `speed * 0.025f`.
+/// Rope pull increment per controller update: `speed * 0.025f32`.
 pub const ROPE_SPEED_STEP: f32 = 0.025;
 /// Rope displacement clamp bounds (strict comparisons).
 pub const ROPE_MIN: f32 = -10.0;
@@ -70,7 +70,7 @@ pub const SHAKE_AMPLITUDE: f32 = 0.3;
 pub const COUNTER_RESET: u16 = 2;
 pub const COUNTER_LIMIT: u16 = 65;
 /// NPC1 animation frame tracks the shared counter:
-/// `current_frame = counter * 0.5f`.
+/// `current_frame = counter * 0.5f32`.
 pub const COUNTER_TO_FRAME: f32 = 0.5;
 
 /// NPC index: `aTNC_NPCID2IDX(id) = id - SP_NPC_EV_TUNAHIKI_0`.
@@ -106,7 +106,7 @@ pub extern "C" fn pc_tunahiki_talk_flag(npc_id: u16) -> u16 {
 
 /// NPC1 pull direction: +1 when `((npc_id - SP_NPC_EV_TUNAHIKI_1)
 /// & 2) == 0`, else −1. The facing angles are
-/// `DEG2SHORT_ANGLE2(±90.0f)` = ±16384.
+/// `DEG2SHORT_ANGLE2(±90.0f32)` = ±16384.
 #[no_mangle]
 pub extern "C" fn pc_tunahiki_dir(npc_id: u16) -> i32 {
     if npc_id.wrapping_sub(SP_NPC_EV_TUNAHIKI_1) & 2 == 0 {
@@ -164,7 +164,7 @@ pub extern "C" fn pc_tunahiki_rope_step(
     }
     let mut base = rope_base;
     let mut spd = speed;
-    let mut shake = 0.0f;
+    let mut shake = 0.0f32;
     if flags & FLAG_SHAKE != 0 {
         shake = if game_frame & 1 != 0 {
             SHAKE_AMPLITUDE
@@ -204,7 +204,7 @@ pub extern "C" fn pc_tunahiki_counter_step(counter: u16) -> u16 {
 /// Selects the next pull speed from the values the C caller
 /// sampled (`aTNN1_aiko`): `rng < 0.45` → `rand_mag + 3.0`;
 /// `rng < 0.9` → `-(rand_mag + 3.0)`; otherwise 0. The `fqrand()`
-/// sample and the conditional `RANDOM_F(20.0f)` call stay in C so
+/// sample and the conditional `RANDOM_F(20.0f32)` call stay in C so
 /// the global random sequence is unchanged.
 #[no_mangle]
 pub extern "C" fn pc_tunahiki_next_speed(rng: f32, rand_mag: f32) -> f32 {
@@ -217,7 +217,7 @@ pub extern "C" fn pc_tunahiki_next_speed(rng: f32, rand_mag: f32) -> f32 {
     }
 }
 
-/// Footstep-effect condition: `speed * dir > 8.0f`, tested when
+/// Footstep-effect condition: `speed * dir > 8.0f32`, tested when
 /// the animation crosses frames 12/18 (`aTNN1_aiko`).
 #[no_mangle]
 pub extern "C" fn pc_tunahiki_footstep(speed: f32, dir: i32) -> bool {

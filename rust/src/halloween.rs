@@ -57,6 +57,7 @@ pub mod trick {
 /// One pocket entry, reduced to what the candidate scan reads:
 /// the item's name type, ITEM1 category, quest-condition bit,
 /// and furniture index (for the Halloween exclusions).
+#[derive(Copy, Clone)]
 pub struct TrickPocket {
     pub item_type: u8,
     pub cat: u8,

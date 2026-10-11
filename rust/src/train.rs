@@ -112,22 +112,22 @@ pub mod init {
     pub const Z: f32 = 740.0;
     /// `mTRC_mati_init`: stopped/waiting.
     pub const MATI_X: f32 = 2367.0;
-    pub const MATI_ACTION: u8 = action::WAIT_STOPPED;
+    pub const MATI_ACTION: u8 = super::action::WAIT_STOPPED;
     pub const MATI_CTRL: u8 = 1;
     /// `mTRC_demo_init`: slowdown path, speed = SLOW. Also sets
     /// `train_start_timer = now_sec − 4:50` — a different literal from
     /// the −4:10 in `depart_timer`; keep both.
     pub const DEMO_X: f32 = 2037.0;
-    pub const DEMO_ACTION: u8 = action::BEGIN_SLOWDOWN;
+    pub const DEMO_ACTION: u8 = super::action::BEGIN_SLOWDOWN;
     pub const DEMO_CTRL: u8 = 0;
     pub const DEMO_TIMER_SUB_SECS: u32 = 4 * 60 + 50;
     /// `mTRC_call_init`: slowdown path, zero initial speed.
     pub const CALL_X: f32 = 1904.0;
-    pub const CALL_ACTION: u8 = action::BEGIN_SLOWDOWN;
+    pub const CALL_ACTION: u8 = super::action::BEGIN_SLOWDOWN;
     pub const CALL_CTRL: u8 = 1;
     /// `mTRC_norm_init`: moving spawn path.
     pub const NORM_X: f32 = 320.0;
-    pub const NORM_ACTION: u8 = action::SPAWN_MOVING;
+    pub const NORM_ACTION: u8 = super::action::SPAWN_MOVING;
     pub const NORM_CTRL: u8 = 0;
 }
 

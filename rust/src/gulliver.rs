@@ -106,11 +106,11 @@ pub fn weekly_ofs(today_raw: u16, hour: u8) -> u8 {
     (1 + (today_raw as u32 + hour as u32) % 5) as u8
 }
 
-/// Normal-talk message: `RANDOM_F(1.0f) < 0.35f` (strict) → 0x23F8 and the
+/// Normal-talk message: `RANDOM_F(1.0f32) < 0.35f32` (strict) → 0x23F8 and the
 /// wake-up continuation; otherwise `0x23F9 + RANDOM(5)`. Rolls stay in C
 /// and are passed in.
 pub fn norm_talk_msg(wakeup_roll: f32, rand5: u8) -> u16 {
-    if wakeup_roll < 0.35f {
+    if wakeup_roll < 0.35f32 {
         0x23F8
     } else {
         0x23F9 + (rand5 % 5) as u16

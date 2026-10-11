@@ -113,34 +113,34 @@ pub mod sched {
     pub const USE_SAVE_SLOT_VALUE: u8 = 0x20;
 
     /// `mEv_SCHEDULE_MAKE_WEEKLY_DATA(week, weekday)`.
-    pub fn weekly_data(week: u8, weekday: u8) -> u8 {
+    pub const fn weekly_data(week: u8, weekday: u8) -> u8 {
         WEEKLY | (((week & 0b111) << 3) | (weekday & 0b111))
     }
 
     /// `mEv_SCHEDULE_DAY_AFTER | mEv_SCHEDULE_MAKE_WEEKLY_DATA(week, weekday)`:
     /// schedules on the day after the Nth weekday (0x40 = DAY_AFTER).
-    pub fn day_after_weekly(week: u8, weekday: u8) -> u8 {
+    pub const fn day_after_weekly(week: u8, weekday: u8) -> u8 {
         0x40 | weekly_data(week, weekday)
     }
 
-    pub fn weekly_week(day: u8) -> u8 {
+    pub const fn weekly_week(day: u8) -> u8 {
         (day >> 3) & 0b111
     }
 
-    pub fn weekly_weekday(day: u8) -> u8 {
+    pub const fn weekly_weekday(day: u8) -> u8 {
         day & 0b111
     }
 
     /// `mEv_SCHEDULE_LUNAR(m)`.
-    pub fn lunar(m: u8) -> u8 {
+    pub const fn lunar(m: u8) -> u8 {
         HARVEST_MOON_DATE | (m & 0xF)
     }
 
-    pub fn is_lunar(month: u8) -> bool {
+    pub const fn is_lunar(month: u8) -> bool {
         month & HARVEST_MOON_DATE != 0
     }
 
-    pub fn save_month(m: u8) -> u8 {
+    pub const fn save_month(m: u8) -> u8 {
         USE_SAVE_MONTH | (m & 0xF)
     }
 
@@ -204,6 +204,7 @@ pub mod event {
     pub const SONCHO_HARVEST_MOON_FESTIVAL: u16 = 97;
     pub const SONCHO_HARVEST_FESTIVAL: u16 = 103;
     pub const SONCHO_BRIDGE_MAKE: u16 = 113;
+    pub const HARVEST_FESTIVAL_FRANKLIN: u16 = 108;
 
     /// Tortimer's separate holiday event IDs (30 total): the 27
     /// holiday entries plus VACATION_JANUARY, VACATION_FEBRUARY,
@@ -259,12 +260,12 @@ pub struct ScheduleRow {
     pub event: u16,
 }
 
-/// The 14 decomp-verified schedule rows
+/// The 46 decomp-verified schedule rows
 /// (`m_event_schedule.c_inc`), verbatim.
 pub mod schedule {
     use super::*;
 
-    pub const ROWS: [ScheduleRow; 35] = [
+    pub const ROWS: [ScheduleRow; 46] = [
         ScheduleRow { // Jan 1, 06:00-10:00
             begin: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 6 },
             end: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 10 },
@@ -508,7 +509,7 @@ pub mod schedule {
 /// (Saharah's internal name), and `default:` falls through to SHOP.
 pub fn special_type2kind(event: u16) -> u32 {
     use ev_id::spnpc as k;
-    use event as e;
+    use self::event as e;
     match event {
         e::BROKER_SALE | e::HANDBILL_BROKER => k::BROKER,
         e::DESIGNER => k::DESIGNER,
@@ -727,24 +728,24 @@ mod tests {
 
     #[test]
     fn schedule_rows() {
-        assert_eq!(schedule::ROWS.len(), 35);
+        assert_eq!(schedule::ROWS.len(), 46);
         assert_eq!(schedule::ROW_COUNT, 134);
         let ny = &schedule::ROWS[0];
         assert_eq!((ny.begin.month, ny.begin.day, ny.begin.hour), (1, 1, 6));
         assert_eq!((ny.end.month, ny.end.day, ny.end.hour), (1, 1, 10));
         assert_eq!(ny.event, event::NEW_YEARS_DAY);
         // Halloween multiday
-        let hw = &schedule::ROWS[10];
+        let hw = &schedule::ROWS[17];
         assert_eq!(hw.begin.hour, sched::MULTIDAY | 18);
         assert_eq!((hw.end.month, hw.end.day), (11, 1));
         // Father's Day weekly encoding
-        let fd = &schedule::ROWS[5];
+        let fd = &schedule::ROWS[6];
         assert_eq!(fd.begin.day, sched::weekly_data(3, rtc::weekday::SUNDAY));
         // Harvest Moon lunar month
-        let hm = &schedule::ROWS[9];
+        let hm = &schedule::ROWS[14];
         assert_eq!(hm.begin.month, sched::lunar(8));
         // Countdown crosses the year boundary
-        let cd = &schedule::ROWS[13];
+        let cd = &schedule::ROWS[24];
         assert_eq!((cd.begin.month, cd.end.month), (12, 1));
     }
 
