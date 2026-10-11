@@ -3870,6 +3870,79 @@ C ABI (all `pc_`-prefixed, 15 exports):
 `pc_turi_frame_speed`. No C callers rewired yet, per the
 usual pattern. No test runs, per the standing rule.
 
+### Runtime Port Progress: Sports Fair Ball Toss (Tamaire)
+
+New `rust/src/tamaire.rs`, registered as `mod tamaire` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_tamaire_npc0.c`, `ac_tamaire_npc0_schedule.c_inc`,
+`ac_tamaire_npc0_talk.c_inc`, `ac_tamaire_npc1.c`,
+`ac_tamaire_npc1_schedule.c_inc`, `ac_tamaire_npc1_talk.c_inc`,
+`ac_tamaire_npc0.h`, `ac_tamaire_npc1.h`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`
+(GAFE01_00 Rev 0 USA). All 13 items PROVEN with two
+DIFFERS-level corrections: throw-end timer expiry goes to
+KYORO, not KYORO_MAE (confirmed in both the proc and the
+dt_tbl); the ball prop's block-deletion test is strict `!=`
+(adjacent blocks DO delete it) — the opposite of the turi
+stand's `ABS > 1`.
+
+Ported (pure kernels; NPC clip/action requests, think
+scheduling, the tool-actor lifecycle including the
+asymmetric destructor, animation frame control and
+passCheck, all RNG call order, the eEC throw effect, the
+shared static team flag with its per-construction reset,
+talk/demo, and the map placement stay in C):
+
+- NPC0's route destinations with the TRUE default branch
+  (+80/+160, +200/+40, −40/+160, default −160/−40) in s16
+  with wrapping, the turn gate (aNPC_ACT_TURN at
+  aNPC_ACTION_END_STEP = 0xFF), the walk-end +1/−1
+  advance/rollback decision (the rollback is a source-level
+  recovery path, not incidental), and the cheer branch
+  (CLAP1 67 / BANZAI1 66 from the C-side float).
+- NPC1's team-relative origin (z +40 always; x +200 when
+  `((id − TAMAIRE_1) & 2) != 0`, else −160), the raw team
+  flag bits (1/2, not normalized), the throw team bit
+  `((id − TAMAIRE_1) >> 1) & 1`, and the random-move angle
+  subtraction with C's f32→s16 truncation (sin_s/cos_s stay
+  in C).
+- The ball tool table {49, 48, 51, 50} with the verbatim
+  index expression (right = `((((id−TAMAIRE_1)>>1)&1)^1)`,
+  left = same + 2), the pickup frame targets {15, 27, 39}
+  (edge-crossing, never `==`), the re-throw gate (`left !=
+  0`), and the throw angle addend (RANDOM(3000) + 12288,
+  sample in C).
+- Dialogue: NPC0's literal bases {7781, 7793, 7769, 7805,
+  7817, 7829}, NPC1's offsets {3, 3, 3, 6, 6, 9}, message =
+  base + offset + rand3 (RNG in C).
+- The 10-slot shrine layout (TAMAIRE_0..4 = 0xD053–0xD057,
+  paired balls/baskets, Tortimer), mask 0b0011111.
+- Also added to `event_day.rs`: the two verified ball-toss
+  windows (Mar 19 13:00 → Mar 21 14:00, Sep 21 13:00 → Sep
+  23 14:00; plain ranges; event 12 already existed; ROWS
+  28→30).
+
+Deliberately NOT ported: the shared static team flag and
+its per-construction reset (file-static semantics must be
+preserved, not moved to a one-time initializer), the
+#TARGET_PC-only timer helpers and the `timer_accum` field
+(PC-port, not retail), the eEC_EFFECT_TAMAIRE trajectory
+and scoring (not in these two files), and the event
+origin/pool layout selection.
+
+C ABI (all `pc_`-prefixed, 17 exports):
+`pc_tamaire_npc0_destination`,
+`pc_tamaire_npc0_turn_advance`, `pc_tamaire_npc0_move_step`,
+`pc_tamaire_cheer_anim`, `pc_tamaire_npc1_origin`,
+`pc_tamaire_team_bit`, `pc_tamaire_throw_team_bit`,
+`pc_tamaire_tool_id`, `pc_tamaire_throw_angle`,
+`pc_tamaire_next_move_angle`, `pc_tamaire_pickup_frame`,
+`pc_tamaire_throw_again`, `pc_tamaire_talk_msg`,
+`pc_tamaire_npc0_msg_base`, `pc_tamaire_npc1_msg_offset`,
+`pc_tama_should_delete`, `pc_tamaire_spawn_pos`. No C
+callers rewired yet, per the usual pattern. No test runs,
+per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

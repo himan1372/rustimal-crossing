@@ -115,6 +115,7 @@ mod hatsumode;
 mod tunahiki;
 mod taisou;
 mod fishing_tourney;
+mod tamaire;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
