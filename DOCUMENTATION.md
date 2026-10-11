@@ -4168,6 +4168,29 @@ C ABI (all `pc_`-prefixed, 22 exports):
 callers rewired yet, per the usual pattern. No test runs,
 per the standing rule.
 
+#### Addendum 2026-10-11 (muse): footrace controller kernels
+
+Extended `rust/src/tokyoso.rs` with the controller/orchestration
+kernels, decomp-verified 12/12. New `pc_`-prefixed exports:
+`pc_tokyoso_wait2_override` (`_00==3` → WAIT2), `pc_tokyoso_set_starts`
+(`(flags & READY_ALL)==0`, with the `@BUG` double `setupAction(GO)`
+documented as call order), `pc_tokyoso_01_set` / `pc_tokyoso_01_clear`
+(the `(2+idx)&3` vs `idx&3` asymmetry), `pc_tokyoso_kansen_bf_leave` /
+`pc_tokyoso_kansen_leave`, `pc_tokyoso_dash_roll` (RNG drawn every
+update), `pc_tokyoso_stumble_roll` (leading-only), `pc_tokyoso_kokeru_done`,
+`pc_tokyoso_late_race`, `pc_tokyoso_goal_think` (`13 + goal`),
+`pc_tokyoso_npc0_birth`, `pc_tokyoso_npc1_birth_ok`,
+`pc_tokyoso_npc1_self_delete`, plus the action enum, timer, mask,
+event (15)/slot (8), and `FLAG_15` constants. Corrections: the event
+constant is 15 (0xF), not 0xE; `_00=2` exists (NPC0's schedule birth
+sets `_00==1` → 2, NPC1's birth requires `_00==2`); NPC0's destructor
+assigns (not ORs) the delete flag; NPC1's `_00==3` self-delete lives
+in its move callback; `aTKC_FLAG_15` is proven unused (zero uses, zero
+`0x8000` literals). Controller lifecycle, save-area writes, NPC clip,
+animation/effects, RNG, the BUGFIXES branch, and the double setupAction
+stay in C. All 5 module tests pass (run per Philip's 2026-10-11
+authorization).
+
 ### Runtime Port Progress: Snowman Building
 
 New `rust/src/snowman.rs`, registered as `mod snowman` in
