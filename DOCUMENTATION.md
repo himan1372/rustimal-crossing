@@ -2303,6 +2303,54 @@ order vs the returning-animal event, `mNpc_RegistMaskNpc`, the
 `init_weekly_event` MASK_NPC override, and the SCENE_START_DEMO3
 Blanca/Rover toggle.
 
+### Runtime Port Progress: Gulliver the Seagull (ac_ev_dozaemon.c)
+
+New `rust/src/gulliver.rs`, registered as `mod gulliver` in
+`rust/src/lib.rs`. Decomp-verified against `m_event.c`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`ac_ev_dozaemon_move.c_inc`, `m_name_table.h`, `m_event.h`,
+`ac_ev_dozaemon.h`, `lb_rtc.h` (GAFE01_00 Rev 0 USA). 9 of 10 brief
+claims checked verbatim; one correction — the WAKEUP save flag does
+NOT delete the actor, it routes the schedule proc to
+`aEDZ_THINK_WANDER` (post-wakeup wandering); the only deletion in
+`aEDZ_actor_ct` is `mv_proc != NULL && dozaemon_completed`.
+
+Identity: `SP_NPC_EV_DOZAEMON` (0xD064) is Gulliver's event identity;
+`SP_NPC_CASTAWAY` (0xD07B) is the separate boat-travel castaway actor,
+gated by Gulliver's event state. Do not merge them.
+
+Ported (pure kernels; scheduler, seaside placement, actor lifecycle,
+thought/talk state machine, furniture selector, inventory grant, and
+save mutations stay in C):
+
+- `after_n_day`: verbatim port of the pure packed month/day arithmetic
+  (`raw = (month<<8)|day`), with the leap-year check preserved via a
+  year argument (the decomp's `last_day_of_month` reads the RTC year,
+  so the kernel takes it instead of reading RTC).
+- Weekly date offset `1 + (today_date.raw + hour) % 5` — no RNG,
+  deterministic; range 1–5.
+- Talk message ids: normal talk strict `< 0.35f` → 0x23F8, else
+  `0x23F9 + RANDOM(5)`; forced talk `0x23FE + RANDOM(6)`; reward branch
+  0x2404/0x2408 (`mMsg_SET_CONTINUE_MSG_NUM`), later branch
+  0x2405/0x2409 (`mDemo_Set_msg_num` — different macro, distinction
+  preserved in C), post-give 0x2406/0x2407, wandering `0x240A+RANDOM(6)`.
+  All RNG rolls stay in C and are passed in.
+- Constants: save flags WAKEUP/GIVE/GAVE_FIRST, event window 06:00–22:00.
+
+C ABI (all `pc_`-prefixed): `pc_gulliver_after_n_day`,
+`pc_gulliver_weekly_ofs`, `pc_gulliver_norm_talk_msg`,
+`pc_gulliver_force_talk_msg`, `pc_gulliver_ageru_msg`,
+`pc_gulliver_ageru2_msg`, `pc_gulliver_give_msg`,
+`pc_gulliver_wander_msg`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: `init_weekly_event` priority vs bridge and
+mask-cat events, `make_actor_in_seaside_block` placement,
+`aEDZ_actor_ct` lifecycle, the full talk state machine,
+`mSP_SelectRandomItem_New` reward distribution (JONASON list),
+`mPr_SetFreePossessionItem`, and the boat-demo castaway path.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
