@@ -140,7 +140,7 @@ pub extern "C" fn pc_tamaire_npc0_move_step(
 }
 
 /// Selects the cheer animation from the C-side sample:
-/// `RANDOM_F(1.0f) < 0.5f` → CLAP1, else BANZAI1.
+/// `RANDOM_F(1.0f32) < 0.5f32` → CLAP1, else BANZAI1.
 #[no_mangle]
 pub extern "C" fn pc_tamaire_cheer_anim(rand_float: f32) -> i32 {
     if rand_float < 0.5 {
@@ -212,7 +212,7 @@ pub extern "C" fn pc_tamaire_tool_id(npc_id: u16, left_hand: bool) -> u8 {
 }
 
 /// The angular addend for the throw effect:
-/// `RANDOM(3000) + DEG2SHORT_ANGLE2(67.5f)`; the RANDOM(3000)
+/// `RANDOM(3000) + DEG2SHORT_ANGLE2(67.5f32)`; the RANDOM(3000)
 /// sample stays in C and is consumed only when the effect is
 /// created (frame 15 with right == 1).
 pub const THROW_ANGLE_BASE: i32 = 12288;
@@ -334,6 +334,118 @@ pub extern "C" fn pc_tamaire_spawn_pos(slot: u8, out: *mut i32) -> u8 {
     1
 }
 
+/// Thrown-ball effect (`src/effect/ef_tamaire.c`) pure kernels.
+///
+/// SCORE VERDICT (decomp-verified): no numeric team score exists
+/// anywhere. A successful throw plays 0x154 once, eases the ball
+/// toward the basket unit center, and expires the effect — no
+/// counter, no dialogue change, no flags, no save data. The
+/// DUMMY_TURI field marker (0xF111, shared with the fishing
+/// stand) is the basket detector, not a physical collision.
+/// `aTMN1_flag` is a turn flag (max value 3), not a score.
+///
+/// The whole effect update is dt-scaled; the C-side RNG
+/// (`RANDOM_F`, `qrand`, `RANDOM2_F`), sin_s/cos_s tables,
+/// ground-height queries, `add_calc*`, and sounds stay in C.
+
+/// Basket actor base ID (`SPORTSFAIR_BASKET_RED`).
+pub const TAMAIRE_BASKET_RED: u16 = 0x5836;
+/// Field marker the effect steers toward (`DUMMY_TURI`).
+pub const TAMAIRE_DUMMY_TURI: u16 = 0xF111;
+/// Effect sounds.
+pub const TAMAIRE_SND_LAUNCH: i32 = 0x152;
+pub const TAMAIRE_SND_HIGHER: i32 = 0x153;
+pub const TAMAIRE_SND_TURI: i32 = 0x154;
+pub const TAMAIRE_SND_BOUNCE: i32 = 0x155;
+/// Ground-contact outcomes.
+pub const TAMAIRE_AIRBORNE: i32 = 0;
+pub const TAMAIRE_HIGHER_GROUND: i32 = 1;
+pub const TAMAIRE_TURI_ATTRACT: i32 = 2;
+pub const TAMAIRE_ORDINARY_BOUNCE: i32 = 3;
+
+/// Basket variant (`ac_kago.c`): `npc_id − SPORTSFAIR_BASKET_RED`
+/// selects the red/white model and palette.
+#[no_mangle]
+pub extern "C" fn pc_kago_variant(npc_id: u16) -> i32 {
+    npc_id.wrapping_sub(TAMAIRE_BASKET_RED) as i32
+}
+
+/// Launch velocity (`ef_tamaire.c:41-45`): with the horizontal
+/// target angle's sin/cos (`sin_h`, `cos_h`), the vertical launch
+/// angle's sin/cos (`sin_v`, `cos_v`), and the injected speed
+/// multiplier (`RANDOM_F(1.5f32) + 4.9f32` in C):
+/// `v = (cos_v·sin_h, sin_v, cos_v·cos_h) · speed_mult`.
+/// Writes (x, y, z) to `out[0..3]`.
+#[no_mangle]
+pub extern "C" fn pc_tamaire_launch_velocity(
+    sin_h: f32,
+    cos_h: f32,
+    sin_v: f32,
+    cos_v: f32,
+    speed_mult: f32,
+    out: *mut f32,
+) {
+    if out.is_null() {
+        return;
+    }
+    unsafe {
+        let o = std::slice::from_raw_parts_mut(out, 3);
+        o[0] = cos_v * sin_h * speed_mult;
+        o[1] = sin_v * speed_mult;
+        o[2] = cos_v * cos_h * speed_mult;
+    }
+}
+
+/// Ground-contact outcome classifier, mirroring the `if` nesting
+/// in `eTamaire_mv` verbatim. Call only when the ball is below
+/// its ground reference (`pos.y < offset.y`); otherwise the
+/// result is AIRBORNE.
+/// - `ground_rose`: new ground ref higher than the previous one
+///   (`offset.y > offset.z`) → HIGHER_GROUND.
+/// - else `marker_is_turi` (unit FG == DUMMY_TURI) →
+///   TURI_ATTRACT.
+/// - else ORDINARY_BOUNCE.
+#[no_mangle]
+pub extern "C" fn pc_tamaire_ground_outcome(
+    below_ground: i32,
+    ground_rose: i32,
+    marker_is_turi: i32,
+) -> i32 {
+    if below_ground == 0 {
+        return TAMAIRE_AIRBORNE;
+    }
+    if ground_rose != 0 {
+        return TAMAIRE_HIGHER_GROUND;
+    }
+    if marker_is_turi != 0 {
+        return TAMAIRE_TURI_ATTRACT;
+    }
+    TAMAIRE_ORDINARY_BOUNCE
+}
+
+/// DUMMY_TURI attraction expiry: the effect's timer is zeroed
+/// once the remaining distance to the unit center is < 1.0f32.
+#[no_mangle]
+pub extern "C" fn pc_tamaire_attract_done(dist: f32) -> i32 {
+    (dist < 1.0f32) as i32
+}
+
+/// Ordinary-bounce damping (`DTCONV_GAME(0.5f32, game)`): exponential
+/// frame-rate compensation — exactly 0.5 at 60 fps, not a
+/// literal. Applied as `vel.y *= −damp`, `vel.x/z *= damp`
+/// (horizontal keeps its sign).
+#[no_mangle]
+pub extern "C" fn pc_tamaire_bounce_damp(dt_60fps: f32) -> f32 {
+    0.5f32.powf(dt_60fps)
+}
+
+/// Strong-bounce sound gate: 0x155 plays when the post-bounce
+/// upward velocity exceeds 2.0f32.
+#[no_mangle]
+pub extern "C" fn pc_tamaire_bounce_loud(vel_y_after: f32) -> i32 {
+    (vel_y_after > 2.0f32) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,5 +541,34 @@ mod tests {
         assert_eq!(pc_tamaire_spawn_pos(9, out.as_mut_ptr()), 1);
         assert_eq!(out, [9, 4]);
         assert_eq!(pc_tamaire_spawn_pos(10, out.as_mut_ptr()), 0);
+    }
+
+    #[test]
+    fn effect_kernels() {
+        // launch velocity: v = (cos_v*sin_h, sin_v, cos_v*cos_h) * mult
+        let mut v = [0f32; 3];
+        // horizontal 0 (sin_h=0, cos_h=1), vertical 90deg (sin_v=1, cos_v=0)
+        pc_tamaire_launch_velocity(0.0, 1.0, 1.0, 0.0, 5.0, v.as_mut_ptr());
+        assert_eq!(v, [0.0, 5.0, 0.0]);
+        // horizontal 90deg, vertical 0: (1*mult, 0, 0)
+        pc_tamaire_launch_velocity(1.0, 0.0, 0.0, 1.0, 6.4, v.as_mut_ptr());
+        assert!((v[0] - 6.4).abs() < 1e-6 && v[1] == 0.0 && v[2] == 0.0);
+        // outcome classifier mirrors the if nesting
+        assert_eq!(pc_tamaire_ground_outcome(0, 0, 0), TAMAIRE_AIRBORNE);
+        assert_eq!(pc_tamaire_ground_outcome(1, 1, 1), TAMAIRE_HIGHER_GROUND);
+        assert_eq!(pc_tamaire_ground_outcome(1, 0, 1), TAMAIRE_TURI_ATTRACT);
+        assert_eq!(pc_tamaire_ground_outcome(1, 0, 0), TAMAIRE_ORDINARY_BOUNCE);
+        // attraction expiry
+        assert_eq!(pc_tamaire_attract_done(0.99), 1);
+        assert_eq!(pc_tamaire_attract_done(1.0), 0);
+        // bounce damping: exactly 0.5 at 60fps
+        assert_eq!(pc_tamaire_bounce_damp(1.0), 0.5);
+        assert!(pc_tamaire_bounce_damp(2.0) < 0.5);
+        // loud-bounce gate
+        assert_eq!(pc_tamaire_bounce_loud(2.01), 1);
+        assert_eq!(pc_tamaire_bounce_loud(2.0), 0);
+        // basket variant
+        assert_eq!(pc_kago_variant(0x5836), 0);
+        assert_eq!(pc_kago_variant(0x5837), 1);
     }
 }

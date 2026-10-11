@@ -3943,6 +3943,31 @@ C ABI (all `pc_`-prefixed, 17 exports):
 callers rewired yet, per the usual pattern. No test runs,
 per the standing rule.
 
+#### Addendum 2026-10-11 (muse): thrown-ball effect kernels
+
+Extended `rust/src/tamaire.rs` with the `ef_tamaire.c`
+effect kernels, decomp-verified 14/14. **Score verdict: no
+numeric team score exists anywhere in the decomp** —
+exhaustive trace (zero ball-toss save-area hits, zero
+Kago_Profile consumers, DUMMY_TURI referenced in exactly
+two places). A successful throw plays 0x154 once, eases
+the ball to the basket unit center, and expires; `aTMN1_flag`
+is a turn flag (max 3), not a score.
+
+New `pc_`-prefixed exports (6): `pc_kago_variant`
+(`npc_id − SPORTSFAIR_BASKET_RED`),
+`pc_tamaire_launch_velocity`
+(`v = (cos_v·sin_h, sin_v, cos_v·cos_h) · speed_mult`),
+`pc_tamaire_ground_outcome` (verbatim if-nesting:
+airborne / higher-ground / DUMMY_TURI attract /
+ordinary bounce), `pc_tamaire_attract_done` (dist <
+1.0f), `pc_tamaire_bounce_damp` (`powf(0.5f, dt)` —
+exponential frame-rate comp, not a literal), and
+`pc_tamaire_bounce_loud` (0x155 when vel.y > 2.0f).
+RNG, trig tables, ground queries, `add_calc*`, sounds,
+and the effect lifecycle stay in C. All 7 module tests
+pass (run per Philip's 2026-10-11 authorization).
+
 ### Runtime Port Progress: Field Day Footrace (Tokyoso)
 
 New `rust/src/tokyoso.rs`, registered as `mod tokyoso` in

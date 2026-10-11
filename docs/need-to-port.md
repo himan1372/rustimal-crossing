@@ -137,8 +137,12 @@ candidate for a future pure-kernel port once its boundary is verified.
   talk scripts/message resources, inventory/Bells mutation, the mDemo_* handoff protocol,
   NPC lifecycle, event scheduling/placement/manager callbacks, and the stall prop's
   bg-offset/collision pieces.
-- **Ball-toss scoring** — `eEC_EFFECT_TAMAIRE` trajectory and basket collision after the
-  throw effect; how baskets are counted and whether a numeric team score exists.
+- **Ball-toss scoring** — RESOLVED: no numeric team score exists anywhere in the decomp
+  (exhaustive trace — no save area, no counters, no dialogue/flag changes on a made basket;
+  aTMN1_flag is a turn flag, max 3). The `ef_tamaire.c` effect kernels are now in `tamaire.rs`
+  (launch velocity, ground-outcome classifier, DUMMY_TURI attraction expiry, `powf(0.5f,dt)`
+  bounce damping, 0x155 loud-bounce gate, basket variant). Sounds, RNG, trig tables,
+  ground queries, and the effect lifecycle stay in C.
 - **Fishing record database** — persistent 5-slot DB insertion/recycling, the
   `mEv_fishRecord_local` NPC simulation, `mFR_fishmail` prize mail (the pure record
   kernels are in `fishrecord.rs`; the stateful DB writes, RTC scheduling, and reward
