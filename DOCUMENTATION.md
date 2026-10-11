@@ -2505,6 +2505,53 @@ Gaps / do-not-port: `mSC_get_soncho_event()` date rules,
 `mEv_EVENT_BRIDGE_MAKE` construction lifecycle, and the Groundhog
 Day control clip.
 
+### Runtime Port Progress: K.K. Slider (ac_npc_totakeke.c)
+
+New `rust/src/totakeke.rs`, registered as `mod totakeke` in
+`rust/src/lib.rs`. Decomp-verified against `m_event.c`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`ac_npc_totakeke_talk.c_inc`, `ac_npc_totakeke_think.c_inc`,
+`ac_mikanbox_clip.c_inc`, `m_name_table.h`, `ac_npc_totakeke.h`,
+`m_private.h`, `audio_defs.h` (GAFE01_00 Rev 0 USA). All 12 brief
+claims checked verbatim; no corrections. Two omission-type bonuses
+from verification: four extra "no-intensity" weather thresholds in
+the performance chain, and the Resetti-cameo spawn window
+(`show_timer >= FRAMERATE_TIMER(3600) && < FRAMERATE_SELECT(3610,3010)`).
+
+Ported (pure data/kernels; the actor, weekly scheduler, event
+manager, talk/think state machines, mikanbox clip, inventory/aircheck
+writes, RNG, and staff-roll audio/weather side effects all stay in C):
+
+- The collection selector, bit-for-bit: `count_uncollected` and
+  `select_song` reimplement `aMKBC_count_merody` /
+  `aMKBC_clip_search_merody` given the two collection words and the
+  already-generated random index (the single `RANDOM(count)` and the
+  all-collected fallback bitmap clear stay in C). `collect`
+  reimplements `aMKBC_clip_check_merody` (`md_no < 32` → word0 bit,
+  else word1 bit `md_no - 32`, only when `md_no < 52`).
+- Reroll acceptance: up to 3 retries while `song == _99f`; the final
+  song may still equal `_99f` (rolls in C).
+- Request path: `0x37 + RANDOM_F(3)` fallback, `item − 0x2A00` index,
+  `song >= 0x34` continuation branch.
+- Greeting `MSG_TOTAKEKE_START + {0,1,2,0xD}[talk]`; live BGM
+  `BGM_TOTAKEKE_LIVE0 (192) + song`.
+- Constants: identities (TOTAKEKE D05D, P_SEL D018, RTC D066 — kept
+  separate), Saturday 20:00–23:00, placement block {1,3} unit {7,7}
+  arg 0x51, save flags, think states, minidisk range 0x2A00–0x2A37
+  with 52 selectable songs.
+
+C ABI (all `pc_`-prefixed): `pc_totakeke_greet_msg`,
+`pc_totakeke_needs_reroll`, `pc_totakeke_request_fallback_song`,
+`pc_totakeke_request_song_index`, `pc_totakeke_live_bgm`,
+`pc_totakeke_count_uncollected`, `pc_totakeke_select_song`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the alternate identities' creation paths, the
+submenu request-text path, the staff-roll audio synchronization,
+the weather-change counter chain, the Resetti cameo, and the full
+mikanbox clip lifecycle.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
