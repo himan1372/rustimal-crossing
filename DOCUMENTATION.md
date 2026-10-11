@@ -2394,6 +2394,60 @@ machines and handshakes, Kapp'n's talk state machine, the island
 environment transition, the GBA transfer routines, and the castaway
 cameo lifecycle.
 
+### Runtime Port Progress: Train Arrival/Departure (m_train_control.c)
+
+New `rust/src/train.rs`, registered as `mod train` in `rust/src/lib.rs`.
+Decomp-verified against `m_train_control.c`, `m_train_control.h`,
+`ac_train1_move.c_inc`, `ac_train_door.c`, `ac_train_window.c`,
+`ac_station.c`, `ac_npc_station_master_talk.c_inc`,
+`ac_intro_demo_move.c_inc`, `m_name_table.h`, `ac_station_clip.h`,
+`m_camera2.h` (GAFE01_00 Rev 0 USA). All 14 brief claims checked
+verbatim; no corrections, five precision nuances carried:
+(1) the controller's per-frame X advance is `0.5f * speed * dt` and all
+`chase_f` rates are `rate * dt` — frame-rate coupled, integration loop
+stays in C; (2) `mTRC_demo_init` uses `now_sec − 4:50`, a different
+literal from the −4:10 timetable offset; (3) `anime_table`/`anime_end`
+index by `seq_no` while `anime_spd` indexes by `action`;
+(4) arg0 passenger force passes a zeroed rot with the ROTY flag, arg1
+passes `rot = NULL` with no ROTY flag; (5) Porter's talk tables are
+(msg, continuation, camera) structs, not bare message ids.
+`ac_shasho.c` confirmed absent (only `ac_npc_station_master.c`).
+
+Ported (pure data/kernels; the controller, both train actors,
+door/window/station actors, Porter's state machine, the intro demo,
+and the Rover/Blanca scene selection all stay in C):
+
+- Timetable: 25-entry table (hours 00–24 at hour:19:00), first entry
+  `>=` now, minus 4:10 — verbatim scan; day-change `>=` rollover rule.
+- USA speed constants incl. the un-cleaned `0.21000001f` literal.
+- Four init paths: X starts, initial actions, control states, Z 740.0,
+  and the Y rule (`mRF_CheckFieldStep3() ? 300 : 180` stays in C).
+- Transition thresholds: `pos.x > 2165.0`, `fabsf(speed) < 0.008`,
+  timers 48/84/180, `start_timer += 310`, `pos.x > 4400.0`.
+- Train1 animation tables with the seq_no/action asymmetry;
+  passenger offsets (60,20,20)/(2,16,20) with the rot-flag asymmetry;
+  door sound frames 2.0/27.0.
+- Window: scroll speeds per scene, palette threshold table with the
+  verbatim first-match scan, tree-scroll +5.
+- Station variant math (`type / 5`, type/pal offsets, winter skeleton
+  index stays in C); Porter forced/normal talk tables with
+  continuations and cameras; identities GUIDE D004, DEPART_MASTER
+  D00B, STATION_MASTER D00E, RCN_GUIDE D014; intro-demo values
+  (flag 3, scene_mode 9, doorway (2180,0,820), walk (2220,840) @ 2.5).
+
+C ABI (all `pc_`-prefixed): `pc_train_depart_timer`,
+`pc_train_day_rollover`, `pc_train_tree_palette_idx`,
+`pc_train_station_arg0`, `pc_train1_anim_speed`,
+`pc_train1_anim_end`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the `dt`-coupled controller transitions, train
+actor lifecycles and parent/child linkage, door/window animation
+state, Porter's think table, the intro-demo choreography, and the
+SCENE_START_DEMO3 Rover/Blanca selection (covered by the Blanca
+module's travel-scene kernels).
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

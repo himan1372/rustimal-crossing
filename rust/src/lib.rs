@@ -88,6 +88,7 @@ mod wisp;
 mod blanca;
 mod gulliver;
 mod boat;
+mod train;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
