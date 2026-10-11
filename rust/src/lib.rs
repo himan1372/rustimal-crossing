@@ -103,6 +103,7 @@ mod design;
 mod melody;
 mod museum_display;
 mod shop_interior;
+mod house_interior;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

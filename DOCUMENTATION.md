@@ -3177,6 +3177,58 @@ C ABI (all `pc_`-prefixed, 11 exports): `pc_si_item_to_slot`,
 rewired yet, per the usual pattern. No test runs, per the
 standing rule.
 
+### Runtime Port Progress: Player House Interiors
+
+New `rust/src/house_interior.rs`, registered as `mod house_interior`
+in `rust/src/lib.rs`. Decomp-verified against `ac_my_indoor.c`,
+`ac_my_indoor.h`, `ac_house_clock.c`, `ac_house_clock.h`,
+`ac_arrange_room.c`, `ac_my_house.c`, `ac_arrange_ftr.c`,
+`m_scene_table.h`, `m_name_table_floor_decl.h`, `audio_defs.h`
+(GAFE01_00 Rev 0 USA). All 10 brief claims checked; 0 DIFFERS.
+
+Ported (pure state/table/mapping kernels; actor construction,
+rendering, texture DMA, collision, and the save stay in C):
+
+- The scene→room-kind table: six kinds, exactly 10 entries,
+  first match wins, fallback S. (No LL2-basement or second-floor
+  scene exists — the brief's phrasing overstated the table.)
+- The texture-bank geometry: `aMI_PAL_SIZE`/`aMI_TEX_SIZE` and the
+  derived wall/floor bank sizes, two banks each, with the
+  both-banks initial load.
+- The floor-sound selection: basement → 82, `0 <= floor_num <
+  71` → floor_num, otherwise 83 (`FLOOR_ORIGINAL_SE`).
+- The wallpaper/flooring validation: valid at `[0, 67)` or an
+  original design; invalid resets to 0.
+- The room step flags: M/L/LL1 + basement → step 0; LL1 →
+  step 1; LL2 → step 2; floor-no 2 → step 3.
+- The clock model/position selection: 9 clock types with their
+  hand-joint indices, the 9-entry scene→position table, the
+  120-frame phase accumulator with the verbatim
+  `aHC_CrossedFrame` semantics, the 15/45 chime test, the 0.5f
+  animation speed, the RTC-driven hand angles (`0x4000 -
+  rad_hour/rad_min`), the chime sound ID `NA_SE_12D` (0x12D),
+  and the raffle-hides-shop-clocks rule.
+- The arrange-room packed-index extraction: wall = high byte,
+  floor = low byte, BOTH clamped to 0..0x42 (the brief suggested
+  the wall range differed — it doesn't).
+- The exterior door action states (four, with the source's own
+  `SCEEN` typo documented), the entry door data per house size,
+  and the ±48.29f exit offsets.
+
+Deliberately NOT ported: `ac_arrange_ftr.c` (an empty actor stub
+— nothing to port), the keyframe/DMA/texture/display-list
+rendering, the furniture actor lifecycle (owned by the sibling
+`furniture` module and C), the furniture profile callbacks, the
+clock's `rad_hour`/`rad_min` computation (in the time system),
+and save mutations.
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_hi_room_kind`,
+`pc_hi_floor_se`, `pc_hi_validate_index`, `pc_hi_room_steps`,
+`pc_hi_clock_pos`, `pc_hi_crossed_frame`, `pc_hi_clock_chime`,
+`pc_hi_clock_hidden`, `pc_hi_arrange_extract`,
+`pc_hi_entry_start`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
