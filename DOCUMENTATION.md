@@ -2344,7 +2344,7 @@ Quirks and bugs:
   `ITEM_NAME_GET_TYPE(npc_id == NAME_TYPE_SPNPC)` is always 0.
 - Statue eyes: the girl face-7 entry points at the boy face-7 texture.
 - K.K. songs on house radios are not played by `ac_radio`; that is
-  `aMR_RadioCommonMove` (my_room). `ac_radio` is the aerobics radio.
+  `aMR_MiniDiskCommonMove` (my_room; see `radio.rs`). `ac_radio` is the aerobics radio.
 
 PC-port notes:
 - `TOUDAI_ACTOR` outgrew the structure slot, so the slots are 0x300
@@ -2360,6 +2360,59 @@ C ABI (3): `pc_toudai_night`, `pc_str_setup_profile`,
 `cargo check` (host + i686-pc-windows-gnu, lib and tests) is clean.
 Clippy is clean for the new files. Tests are written but not run.
 Tables were script-checked against the C.
+
+## Calendar and radios (2026-10-11, claude)
+
+Research covered `m_calendar.c`, `m_calendar_ovl.c` (+ draw), `ac_radio`,
+`ac_radio_test`, `ac_sum_radio01/02` and the music code in `ac_my_room`.
+The primary source was ac-decomp, diffed against ACGC-PC-Port.
+`m_calendar.c` is unchanged on PC; the overlay and radios differ only in
+dt/60 Hz handling, plus the radio's borderless despawn rule. Two new
+modules hold the logic and data. Drawing stays in C.
+
+- `calendar.rs`:
+  - The 0x68-byte save record (`PlayerCalendar`) with its played-day and
+    attended-event bits and the moving-event flags.
+  - Month and day wiping when the clock moves (`check_delete`,
+    `clear_interval`, `clear_day`), plus `welcome_on`, `event_on` and
+    `event_check`.
+  - The 36-month grid builder: 16 fixed-date events, 8 floating ones,
+    Sunday fishing tourneys in June and November, equinox sports fairs,
+    Town Day, the harvest moon, the birthday, and played/attended icons
+    for the last 12 months.
+  - Input: stick areas, page flips (+-11 months, C-up returns to now),
+    the day cursor and event-list scrolling, cursor blink, and the diary
+    hand-off with the lock warning.
+- `radio.rs`:
+  - K.K. disc BGM (`BGM_MD0 128 + n`, 55 discs), the random song pick
+    when a stereo is placed, and removal of songs the music box no longer
+    owns.
+  - The room BGM reserve/change state machine, with the sound calls
+    returned as `BgmOp`s.
+  - The aerobics radio (BGM 27) furniture and actor, the 36-frame effect
+    counters, the despawn rule (retail vs PC), the room-clock ticks, and
+    16 stereo models mapped to speaker presets (`Conpo` 1-16).
+
+Bugs and quirks:
+- The decomp's `mCD_FLAG_MOTHERS_DAY` is really Father's Day (it is set
+  by event 11 and lives in June).
+- Father's Day attended icon: US/JP shows it on the Saturday before
+  (`lbRTC_Week(day + 1)`). The AUS fix (`lbRTC_Week(day)`) misses a
+  Father's Day that falls on the 21st.
+- `mCD_calendar_check_delete` wipes the *current* player's calendar when
+  the checked calendar is unset or a year or more stale. So opening
+  another resident's old calendar erases your own history.
+- A Feb 29 birthday in a non-leap year lands in cell 37 (out of range).
+- `aMR_ChangeMDBgm` deletes the positional voice even after the aerobics
+  track, which never made one.
+- Correction to the previous section: K.K. discs play via
+  `aMR_MiniDiskCommonMove`; `aMR_RadioCommonMove` is the aerobics radio.
+
+C ABI (2): `pc_cd_event_check`, `pc_mr_conpo_index` (unique).
+Event ids (29), and both event tables, were script-checked against the
+C. Furniture and BGM ids were evaluated with gcc. `cargo check` is clean
+(host + i686, lib and tests), with no clippy findings in the new files.
+Tests are written but not run.
 
 ## File Reference
 

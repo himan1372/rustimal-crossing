@@ -46,7 +46,7 @@
 //!   flag 12390.
 //! - Aerobics radio: note effect every 36 frames, offset (2, 0, -10).
 //!   K.K. songs are not played by these actors: house radios go through
-//!   `aMR_RadioCommonMove`; K.K.'s concerts are run by `ac_mikanbox`
+//!   `aMR_MiniDiskCommonMove` (see `radio.rs`); K.K.'s concerts are run by `ac_mikanbox`
 //!   (see `kk_credits.rs`).
 //! - Sewing machine: the cloth under the needle is one of your designs
 //!   (1 in 3) or a random shop shirt; it cycles four corner targets.

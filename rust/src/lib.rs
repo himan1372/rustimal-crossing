@@ -121,6 +121,8 @@ mod camera;
 mod buildings;
 mod props;
 mod kk_credits;
+mod calendar;
+mod radio;
 
 const CISO_HEADER_SIZE: usize = 0x8000;
 const CISO_MAP_OFFSET: usize = 8;
