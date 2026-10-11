@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 127 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 128 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -146,6 +146,10 @@ candidate for a future pure-kernel port once its boundary is verified.
 - **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
   `ac_birth_control.c` (not started).
 - **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
+- **NES follow-ups** — the nesinfo tag-stream parser for all 19 titles; the
+  `special_zelda()` BBRAM repair; exact acquisition conditions for every NES
+  furniture item; the scene.rs FamicomEmu `cleanup_fn: None` wiring gap vs C's
+  `famicom_emu_cleanup`; the practical effect of every extra furniture-table entry.
 - **Bee follow-ups** — CALC_EASE short-angle wraparound; appear rotation.z increment
   and scale easing; position integration ownership; force-catch/table-catch request
   events; `disappear_timer > 1.0` fallback in CAUGHT; ant scale chase; the exact
@@ -224,8 +228,9 @@ type ids, status values, s16 target frame, 8.9f speed; ghog hive visual stays in
 
 ## Big-ticket systems
 
-**NES games** — the Famicom emulator and unlockable NES titles.
-`famicom_emu.c`, `m_fbdemo.c`, `m_fbdemo_fade.c`, `m_fbdemo_triforce.c`, `m_fbdemo_wipe1.c`
+✅ **NES games** — the Famicom emulator and unlockable NES titles. → `famicom.rs`
+(furniture/metadata tables, save-header validation, exit wrapper, retail-form
+fbdemo transition math; the 6502 core and wrapper stay in C)
 
 **GBA Island** — link-cable island, minigames, islanders.
 `m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`
