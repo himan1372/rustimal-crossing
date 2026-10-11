@@ -91,6 +91,7 @@ mod boat;
 mod train;
 mod tortimer;
 mod totakeke;
+mod majin;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

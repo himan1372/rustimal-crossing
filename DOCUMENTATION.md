@@ -2552,6 +2552,60 @@ submenu request-text path, the staff-roll audio synchronization,
 the weather-change counter chain, the Resetti cameo, and the full
 mikanbox clip lifecycle.
 
+### Runtime Port Progress: Mr. Resetti (ac_npc_majin.c)
+
+New `rust/src/majin.rs`, registered as `mod majin` in `rust/src/lib.rs`.
+Decomp-verified against `ac_reset_demo.c`, `ac_npc_majin.c`,
+`ac_npc_majin_schedule.c_inc`, `ac_npc_majin_talk.c_inc`,
+`ac_npc_majin3_talk.c_inc`, `ac_npc_majin4_talk.c_inc`,
+`ac_npc_majin4_schedule.c_inc`, `ac_ev_majin_move.c_inc`,
+`m_name_table.h` (GAFE01_00 Rev 0 USA). All 8 brief claims checked
+verbatim; no corrections. Nuances carried: the `default:` call state
+is CALL_4 (covers MAJIN2/3/4); `se_clear_timer = -1` one-shot disarm;
+the `-1` chg_length sentinel can never trigger; the light window is
+strict (`> 19:00` / `< 05:00`, boundary seconds excluded); the bounds
+analysis proves `majin_name[reset-1]` can never go out of bounds (the
+demo is only created when `reset_flag` is set, which happens alongside
+the count increment, so `reset_count >= 1`).
+
+Ported (pure data/kernels; the reset-demo controller, the Resetti/Don
+actor variants, their think/talk state machines, the text-entry
+overlay, Don's reset/fade sequence, the lighting, and the Groundhog
+Day event actor all stay in C):
+
+- Reset-count normalization (`>= 9` → `6 + ((reset-9) % 3)`) and the
+  8-entry identity table: D07C, D07D, D03E, D065, D07E (Don), D068,
+  D069, D080.
+- Initial call states per identity (MAJIN→CALL, D07C→CALL_2,
+  D07D→CALL_3, BROTHER→CALL_4, D080→CALL_5, default→CALL_4).
+- Force-talk table `{0x1B3B, 0x3A38, 0x3A42, 0x3A4C, 0x3B05}`;
+  Don's `{0x250F, 0x2512}`, timers 180/8, fade 255−8/update.
+- The word-entry test, bit-for-bit, over caller-provided buffers (the
+  ROM string tables stay in C): full-16-byte good-word comparison,
+  the ng-word substring scan with the exact `chg_length` boundary
+  stepping (`len` 2→10 across the 32 words), `17 − len` offsets per
+  word, `mem_cmp`-returns-TRUE-on-equality semantics, GOOD > NG >
+  WRONG priority, and the outcome messages
+  (GOOD→0x23EC, NG→0x23EF, WRONG→0x23EE).
+- Groundhog event-actor weather messages (rolls in C); the strict
+  point-light time window.
+- Constants: EV_MAJIN D081, MAJIN5 D06B, think states, word counts
+  (16 good, 32 ng), string buffer size 16.
+
+C ABI (all `pc_`-prefixed): `pc_majin_reset_identity`,
+`pc_majin_initial_call_state`, `pc_majin_force_talk_msg`,
+`pc_majin_ng_word_len`, `pc_majin_word_msg`, `pc_majin_ev_msg`,
+`pc_majin_point_light_active`. The full buffer-taking scan
+(`check_ng_word`/`check_word`) is implemented as pure Rust over
+caller-provided buffers for future differential testing; the ROM
+string tables themselves are retail string data and stay in C.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the reset-hole effect, the text-entry overlay,
+the demo-clip coordination, the weather-clip sound handling, and the
+Groundhog controller handshake.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
