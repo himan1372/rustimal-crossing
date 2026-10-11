@@ -371,6 +371,326 @@ pub extern "C" fn pc_taisou_spawn_pos(slot: u8, out: *mut i32) -> u8 {
     1
 }
 
+
+/// Radio-counter constants (`Na_GetRadioCounter`,
+/// `src/static/jaudio_NES/game/radio.c`).
+pub const RADIO_SEQ_AEROBICS: i32 = 0xDA;
+pub const RADIO_COUNTER_FIRST: i32 = 744;
+pub const RADIO_COUNTER_MEASURE: i32 = 768;
+pub const RADIO_MEASURE9_PROGRESS: f32 = 216.0;
+pub const AUDIO_TATUMS_PER_BEAT: u16 = 48;
+
+/// Availability predicate for `sAdos_GetRadioCounter`: nonzero iff the
+/// current BGM group is enabled and its sequence ID is 0xDA. On failure
+/// the C code returns -1 WITHOUT touching `Radio_c` (stale values may
+/// remain); the group lookup itself stays in C.
+#[no_mangle]
+pub extern "C" fn pc_taisou_radio_available(enabled: i32, seq_id: i32) -> i32 {
+    (enabled != 0 && seq_id == RADIO_SEQ_AEROBICS) as i32
+}
+
+/// Raw-counter → (measure, progress) conversion (`Na_GetRadioCounter`).
+/// The first measure spans raw 0..744; each later measure spans 768
+/// units; measure 9 uses a 216-unit progress denominator (its progress
+/// can exceed 1.0). All divisions are the C originals'.
+#[no_mangle]
+pub extern "C" fn pc_taisou_radio_convert(
+    raw_counter: i32,
+    measure_out: *mut i8,
+    progress_out: *mut f32,
+) {
+    let (measure, progress) = if raw_counter < RADIO_COUNTER_FIRST {
+        (0i8, raw_counter as f32 / RADIO_COUNTER_MEASURE as f32)
+    } else {
+        let mut counter = raw_counter - RADIO_COUNTER_FIRST;
+        let mut measure = counter / RADIO_COUNTER_MEASURE;
+        counter -= measure * RADIO_COUNTER_MEASURE;
+        measure += 1;
+        let progress = if measure == 9 {
+            counter as f32 / RADIO_MEASURE9_PROGRESS
+        } else {
+            counter as f32 / RADIO_COUNTER_MEASURE as f32
+        };
+        (measure as i8, progress)
+    };
+    unsafe {
+        if !measure_out.is_null() {
+            *measure_out = measure;
+        }
+        if !progress_out.is_null() {
+            *progress_out = progress;
+        }
+    }
+}
+
+/// Tempo write (`Na_GetRadioCounter`): the BGM group's u16 tempo
+/// divided by `AUDIO_TATUMS_PER_BEAT` (48), integer division.
+#[no_mangle]
+pub extern "C" fn pc_taisou_radio_tempo(tempo: u16) -> u16 {
+    tempo / AUDIO_TATUMS_PER_BEAT
+}
+
+/// Leader-cull predicate (`aTS0_actor_move`): when the leader is NOT
+/// marked `ACTOR_STATE_NO_CULL` and its block differs from the player's
+/// current block, the group deletion flag is set and the leader deletes
+/// itself (other actors observe the flag on their own updates).
+#[no_mangle]
+pub extern "C" fn pc_taisou_leader_cull(
+    leader_no_cull: i32,
+    leader_block: i32,
+    player_block: i32,
+) -> i32 {
+    (leader_no_cull == 0 && leader_block != player_block) as i32
+}
+
+/// Registration drain (`aTS0_actor_dt`): every destructor decrements
+/// the count; at zero-or-below it clamps to zero and signals the
+/// shared deletion flag reset via `*reset_delete`.
+#[no_mangle]
+pub extern "C" fn pc_taisou_regist_drain(regist_sum: i32, reset_delete: *mut i32) -> i32 {
+    let new_sum = regist_sum - 1;
+    let (clamped, reset) = if new_sum <= 0 { (0, 1) } else { (new_sum, 0) };
+    unsafe {
+        if !reset_delete.is_null() {
+            *reset_delete = reset;
+        }
+    }
+    clamped
+}
+
+/// Failure-rate table index (`ac_taisou_npc0.c`): `npc_id - 0xD04E`,
+/// forced to 0 when above 4 (covers Tortimer 0xD078 and any other
+/// out-of-range ID).
+#[no_mangle]
+pub extern "C" fn pc_taisou_failure_type(npc_id: u16) -> i32 {
+    let t = npc_id.wrapping_sub(SP_NPC_EV_TAISOU_0);
+    if t > 4 {
+        0
+    } else {
+        t as i32
+    }
+}
+
+/// Tortimer's radio-card constants (`m_soncho.c` / `m_soncho.h`).
+pub const RADIO_CARD00: i32 = 0x2523;
+pub const RADIO_CARD_COUNT: i32 = 13;
+/// `FTR_START(FTR_RADIO_TEST)` — the aerobics radio furniture item.
+/// (radio.rs's 1011 is the furniture *table index*, not this item ID.)
+pub const RADIO_FURNITURE_ITEM: i32 = 0x1FCC;
+pub const MORNING_AEROBICS_EVENT: i32 = 103;
+/// `mSCR_TALK_*` (0-9).
+pub const TALK_PICKUP_ALL: i32 = 0;
+pub const TALK_INSPECTION: i32 = 1;
+pub const TALK_NEXT_INSPECTION: i32 = 2;
+pub const TALK_NEWCARD: i32 = 3;
+pub const TALK_BEFORE_GIVE: i32 = 4;
+pub const TALK_GIVE: i32 = 5;
+pub const TALK_NEXT: i32 = 6;
+pub const TALK_9: i32 = 9;
+/// `mSCR_ACTION_*` (0-6).
+pub const ACTION_TOO_LATE: i32 = 0;
+pub const ACTION_DELETE_OLD_CARD: i32 = 1;
+pub const ACTION_NEW_CARD: i32 = 2;
+pub const ACTION_LOST_CARD: i32 = 3;
+pub const ACTION_STAMP_CARD: i32 = 4;
+pub const ACTION_FINISH_CARD: i32 = 5;
+pub const ACTION_LOST_CARD_AND_FINISH: i32 = 6;
+/// Radio-card dialogue messages.
+pub const MSG_CARD_FOREIGNER: i32 = 0x343B;
+pub const MSG_CARD_SAME_DAY: i32 = 0x3433;
+pub const MSG_CARD_TOO_LATE: i32 = 0x3437;
+pub const MSG_CARD_DELETE_OLD: i32 = 0x343C;
+pub const MSG_CARD_NEW: i32 = 0x3422;
+pub const MSG_CARD_NEW_MARKED: i32 = 0x3423;
+pub const MSG_CARD_LOST: i32 = 0x342E;
+pub const MSG_CARD_LOST_MARKED: i32 = 0x342F;
+pub const MSG_CARD_STAMP: i32 = 0x3427;
+pub const MSG_CARD_FINISH: i32 = 0x342A;
+pub const MSG_CARD_LOST_FINISH_FOLLOWUP: i32 = 0x342D;
+/// Radio-time states (`mSC_RADIO_TIME_*`).
+pub const RADIO_TIME_LESS: i32 = 0;
+pub const RADIO_TIME_SAME_DAY: i32 = 1;
+pub const RADIO_TIME_OVER: i32 = 2;
+
+/// `mSC_Radio_time_check`: a year mismatch returns LESS (0) — it is
+/// NOT an automatic "new year, new card". Otherwise `equal_date` is
+/// the `lbRTC_IsEqualDate` verdict (-1 LESS, 0 EQUAL, 1 OVER;
+/// anything else defaults to LESS).
+#[no_mangle]
+pub extern "C" fn pc_taisou_radio_time_check(
+    now_year: i32,
+    last_year: i32,
+    equal_date: i32,
+) -> i32 {
+    if now_year != last_year {
+        RADIO_TIME_LESS
+    } else {
+        match equal_date {
+            -1 => RADIO_TIME_LESS,
+            0 => RADIO_TIME_SAME_DAY,
+            1 => RADIO_TIME_OVER,
+            _ => RADIO_TIME_LESS,
+        }
+    }
+}
+
+/// `mSC_Radio_limit_check`: the verbatim conjunction
+/// `month >= 8 && day >= 19` → FALSE (0). Returns nonzero while card
+/// issuance is still allowed. Note the quirk: September 1 passes
+/// (day 1 < 19), because both conditions must hold.
+#[no_mangle]
+pub extern "C" fn pc_taisou_limit_check(month: i32, day: i32) -> i32 {
+    ((month >= 8 && day >= 19) == false) as i32
+}
+
+/// Card-ID derivations (`m_soncho.c`):
+/// - lost-card recovery increments `days` BEFORE deriving the ID;
+/// - stamping derives from the current `days`;
+/// - the 1-card OVER branch derives `days = card - CARD00 + 1` and the
+///   C caller writes it back to `radiocard->days`.
+#[no_mangle]
+pub extern "C" fn pc_taisou_card_lost_id(days: i32) -> i32 {
+    RADIO_CARD00 + days + 1
+}
+
+#[no_mangle]
+pub extern "C" fn pc_taisou_card_stamp_id(days: i32) -> i32 {
+    RADIO_CARD00 + days
+}
+
+#[no_mangle]
+pub extern "C" fn pc_taisou_card_derive_days(card: i32) -> i32 {
+    card - RADIO_CARD00 + 1
+}
+
+/// `mSC_Radio_Set_Talk_Proc` action selection (pure part). Returns the
+/// `mSCR_ACTION_*` value, or -1 for the foreigner branch and -2 for
+/// the same-day branch (those set only the message/talk state, no
+/// action). `limit_ok` is `mSC_Radio_limit_check()`; `days` is
+/// `radiocard->days`; `card` is the selected card ID (1-card branch).
+/// Inventory/calendar/RNG mutations stay in C.
+#[no_mangle]
+pub extern "C" fn pc_taisou_radio_action(
+    foreigner: i32,
+    time_check: i32,
+    num_cards: i32,
+    days: i32,
+    limit_ok: i32,
+    card: i32,
+) -> i32 {
+    if foreigner != 0 {
+        return -1;
+    }
+    if time_check == RADIO_TIME_SAME_DAY {
+        return -2;
+    }
+    let mut action = ACTION_TOO_LATE;
+    if num_cards <= 0 {
+        if !(limit_ok == 0 && (days == RADIO_CARD_COUNT || time_check == RADIO_TIME_LESS)) {
+            match time_check {
+                x if x == RADIO_TIME_LESS => action = ACTION_NEW_CARD,
+                x if x == RADIO_TIME_OVER => {
+                    action = if days == RADIO_CARD_COUNT - 1 {
+                        ACTION_LOST_CARD_AND_FINISH
+                    } else if days < RADIO_CARD_COUNT {
+                        ACTION_LOST_CARD
+                    } else {
+                        ACTION_NEW_CARD
+                    };
+                }
+                _ => {}
+            }
+        }
+    } else if num_cards > 1 {
+        action = ACTION_DELETE_OLD_CARD;
+    } else if time_check == RADIO_TIME_LESS {
+        action = ACTION_DELETE_OLD_CARD;
+    } else if time_check == RADIO_TIME_OVER {
+        let derived = pc_taisou_card_derive_days(card);
+        action = if derived >= RADIO_CARD_COUNT {
+            ACTION_FINISH_CARD
+        } else {
+            ACTION_STAMP_CARD
+        };
+    }
+    // NOTE: the 1-card SAME_DAY arm is unreachable in C (the outer
+    // else-if already handled SAME_DAY); it would leave TOO_LATE here.
+    action
+}
+
+/// Dialogue message for the selected action (`mSC_Radio_Set_Talk_Proc`).
+/// `calendar_marked` selects the 0x3423/0x342F variants.
+#[no_mangle]
+pub extern "C" fn pc_taisou_radio_msg(action: i32, calendar_marked: i32) -> i32 {
+    match action {
+        -1 => MSG_CARD_FOREIGNER,
+        -2 => MSG_CARD_SAME_DAY,
+        x if x == ACTION_TOO_LATE => MSG_CARD_TOO_LATE,
+        x if x == ACTION_DELETE_OLD_CARD => MSG_CARD_DELETE_OLD,
+        x if x == ACTION_NEW_CARD => {
+            if calendar_marked != 0 {
+                MSG_CARD_NEW_MARKED
+            } else {
+                MSG_CARD_NEW
+            }
+        }
+        x if x == ACTION_LOST_CARD => {
+            if calendar_marked != 0 {
+                MSG_CARD_LOST_MARKED
+            } else {
+                MSG_CARD_LOST
+            }
+        }
+        x if x == ACTION_STAMP_CARD => MSG_CARD_STAMP,
+        x if x == ACTION_FINISH_CARD => MSG_CARD_FINISH,
+        x if x == ACTION_LOST_CARD_AND_FINISH => {
+            if calendar_marked != 0 {
+                MSG_CARD_LOST_MARKED
+            } else {
+                MSG_CARD_LOST
+            }
+        }
+        _ => MSG_CARD_TOO_LATE,
+    }
+}
+
+/// Talk-procedure selection for the action (`mSCR_Talk_Proc`
+/// dispatcher indices). `inv_full` is nonzero when no empty
+/// normal-condition inventory slot exists.
+#[no_mangle]
+pub extern "C" fn pc_taisou_radio_talk_proc(action: i32, inv_full: i32) -> i32 {
+    match action {
+        -1 => TALK_9,
+        -2 => TALK_NEXT,
+        x if x == ACTION_TOO_LATE => TALK_NEXT,
+        x if x == ACTION_DELETE_OLD_CARD => TALK_PICKUP_ALL,
+        x if x == ACTION_NEW_CARD => {
+            if inv_full != 0 {
+                TALK_NEXT
+            } else {
+                TALK_NEXT_INSPECTION
+            }
+        }
+        x if x == ACTION_LOST_CARD => {
+            if inv_full != 0 {
+                TALK_NEXT
+            } else {
+                TALK_NEXT_INSPECTION
+            }
+        }
+        x if x == ACTION_STAMP_CARD => TALK_INSPECTION,
+        x if x == ACTION_FINISH_CARD => TALK_INSPECTION,
+        x if x == ACTION_LOST_CARD_AND_FINISH => {
+            if inv_full != 0 {
+                TALK_NEXT
+            } else {
+                TALK_NEXT_INSPECTION
+            }
+        }
+        _ => TALK_NEXT,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,5 +786,92 @@ mod tests {
         assert_eq!(pc_taisou_spawn_pos(6, out.as_mut_ptr()), 1);
         assert_eq!(out, [9, 8]);
         assert_eq!(pc_taisou_spawn_pos(7, out.as_mut_ptr()), 0);
+    }
+
+    #[test]
+    fn radio_counter_kernels() {
+        // Availability: enabled + 0xDA.
+        assert_eq!(pc_taisou_radio_available(1, 0xDA), 1);
+        assert_eq!(pc_taisou_radio_available(0, 0xDA), 0);
+        assert_eq!(pc_taisou_radio_available(1, 0xD9), 0);
+        // Conversion: first measure, boundary, later measures, measure 9.
+        let mut m: i8 = -1;
+        let mut p: f32 = -1.0;
+        pc_taisou_radio_convert(0, &mut m, &mut p);
+        assert_eq!((m, p), (0, 0.0));
+        pc_taisou_radio_convert(743, &mut m, &mut p);
+        assert_eq!(m, 0);
+        assert!((p - 743.0 / 768.0).abs() < 1e-6);
+        pc_taisou_radio_convert(744, &mut m, &mut p);
+        assert_eq!((m, p), (1, 0.0));
+        pc_taisou_radio_convert(744 + 768, &mut m, &mut p);
+        assert_eq!((m, p), (2, 0.0));
+        // Measure 9 starts at 744 + 8*768 and uses the 216 denominator.
+        pc_taisou_radio_convert(744 + 8 * 768, &mut m, &mut p);
+        assert_eq!((m, p), (9, 0.0));
+        pc_taisou_radio_convert(744 + 8 * 768 + 108, &mut m, &mut p);
+        assert_eq!(m, 9);
+        assert!((p - 0.5).abs() < 1e-6);
+        // Tempo: integer division by 48.
+        assert_eq!(pc_taisou_radio_tempo(96), 2);
+        assert_eq!(pc_taisou_radio_tempo(100), 2);
+        // Leader cull: not-NO_CULL + block mismatch.
+        assert_eq!(pc_taisou_leader_cull(0, 3, 5), 1);
+        assert_eq!(pc_taisou_leader_cull(1, 3, 5), 0);
+        assert_eq!(pc_taisou_leader_cull(0, 5, 5), 0);
+        // Regist drain: clamp + reset signal.
+        let mut r = 0;
+        assert_eq!(pc_taisou_regist_drain(3, &mut r), 2);
+        assert_eq!(r, 0);
+        assert_eq!(pc_taisou_regist_drain(1, &mut r), 0);
+        assert_eq!(r, 1);
+        // Failure type: idx, clamped above 4 (Tortimer 0xD078 -> 0).
+        assert_eq!(pc_taisou_failure_type(0xD04E), 0);
+        assert_eq!(pc_taisou_failure_type(0xD052), 4);
+        assert_eq!(pc_taisou_failure_type(0xD078), 0);
+    }
+
+    #[test]
+    fn radio_card_kernels() {
+        // Time check: year mismatch -> LESS; else the IsEqualDate map.
+        assert_eq!(pc_taisou_radio_time_check(2026, 2025, 1), 0);
+        assert_eq!(pc_taisou_radio_time_check(2026, 2026, -1), 0);
+        assert_eq!(pc_taisou_radio_time_check(2026, 2026, 0), 1);
+        assert_eq!(pc_taisou_radio_time_check(2026, 2026, 1), 2);
+        // Limit: month>=8 && day>=19 -> 0 (past the season).
+        assert_eq!(pc_taisou_limit_check(8, 19), 0);
+        assert_eq!(pc_taisou_limit_check(9, 1), 1); // conjunction quirk
+        assert_eq!(pc_taisou_limit_check(7, 30), 1);
+        // Card IDs: CARD00 = 0x2523; lost increments days first.
+        assert_eq!(pc_taisou_card_lost_id(5), 0x2523 + 6);
+        assert_eq!(pc_taisou_card_stamp_id(5), 0x2523 + 5);
+        assert_eq!(pc_taisou_card_derive_days(0x2523 + 4), 5);
+        // Action tree.
+        assert_eq!(pc_taisou_radio_action(1, 2, 0, 0, 1, 0), -1); // foreigner
+        assert_eq!(pc_taisou_radio_action(0, 1, 0, 0, 1, 0), -2); // same day
+        assert_eq!(pc_taisou_radio_action(0, 0, 0, 0, 1, 0), 2); // no cards, LESS -> NEW
+        assert_eq!(pc_taisou_radio_action(0, 0, 0, 0, 0, 0), 0); // no cards, LESS, past limit -> TOO_LATE
+        assert_eq!(pc_taisou_radio_action(0, 2, 0, 12, 1, 0), 6); // days==12 OVER -> LOST_AND_FINISH
+        assert_eq!(pc_taisou_radio_action(0, 2, 0, 5, 1, 0), 3); // OVER -> LOST
+        assert_eq!(pc_taisou_radio_action(0, 2, 0, 13, 1, 0), 2); // days==13 OVER -> NEW
+        assert_eq!(pc_taisou_radio_action(0, 0, 2, 0, 1, 0), 1); // >1 card -> DELETE
+        assert_eq!(pc_taisou_radio_action(0, 0, 1, 0, 1, 0), 1); // 1 card LESS -> DELETE
+        assert_eq!(pc_taisou_radio_action(0, 2, 1, 0, 1, 0x2523 + 12), 5); // derive 13 -> FINISH
+        assert_eq!(pc_taisou_radio_action(0, 2, 1, 0, 1, 0x2523 + 4), 4); // derive 6 -> STAMP
+        // Messages.
+        assert_eq!(pc_taisou_radio_msg(-1, 0), 0x343B);
+        assert_eq!(pc_taisou_radio_msg(-2, 0), 0x3433);
+        assert_eq!(pc_taisou_radio_msg(2, 0), 0x3422);
+        assert_eq!(pc_taisou_radio_msg(2, 1), 0x3423);
+        assert_eq!(pc_taisou_radio_msg(3, 1), 0x342F);
+        assert_eq!(pc_taisou_radio_msg(4, 0), 0x3427);
+        assert_eq!(pc_taisou_radio_msg(5, 0), 0x342A);
+        // Talk procedures.
+        assert_eq!(pc_taisou_radio_talk_proc(-1, 0), 9);
+        assert_eq!(pc_taisou_radio_talk_proc(0, 0), 6);
+        assert_eq!(pc_taisou_radio_talk_proc(1, 0), 0);
+        assert_eq!(pc_taisou_radio_talk_proc(2, 1), 6);
+        assert_eq!(pc_taisou_radio_talk_proc(2, 0), 2);
+        assert_eq!(pc_taisou_radio_talk_proc(4, 0), 1);
     }
 }

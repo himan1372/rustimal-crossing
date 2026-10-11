@@ -3824,6 +3824,29 @@ C ABI (all `pc_`-prefixed, 18 exports):
 rewired yet, per the usual pattern. No test runs, per the
 standing rule.
 
+#### Addendum 2026-10-11 (muse): radio counter, group, and card kernels
+
+Extended `rust/src/taisou.rs` with the radio-counter, group-coordination,
+and Tortimer card-progression kernels, decomp-verified 6/6. New
+`pc_`-prefixed exports: `pc_taisou_radio_available` (enabled && seq 0xDA
+— the -1 path leaves `Radio_c` untouched), `pc_taisou_radio_convert`
+(the exact 744/768/216 measure/progress arithmetic),
+`pc_taisou_radio_tempo` (u16 tempo / 48), `pc_taisou_leader_cull`,
+`pc_taisou_regist_drain`, `pc_taisou_failure_type`,
+`pc_taisou_radio_time_check` (year mismatch → LESS),
+`pc_taisou_limit_check` (the verbatim month>=8 && day>=19 conjunction),
+`pc_taisou_card_lost_id` / `pc_taisou_card_stamp_id` /
+`pc_taisou_card_derive_days`, and the full `mSC_Radio_Set_Talk_Proc`
+decision tree as `pc_taisou_radio_action` / `pc_taisou_radio_msg` /
+`pc_taisou_radio_talk_proc` with the `mSCR_TALK_*`/`mSCR_ACTION_*` enums
+and message constants. Corrections: `Radio_c` is padded
+(0x000/0x004/0x008, sizeof 12); the 1-card SAME_DAY arm is unreachable;
+LOST_CARD_AND_FINISH does `talk_state--` (28→27);
+`FTR_START(FTR_RADIO_TEST)` = 0x1FCC while radio.rs's 1011 is the
+furniture table index. Audio group lookup, the four globals, NPC clip,
+per-NPC `Radio_c`, RNG, and all inventory/calendar/demo mutations stay
+in C. All 8 module tests pass (run per Philip's 2026-10-11 authorization).
+
 ### Runtime Port Progress: Fishing Tourney (Turi)
 
 New `rust/src/fishing_tourney.rs`, registered as

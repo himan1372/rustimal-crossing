@@ -170,10 +170,17 @@ candidate for a future pure-kernel port once its boundary is verified.
   rope's attr 100 IS `mCoBG_ATTRIBUTE_NONE` (never writes the attribute); the
   talk-freeze is ANY-single-flag (`(flag & TALK_ALL) == 0`); the tug sound is
   member-gated, not team-gated.
-- **Morning aerobics radio & group systems** — radio counter (`sAdos_GetRadioCounter`),
-  leader/group globals, Tortimer's radio-card inventory/calendar mutations.
-  (The radio *actor/furniture* and its BGM are now in `radio.rs`; the counter and group
-  systems above are still C.)
+- **Morning aerobics radio & group systems** — RESOLVED: pure kernels are in
+  `taisou.rs` (radio availability predicate, raw-counter → measure/progress
+  conversion, tempo/48, leader-cull predicate, regist drain/reset, failure-type
+  index, radio-time check, season-limit conjunction, card-ID derivations, the
+  full Tortimer card-progression decision tree + messages + talk-proc selection).
+  Still in C: audio group lookup, the four group globals, NPC clip, per-NPC
+  `Radio_c`, ratio tables/state machine, RNG + arbitration, animation/effects,
+  Tortimer's inventory mutations, `radiocard` save data, calendar storage,
+  demo/talk/handover. Corrections: `Radio_c` is padded (0x000/0x004/0x008, not
+  the brief's 0x000/0x001/0x005); `FTR_START(FTR_RADIO_TEST)` is 0x1FCC
+  (radio.rs's 1011 is the furniture table index).
 - **Footrace controller** — the `_00` phase state machine (`aTKC_set`/`aTKC_go`), the
   shared save area (slot 8), the `_01` bitfield and `aTKC_FLAG_15` semantics (unresolved),
   stumble/dash effects.
