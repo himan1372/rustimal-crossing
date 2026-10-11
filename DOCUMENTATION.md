@@ -4093,6 +4093,65 @@ C ABI (all `pc_`-prefixed, 14 exports):
 callers rewired yet, per the usual pattern. No test runs,
 per the standing rule.
 
+### Runtime Port Progress: Igloo
+
+New `rust/src/kamakura.rs`, registered as `mod kamakura`
+in `rust/src/lib.rs`. Decomp-verified against
+`ac_kamakura.c`, `ac_kamakura_move.c_inc`,
+`ac_kamakura_indoor.c`, `ac_kamakura_npc0.c`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`m_npc.c`, `ac_set_npc_manager.c`, `ac_quest_manager.c`,
+`ac_quest_talk_greeting.c`, `ac_quest_talk_normal_init.c`
+(GAFE01_00 Rev 0 USA). 17/17 sections PROVEN with
+DIFFERS-level nuances (see below).
+
+Ported (pure kernels; actor lifecycle, foreground
+placement, the door request/demo/wipe, save-area access,
+NPC/move-actor creation, quest-manager state, RNG call
+order, effects/audio dispatch, the `anim_frame`
+accumulator, the steam cadence, and the villager-selection
+policy stay in C):
+
+- The entry check (`aKKR_check_player`): strict facing
+  interval (24576, 40960) and squared distance < 1600
+  from (actor X, actor Z + 40).
+- The exit position (`aKKR_rewrite_out_data`): (actor X,
+  ground Y, actor Z + 86) — also recording `exit_type = 0`
+  and `extra_data = 3`.
+- The window-lighting target (`aKKR_ctrl_light`): true
+  outside 06:00 inclusive – 18:00 exclusive.
+- The candle phase: `((u32)anim_frame − late) % period`
+  (34 ring / 24 fire), and the `aKI_MakeSinPointHalf`
+  midpoint/cosine interpolation verbatim (3.14f phase).
+- The greeting selection: `hello_msg[] = {6367, 6376,
+  6358, 6385, 6394, 6403}[looks]`, the money/item
+  bitfield, `1 + base + RANDOM(2)` when both flags are set
+  (sample in C), BELL_MIN = 3000.
+- The furniture trade-list branch: kamakura + rnd ≥ 90 →
+  list 19; tent + rnd ≥ 80 → list 23; otherwise the
+  C-owned default (samples and lookup in C).
+- Also added to `event_day.rs`: the Kamakura schedule row
+  Jan 2 10:00 → Feb 23 21:00 (event 3; ROWS 33→34). The
+  `event_day` consts and type-table entry already existed.
+
+Deliberately NOT ported: the steam cadence is
+`graph_dt_period_elapsed(game, &dt_accum, 8.0f)`, NOT
+`game_frame & 7` (the brief was wrong — documented); the
+candle phases run on `k_indoor->anim_frame`, NOT
+`game->frame_counter` (the brief was wrong —
+documented); the chase rate is `0.019532442f *
+dt_num_60fps_frames`; the unused `aKI_mochi_anime_data`
+table; the `aNPC_ct_data_c` trailing 0; the `mEvMN_GetNpcJointEv`
+selection policy; the 0xFF-sentinel save-byte access.
+
+C ABI (all `pc_`-prefixed, 8 exports):
+`pc_kamakura_entry_check`, `pc_kamakura_exit_position`,
+`pc_kamakura_light_target`, `pc_kamakura_candle_phase`,
+`pc_kamakura_sin_point_half`, `pc_kamakura_greeting_msg`,
+`pc_kamakura_trade_list`, `pc_kamakura_save_byte_valid`.
+No C callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

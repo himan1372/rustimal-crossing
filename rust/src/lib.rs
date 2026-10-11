@@ -118,6 +118,7 @@ mod fishing_tourney;
 mod tamaire;
 mod tokyoso;
 mod snowman;
+mod kamakura;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
