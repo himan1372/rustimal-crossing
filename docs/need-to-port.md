@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 133 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 140 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -107,7 +107,7 @@ effects, and event orchestration stay in C until differential tests pass. The ev
   (note: these files are the footrace, NOT summer festival stalls — the old label here was wrong)
 - Summer festival stalls (actual): `ac_yatai.c`, `ac_ev_yomise.c`
   (SP_NPC_EV_YOMISE, SP_NPC_EV_YOMISE2, FIREWORKS_STALL0, FIREWORKS_STALL1)
-- April Fools: `ac_aprilfool_control.c`
+- ✅ April Fools: `ac_aprilfool_control.c` → `aprilfool.rs` (NPC→index table, message-ID table, per-player bitfields, talk-check/talk-set/get-message logic; actor lifecycle, event-manager activation, save-area allocation, and NPC talk state machines stay in C)
 - Birthdays: `m_birthday_ovl.c`, `ac_birth_control.c`
 - Event NPC placement: `m_event_map_npc.c`, `ac_go_home_npc.c`
 
@@ -127,9 +127,10 @@ candidate for a future pure-kernel port once its boundary is verified.
   FIREWORKS_STALL0/1. Talk scripts, inventory/item handoff, and scheduling not yet traced.
 - **Ball-toss scoring** — `eEC_EFFECT_TAMAIRE` trajectory and basket collision after the
   throw effect; how baskets are counted and whether a numeric team score exists.
-- **Fishing record database** — `m_fishrecord.c` insertion/recycling (5-slot DB),
-  `mEv_fishRecord_local` NPC simulation, `mFR_fishmail` prize mail. RNG order (including
-  the extra unused `fqrand()`) must be preserved.
+- **Fishing record database** — persistent 5-slot DB insertion/recycling, the
+  `mEv_fishRecord_local` NPC simulation, `mFR_fishmail` prize mail (the pure record
+  kernels are in `fishrecord.rs`; the stateful DB writes, RTC scheduling, and reward
+  mail stay in C). RNG order (including the extra unused `fqrand()`) must be preserved.
 - **Fishing tourney host & save areas** — `ac_ev_angler.c` talk flow, entry flags, the
   `aEANG_event_data_c` / `aEANG_event_common_c` ownership, Chip's position persistence.
 - **Tug-of-war rope actor & orchestration** — rope prop actor, NPC clip, the
@@ -143,8 +144,7 @@ candidate for a future pure-kernel port once its boundary is verified.
   can spawn (possible retail out-of-bounds read at index 4); needs assembly-level
   confirmation before porting.
 - **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c`, `ac_goza.c` (not started).
-- **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
-  `ac_birth_control.c` (not started).
+- **Birthdays** — `m_birthday_ovl.c`, `ac_birth_control.c` (not started; April Fools control kernels are now in `aprilfool.rs`).
 - **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
 - **Bulletin-board follow-ups** — the complete automatic-post batch trigger and its
   saved-time update; the 43-entry announcement date table and five-post batch
@@ -236,8 +236,8 @@ fade/alpha, despawn predicate, shadow sizes; the 14 family state machines stay i
 kernels: size/search/bite tables, behavior dispatch, release math, kage alpha/ripple,
 flee predicate; test/kaseki state machines stay in C)
 
-**Fish & bug records** — the encyclopedia/collection tracking.
-`m_fishrecord.c`
+✅ **Fish & bug records** — fishing-contest record kernels. → `fishrecord.rs`
+`m_fishrecord.c` (five dated size records, NPC rival generation, winner simulation inputs; NOT the museum encyclopedia — the collection tracker is in `museum_display.rs`; persistent record slots, RTC scheduling, and reward mail stay in C)
 
 ✅ **Bees** — the bee-tree shake behavior. → `bee_ant.rs` (tree-shake decision
 helpers: eligibility, retry window, shock/status frames, force-catch; audit-fixed
@@ -272,20 +272,20 @@ month adjustments, confirmation branch).
 **Name editor** — the character-entry screen, including the NG-word filter (this is where 'phili' got rejected; fix options already offered to Philip). ✅ → `name_editor.rs`
 `m_editor_ovl.c`, `m_editEndChk_ovl.c`, `m_ledit_ovl.c`
 
-**Passwords** — secret codes (make/check).
-`m_passwordChk_ovl.c`, `m_passwordMake_ovl.c`
+✅ **Passwords** — secret codes (make/check). → `password.rs`
+`m_passwordChk_ovl.c`, `m_passwordMake_ovl.c` (21-byte payload → 28-char codec, payload unpack/checksum, line editor, make/check init, mail-body extraction; stateful shop/reward/inventory/RNG pieces stay in C)
 
-**Notices & handbills UI** — notice overlays (the handbill *composer* is ported in `npc_reply.rs`).
-`m_notice.c`, `m_notice_ovl.c`
+✅ **Notices & handbills UI** — notice overlays. → `notice_overlay.rs`
+`m_notice.c`, `m_notice_ovl.c` (navigation, stick classification, texture mapping, line/page helpers, 43-entry scheduler, sorting, treasure gates; the handbill *composer* is in `npc_reply.rs`, the ROM loader and stateful scheduling stay in C)
 
-**Address book** — the contacts UI.
-`m_address_ovl.c`
+✅ **Address book** — the contacts UI. → `address_book.rs`
+`m_address_ovl.c` (player/NPC list rebuild on open, page bitfields, recipient index resolution, B behavior; save/identity/editor/display-list integration stays in C)
 
-**Pause menu** — pause overlay.
-`m_pause.c`
+✅ **Pause menu** — pause overlay. → `pause.rs`
+`m_pause.c` (NOTE: this is a debug input/update gate, not a visual pause menu — Z+R held + R-newly-pressed accumulates a timer past 8.0f, then R+D-down toggles; `Pause_proc` returns 1 to proceed / 0 to gate; game-loop wiring, pad polling, and dt sourcing stay in C)
 
-**Selection/choice UI** — generic list and yes/no prompts.
-`m_select.c`, `m_choice.c`
+✅ **Selection/choice UI** — generic list and yes/no prompts. → `choice.rs`
+`m_choice.c` (option admission, clamped cursor, dt-based auto-repeat, B-to-last shortcut, determination commit; `m_select.c` is a separate debug scene selector — only its index wraparound is ported)
 
 **Calendar overlay** — the calendar UI.
 `m_calendar_ovl.c`
@@ -335,7 +335,27 @@ Philip asked "what's next" before — if he asks again, the high-value gameplay 
 2. **Summer festival stalls** — `ac_yatai.c` + `ac_ev_yomise.c` (real stall behavior; the footrace files were a mislabel)
 3. **Groundhog Day / April Fools / Birthdays** — small bounded event sets
 4. **Leftover event pieces** — ball-toss scoring, fishing record DB, footrace controller (see section above)
-5. **Passwords** — secret codes (in progress)
+5. **Passwords** — secret codes ✅ (`password.rs`)
 6. **NES games** — huge win if feasible, but the emulator core is the hard part
 7. **GBA Island** — needs link-cable hardware behavior; defer
 
+- **Password follow-ups** — the stateful check-overlay pre-fill from
+  `menu_info->data2` (not spaces); the POPULAR `hit_rate = 4` checksum-bit quirk;
+  the MAGAZINE `npc_type`→`hit_rate_index` bit fold; the full shop reward flow
+  (RNG calls/order, inventory mutation, item checks, identity lookups) stays C;
+  the password-make Famicom title list is external data.
+- **Notice follow-ups** — the handbill ROM loader stays in C; stateful scheduling
+  (RTC/save writes), fishing mail, RNG calls, treasure placement, and quest
+  mutation stay in C; the brief omitted schedule entries 0x18–0x1A.
+- **Address book follow-ups** — save writes, identity lookups, the name editor,
+  and display-list construction stay in C; the address list is rebuilt on open,
+  not persisted.
+- **Pause follow-ups** — the C-owned debug gate and game-loop wiring
+  (`ZURUMODE2_ENABLED()`, pad polling, dt sourcing) stay in C; `m_pause.c` is a
+  debug input/update gate, NOT a visual pause menu; `Game_play_IS_PAUSED` is
+  dead in the checked tree.
+- **Choice follow-ups** — message-window embedding, font width measurement,
+  ROM/ARAM string loading, control-code substitution, the `mMsg` control-code
+  dispatch, sounds, graphics/display lists, matrix setup, and easing stay in C;
+  all of `m_select.c`'s scene launching stays in C; the
+  `SELECT_COURSE_NUM_VISIBLE` 14 vs draw-loop 15 discrepancy is preserved as-is.
