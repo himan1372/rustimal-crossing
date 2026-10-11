@@ -4336,6 +4336,64 @@ C ABI (all `pc_`-prefixed, 17 exports):
 callers rewired yet, per the usual pattern. No test
 runs, per the standing rule.
 
+### Runtime Port Progress: Gyroids
+
+New `rust/src/haniwa.rs`, registered as `mod haniwa` in
+`rust/src/lib.rs`. Decomp-verified against
+`m_all_grow.c`, `m_all_grow_ovl.c`,
+`m_all_grow_ovl.h`, `m_haniwa_ovl.c`,
+`m_haniwa_ovl.h`, `m_haniwaPortrait_ovl.c`,
+`ac_haniwa.c`, `ac_haniwa_move.c_inc`, `ac_haniwa.h`,
+`m_home_h.h`, `m_common_data.h`, `m_name_table.h`,
+`m_field_info.c` (GAFE01_00 Rev 0 USA). 14/14 sections
+PROVEN.
+
+Ported (pure kernels; the `haniwa_scheduled` flag and
+RTC handling, foreground/deposit mutations,
+`mSP_RandomHaniwaSelect` until `FTR_NO_2_IDX` is
+traced, `mMsm_DepositItemBlock_cancel`, inventory
+transfers, dialogue/demo callbacks, state transitions,
+door requests, saves, rendering/collision, and the
+full portrait overlay stay in C):
+
+- The Haniwa item-range check (0x15B0–0x17AB,
+  computed from the X-macro expansion — verify against
+  the build before wiring).
+- The storage message selection: occupied slots by
+  exchange type (TRADE_0 → TADA/TADA2 by data0,
+  TRADE_1 → MISE, TRADE_2 → BERU2, TRADE_3 and others
+  → MISE via `default:`), empty slots → IKAGA/DONO2
+  by data0, and the remaining tag arms (DONO,
+  OIKURA).
+- The house index (`npc_id − 0xA004`), the proceeds
+  bag math (`money ≥ 99999 → (money−99999)/30000+1`),
+  the dialogue category in verbatim branch order
+  (NO_OWNER → NEED_FRIEND → PROCEEDS → NORMAL →
+  OTHER_OWNER) and its message table
+  {2356, 2357, 2341, 2344, 2350}.
+- The interruption recheck, the dig-path predicate
+  (a deposited non-hole tile returns the FG item
+  directly — the FG entry IS the haniwa item id, no
+  conversion exists), and the BERU2 price rebuild.
+
+Deliberately NOT ported: `mAGrw_OrderSetHaniwa` has no
+in-tree callers (the live arming path is the
+GROW_FIRST branch); the random selector's
+no-duplicates loop and `FTR_NO_2_IDX` mapping; the
+`@unused` `mHW_MSG_MOU`; the `hanwiaPortrait_ovl`
+decomp typo field; `mAGrw_SetDigItem` running
+`mAGrw_SpoilKabu` over the stored haniwa slots; the
+`mHW_MSG_DOREWO` interruption special case.
+
+C ABI (all `pc_`-prefixed, 10 exports):
+`pc_haniwa_item_valid`, `pc_haniwa_exchange_msg`,
+`pc_haniwa_tag_msg`, `pc_haniwa_house_idx`,
+`pc_haniwa_bell_bags`, `pc_haniwa_dialogue_category`,
+`pc_haniwa_dialogue_msg`, `pc_haniwa_interrupt_keep`,
+`pc_haniwa_dig_direct`, `pc_haniwa_beru2_rebuild`. No C
+callers rewired yet, per the usual pattern. No test
+runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

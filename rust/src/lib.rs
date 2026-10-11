@@ -122,6 +122,7 @@ mod kamakura;
 mod mushroom;
 mod balloon;
 mod cockroach;
+mod haniwa;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
