@@ -60,74 +60,10 @@
 use std::ffi::c_int;
 
 // ---------------------------------------------------------------------------
-// Shared helpers (retail m_lib.c)
+// Shared helpers (retail m_lib.c helpers live in game_math)
 // ---------------------------------------------------------------------------
 
-/// Retail `add_calc` (no PC frame-rate scaling). Returns `target - value`.
-pub fn add_calc(value: &mut f32, target: f32, fraction: f32, max_step: f32, min_step: f32) -> f32 {
-    if *value != target {
-        let mut step = fraction * (target - *value);
-        if step <= -min_step || min_step <= step {
-            step = step.clamp(-max_step, max_step);
-            *value += step;
-            if step > 0.0 {
-                if *value > target {
-                    *value = target;
-                }
-            } else if *value < target {
-                *value = target;
-            }
-        } else if step > 0.0 {
-            *value += min_step;
-            if *value > target {
-                *value = target;
-            }
-        } else {
-            *value -= min_step;
-            if *value < target {
-                *value = target;
-            }
-        }
-    }
-    target - *value
-}
-
-/// `get_percent_forAccelBrake`.
-pub fn percent_accel_brake(now: f32, start: f32, end: f32, accel: f32, brake: f32) -> f32 {
-    if now >= end {
-        return 1.0;
-    }
-    if now <= start {
-        return 0.0;
-    }
-    let total = end - start;
-    let cur = now - start;
-    if total < accel + brake {
-        return 0.0;
-    }
-    let step = 1.0 / ((2.0 * total - accel) - brake);
-    let mut percent;
-    if accel != 0.0 {
-        if cur <= accel {
-            return cur * (step * cur) / accel;
-        }
-        percent = step * accel;
-    } else {
-        percent = 0.0;
-    }
-    if cur <= total - brake {
-        return percent + (step * 2.0) * (cur - accel);
-    }
-    percent += 2.0 * step * ((total - accel) - brake);
-    if brake != 0.0 {
-        percent += step * brake;
-        if cur < total {
-            let diff = total - cur;
-            percent -= step * diff * diff / brake;
-        }
-    }
-    percent
-}
+pub use crate::game_math::{add_calc, percent_accel_brake};
 
 /// `mCoBG_OffsetTable_c`.
 #[repr(C)]
