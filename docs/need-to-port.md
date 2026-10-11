@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 119 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 120 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -146,13 +146,18 @@ candidate for a future pure-kernel port once its boundary is verified.
 - **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
   `ac_birth_control.c` (not started).
 - **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
+- **Snowman follow-ups** — `@BUG` NULL dereference in the foreground-search during
+  the head-jump assembly; reward furniture IDs computed from the X-macro expansion
+  (verify against the build before wiring); the `move_dist` common-area accessor;
+  the event-manager birth orchestration (`snowman_start`, `mEv_snowman_born_check`);
+  assembly dust effects and the parabolic head-jump arc.
 
 ---
 
 ## Nature & seasonal
 
-**Snowman building** — snowballs, snowman moods and rewards.
-`m_snowman.c`, `ac_snowman.c`, `ac_psnowman.c`
+✅ **Snowman building** — snowballs, snowman moods and rewards. → `snowman.rs`
+`m_snowman.c`, `ac_snowman.c`, `ac_psnowman.c` (growth step, proportion score, message arithmetic, reward-index selection, record packing, slot/ID mapping, melt step, lifespan check, push/combine gates; snowman-season row 62 in `event_day.rs`)
 
 **Igloo** — the winter igloo interior and camper.
 `ac_kamakura.c`, `ac_kamakura_indoor.c`, `ac_kamakura_npc0.c`
