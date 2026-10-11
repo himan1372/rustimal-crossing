@@ -4646,6 +4646,62 @@ C ABI (20 `pc_`-prefixed exports):
 No C callers rewired yet, per the usual pattern.
 No test runs, per the standing rule.
 
+### Runtime Port Progress: Bulletin boards
+
+New `rust/src/town_board.rs` and
+`rust/src/house_board.rs`, registered as `mod
+town_board` and `mod house_board` in
+`rust/src/lib.rs`. Decomp-verified against
+`m_notice.c`, `m_notice.h`, `m_notice_ovl.c`,
+`m_board_ovl.c`, `m_board_ovl.h`,
+`m_hboard_ovl.c`, `m_hboard_ovl.h`, `m_home_h.h`,
+and `save_check_take.c_inc` (GAFE01_00 Rev 0
+USA). 8/8 sections PROVEN.
+
+Key resolution: the real town-board writer is
+`m_notice_ovl.c`, not `m_board_ovl.c` — the
+latter is the *general letter-editing overlay*.
+Button A stamps the current RTC time into the
+post at editor *open*; on confirmation the post
+is written and the first-job errand is cleared.
+
+Ported (pure kernels; RTC comparison and save
+ownership, the editor/submenu flows, handbill ROM
+loading, font rendering, the mail/letter
+overlay, and the automatic-schedule date
+selection stay in C):
+
+- The 15-slot record model (0xC8 records: 192
+  message bytes + timestamp at 0xC0): the
+  first-empty-slot scan, the full-board shift
+  (records 1..14 → 0..13, whole-record copies),
+  and page clearing (CHAR_SPACE fill, not
+  zeroed).
+- The initial handbill ids {0x1E..0x21}, the
+  automatic-post time (06:00:00), and the
+  handbill-id formulas (0x1A4+id,
+  0x242+((day/7)&3)).
+- The house-board line check with the
+  font-width function injected (OK/NEWLINE/
+  OVER_WIDTH/OVER_STR_LEN), the 192-width /
+  4-line constraints, and the 128-byte message
+  layout.
+
+Insertion is FIFO by array position, not a
+timestamp sort. The save-validation loop checks
+only the contiguous occupied prefix, not all 15
+slots — preserved by construction.
+
+C ABI (all `pc_`-prefixed, 11 exports):
+`pc_board_first_empty`, `pc_board_shift_full`,
+`pc_board_clear_page`, `pc_board_init_handbill`,
+`pc_board_auto_post_time`,
+`pc_board_standard_handbill_id`,
+`pc_board_fishing_handbill_id`,
+`pc_hboard_line_check`. No C callers rewired yet,
+per the usual pattern. No test runs, per the
+standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

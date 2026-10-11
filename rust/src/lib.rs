@@ -126,6 +126,8 @@ mod haniwa;
 mod insect_actor;
 mod fish_actor;
 mod famicom;
+mod town_board;
+mod house_board;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
