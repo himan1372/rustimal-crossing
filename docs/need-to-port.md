@@ -1,9 +1,11 @@
 # Need to Port — Animal Crossing GameCube Rust Rewrite
 
-**Status as of 2026-10-11**
+**Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 92 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 119 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
+- This doc is updated as work lands: ✅ marks show what's done, and the trailing
+  "Leftover pieces" section collects the small follow-ups each port batch uncovers.
 
 A "system" here means a chunk of gameplay Philip would recognize. Filenames are
 the decomp sources (`src/game/`, `src/actor/`, `src/actor/npc/`) that implement it.
@@ -85,26 +87,65 @@ Legend: ✅ = ported (Rust module named). Entries without ✅ still need porting
 
 ## Holidays & events
 
-**Event-day NPCs and controllers** — each holiday has dedicated actor files; none are ported. The event *scheduler* bits exist in `leaflet.rs`/`mother_mail.rs`, but the events themselves don't.
-- New Year countdown: `ac_countdown.c`, `ac_countdown_npc0.c`, `ac_countdown_npc1.c`, `ac_count02.c`
-- Halloween: `ac_halloween_npc.c`
-- Fireworks: `ac_hanabi_npc0.c`, `ac_hanabi_npc1.c`
-- Cherry blossom festival: `ac_hanami_npc0.c`, `ac_hanami_npc1.c`
-- Harvest Festival: `ac_harvest_npc0.c`, `ac_harvest_npc1.c`
-- Moon viewing: `ac_tukimi.c`, `ac_tukimi_npc0.c`, `ac_tukimi_npc1.c`
+**Event-day NPCs and controllers** — each holiday has dedicated actor files. The pure
+kernels are ported (Rust module named); actor lifecycles, RNG call order, save areas,
+effects, and event orchestration stay in C until differential tests pass. The event
+*scheduler* rows live in `event_day.rs`.
+- ✅ New Year countdown: `ac_countdown.c`, `ac_countdown_npc0.c`, `ac_countdown_npc1.c`, `ac_count02.c` → `countdown.rs`
+- ✅ Halloween: `ac_halloween_npc.c` → `halloween.rs`
+- ✅ Fireworks: `ac_hanabi_npc0.c`, `ac_hanabi_npc1.c` → `fireworks.rs`
+- ✅ Cherry blossom festival: `ac_hanami_npc0.c`, `ac_hanami_npc1.c` → `cherry_blossom.rs`
+- ✅ Harvest Festival: `ac_harvest_npc0.c`, `ac_harvest_npc1.c` → `harvest.rs`
+- ✅ Moon viewing: `ac_tukimi.c`, `ac_tukimi_npc0.c`, `ac_tukimi_npc1.c` → `moon_viewing.rs`
 - Groundhog Day: `ac_groundhog_control.c`, `ac_groundhog_npc0.c`, `ac_goza.c`
-- First shrine visit: `ac_hatumode_control.c`, `ac_hatumode_npc0.c`
-- Morning aerobics: `ac_taisou_npc0.c`
-- Tug of war: `ac_tunahiki_control.c`, `ac_tunahiki_npc0.c`, `ac_tunahiki_npc1.c`
-- Fishing tourney: `ac_turi.c`, `ac_turi_npc0.c`
-- Sports fair: `ac_tamaire_npc0.c`, `ac_tamaire_npc1.c`
-- Summer festival stalls: `ac_tokyoso_control.c`, `ac_tokyoso_npc0.c`, `ac_tokyoso_npc1.c`
+- ✅ First shrine visit: `ac_hatumode_control.c`, `ac_hatumode_npc0.c` → `hatsumode.rs`
+- ✅ Morning aerobics: `ac_taisou_npc0.c` → `taisou.rs`
+- ✅ Tug of war: `ac_tunahiki_control.c`, `ac_tunahiki_npc0.c`, `ac_tunahiki_npc1.c` → `tunahiki.rs`
+- ✅ Fishing tourney: `ac_turi.c`, `ac_turi_npc0.c`, `ac_ev_angler.c`, `m_fishrecord.c` → `fishing_tourney.rs`
+- ✅ Sports fair ball toss: `ac_tamaire_npc0.c`, `ac_tamaire_npc1.c`, `ac_tama.c` → `tamaire.rs`
+- ✅ Field Day footrace: `ac_tokyoso_control.c`, `ac_tokyoso_npc0.c`, `ac_tokyoso_npc1.c` → `tokyoso.rs`
+  (note: these files are the footrace, NOT summer festival stalls — the old label here was wrong)
+- Summer festival stalls (actual): `ac_yatai.c`, `ac_ev_yomise.c`
+  (SP_NPC_EV_YOMISE, SP_NPC_EV_YOMISE2, FIREWORKS_STALL0, FIREWORKS_STALL1)
 - April Fools: `ac_aprilfool_control.c`
 - Birthdays: `m_birthday_ovl.c`, `ac_birth_control.c`
 - Event NPC placement: `m_event_map_npc.c`, `ac_go_home_npc.c`
 
 **Holiday scenery actors** — carp streamers, festival stalls, shrine, lotus.
 `ac_koinobori.c`, `ac_yatai.c`, `ac_shrine.c`, `ac_lotus.c`, `ac_tukimi.c`
+(`ac_yatai.c` is the actual stall prop actor — still in C; see the leftover section below.)
+
+---
+
+## Leftover pieces from the recent event ports (still in C)
+
+Small, bounded follow-ups identified during the 2026-10-11 event-port batch. Each is a
+candidate for a future pure-kernel port once its boundary is verified.
+
+- **Summer festival stalls (actual)** — the real stall behavior: `ac_yatai.c` (stall prop
+  actor), `ac_ev_yomise.c` (SP_NPC_EV_YOMISE, SP_NPC_EV_YOMISE2 stall NPCs),
+  FIREWORKS_STALL0/1. Talk scripts, inventory/item handoff, and scheduling not yet traced.
+- **Ball-toss scoring** — `eEC_EFFECT_TAMAIRE` trajectory and basket collision after the
+  throw effect; how baskets are counted and whether a numeric team score exists.
+- **Fishing record database** — `m_fishrecord.c` insertion/recycling (5-slot DB),
+  `mEv_fishRecord_local` NPC simulation, `mFR_fishmail` prize mail. RNG order (including
+  the extra unused `fqrand()`) must be preserved.
+- **Fishing tourney host & save areas** — `ac_ev_angler.c` talk flow, entry flags, the
+  `aEANG_event_data_c` / `aEANG_event_common_c` ownership, Chip's position persistence.
+- **Tug-of-war rope actor & orchestration** — rope prop actor, NPC clip, the
+  `fdtug_start`/`fdtug_stop`/`fdtug_in` event-manager handlers.
+- **Morning aerobics radio & group systems** — radio counter (`sAdos_GetRadioCounter`),
+  leader/group globals, Tortimer's radio-card inventory/calendar mutations.
+- **Footrace controller** — the `_00` phase state machine (`aTKC_set`/`aTKC_go`), the
+  shared save area (slot 8), the `_01` bitfield and `aTKC_FLAG_15` semantics (unresolved),
+  stumble/dash effects.
+- **Hatsumode open question** — `root_table`/`proc_idx_table` have 4 entries but 5 NPCs
+  can spawn (possible retail out-of-bounds read at index 4); needs assembly-level
+  confirmation before porting.
+- **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c`, `ac_goza.c` (not started).
+- **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
+  `ac_birth_control.c` (not started).
+- **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
 
 ---
 
@@ -222,7 +263,10 @@ These are partially covered (`frame_loops.rs`, `scene.rs`, `graphics.rs`) but th
 
 Philip asked "what's next" before — if he asks again, the high-value gameplay systems still in C are:
 1. **Snowman** — seasonal, well-bounded (`m_snowman.c`)
-2. **Event-day NPCs** — fan-favorite content, each holiday a bounded actor set
-3. **Bulletin boards / town map / diary** — small UI overlays
-4. **NES games** — huge win if feasible, but the emulator core is the hard part
-5. **GBA Island** — needs link-cable hardware behavior; defer
+2. **Summer festival stalls** — `ac_yatai.c` + `ac_ev_yomise.c` (real stall behavior; the footrace files were a mislabel)
+3. **Groundhog Day / April Fools / Birthdays** — small bounded event sets
+4. **Leftover event pieces** — ball-toss scoring, fishing record DB, footrace controller (see section above)
+5. **Bulletin boards / town map / diary** — small UI overlays
+6. **NES games** — huge win if feasible, but the emulator core is the hard part
+7. **GBA Island** — needs link-cable hardware behavior; defer
+
