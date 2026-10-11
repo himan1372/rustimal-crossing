@@ -4582,6 +4582,70 @@ rendering stay in C):
 it is the hive field-item/shadow visual and stays
 in C. No test runs, per the standing rule.
 
+### Runtime Port Progress: NES games (Famicom subsystem)
+
+New `rust/src/famicom.rs`, registered as `mod
+famicom` in `rust/src/lib.rs`. Decomp-verified
+against `famicom_emu.c`, `famicom.h`,
+`famicom_nesinfo.cpp`, `m_fbdemo.c`,
+`m_fbdemo_fade.c`, `m_fbdemo_triforce.c`,
+`m_fbdemo_wipe1.c`, and `ac_famicom_common.c`
+(GAFE01_00 Rev 0 USA). 5/5 sections PROVEN or
+DIFFERS-with-correction.
+
+Scope: the actual 6502 NES core, the GAME state
+handoff, XFB/display-manager switching, the audio
+lifecycle, the THA/zelda arena, controller
+polling, card I/O, the tag-parser side effects,
+fbdemo rendering, and the house message controller
+stay in C.
+
+Ported (pure kernels):
+
+- The 20-entry furniture tables (game ids with
+  the repeated final 14; GBA ids with 0xFF at
+  7/9/14/18/19), the furniture index, the
+  metadata index (`rom_no − 1`, kept separate
+  from GNO), and the debug ROM override.
+- The exit wrapper: the exact L+R+Z / L+R+X+Y
+  combos and the done/countdown/return machine.
+- The save-header and per-player-record checksum
+  validation and repair, including the looser
+  save-check version test.
+- The result→message mapping (7 distinct
+  results; NOFILE → 0x3071) and the ROM-kind
+  classification.
+- The retail-form transition math: fade
+  (timer gate, type-1 inversion, type-7 skip,
+  s8 start frames −6/−85), triforce (bit-decoded
+  texture/direction, truncated step), wipe1
+  (integer-division step, 612/333 clamps).
+
+Brief corrections: fbdemo draw binds segments
+0x0A/0x0B, not 3/4; the fade start frames are s8
+(−6/−85), not +250/+171; the decomp's `move()`
+functions carry PC-port dt-accumulators, but the
+retail-faithful simple form is ported here; the
+Excitebike/Soccer ordering is kept as-is; the
+`special_zelda()` BBRAM repair stays in C; and
+`scene.rs` omits `famicom_emu_cleanup` for the
+FamicomEmu scene entry (wiring follow-up, noted
+in the leftovers).
+
+C ABI (20 `pc_`-prefixed exports):
+`pc_famicom_ftr_idx`, `pc_famicom_game_id`,
+`pc_famicom_agb_id`, `pc_famicom_meta_idx`,
+`pc_famicom_debug_rom`, `pc_famicom_exit_combo`,
+`pc_famicom_exit_step`, `pc_famicom_rom_kind`,
+`pc_famicom_result_msg`, `pc_famicom_header_valid`,
+`pc_famicom_header_repair`, `pc_famicom_save_check`,
+`pc_famicom_record_valid`, `pc_famicom_record_repair`,
+`pc_fbdemo_fade_start`, `pc_fbdemo_fade_step`,
+`pc_fbdemo_triforce_type`, `pc_fbdemo_triforce_step`,
+`pc_fbdemo_wipe1_type`, `pc_fbdemo_wipe1_step`.
+No C callers rewired yet, per the usual pattern.
+No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

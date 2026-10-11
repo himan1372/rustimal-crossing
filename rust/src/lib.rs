@@ -125,6 +125,7 @@ mod cockroach;
 mod haniwa;
 mod insect_actor;
 mod fish_actor;
+mod famicom;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
