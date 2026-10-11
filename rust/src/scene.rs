@@ -292,7 +292,7 @@ pub static SCENE_EXEC_TABLE: [SceneExec; 10] = [
     SceneExec { id: SceneId::Trademark, exec_fn: Some("trademark_main"), cleanup_fn: None },
     SceneExec { id: SceneId::PlayerSelect, exec_fn: Some("player_select_main"), cleanup_fn: None },
     SceneExec { id: SceneId::SaveMenu, exec_fn: Some("save_menu_main"), cleanup_fn: None },
-    SceneExec { id: SceneId::FamicomEmu, exec_fn: Some("famicom_emu_main"), cleanup_fn: None },
+    SceneExec { id: SceneId::FamicomEmu, exec_fn: Some("famicom_emu_main"), cleanup_fn: Some("famicom_emu_cleanup") },
     SceneExec { id: SceneId::Prenmi, exec_fn: Some("prenmi_main"), cleanup_fn: None },
     SceneExec { id: SceneId::ModelViewer, exec_fn: None, cleanup_fn: None },
 ];

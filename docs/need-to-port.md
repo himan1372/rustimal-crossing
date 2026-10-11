@@ -229,10 +229,21 @@ candidate for a future pure-kernel port once its boundary is verified.
   normalizer exists anywhere in the tree (settled NOT FOUND) — editor
   constrains new input only; do not add a Rust sanitizer. All pure kernels
   ported into `notice_overlay.rs` (+8 exports).
-- **NES follow-ups** — the nesinfo tag-stream parser for all 19 titles; the
-  `special_zelda()` BBRAM repair; exact acquisition conditions for every NES
-  furniture item; the scene.rs FamicomEmu `cleanup_fn: None` wiring gap vs C's
-  `famicom_emu_cleanup`; the practical effect of every extra furniture-table entry.
+- **NES follow-ups** — RESOLVED 2026-10-11: tag-stream format proven
+  (NESTAG_CMD_SIZE=3, NESTAG_SIZE=4 — the brief conflated them; traversal
+  formula unaffected); VEQ/VNE skip the next tag; HSC default len =
+  tag_len-2; update_highscore HSC offset word packs a flag bit
+  (ofs=&0x7FF, bit=>>15&1); Baseball `GNM_TAG(6)` for 8-byte "BASEBALL"
+  and Mahjong `GNM_TAG(6)` for 7-byte "MAHJONG" are source-marked @BUG —
+  do NOT correct. `special_zelda()` proven verbatim (markers + 3-slot
+  checksum, conditional writeback only, no wholesale slot clear); it runs
+  only in process1's load path (mode 1, SPE=1, first_play==FALSE).
+  Acquisition pools proven with NO differences (00/01/04/06 shop-A,
+  02/03/05/13 lottery, 07/09/10/11/12 homepage, 08/14 island, 15-18
+  special-present). 20th table entry proven: `FTR_KOB_DISKSYSTEM8` →
+  Excitebike texture/palette, game 14, AGB 0xFF; reference table @unused.
+  scene.rs `FamicomEmu` `cleanup_fn: None` gap CONFIRMED and FIXED to
+  `Some("famicom_emu_cleanup")`. 8 new pure exports in `famicom.rs`.
 - **Bee follow-ups** — CALC_EASE short-angle wraparound; appear rotation.z increment
   and scale easing; position integration ownership; force-catch/table-catch request
   events; `disappear_timer > 1.0` fallback in CAUGHT; ant scale chase; the exact

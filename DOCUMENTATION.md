@@ -5230,6 +5230,38 @@ exports): `pc_notice_monthday`, `pc_notice_handbill_no`,
 `pc_notice_font_char_bad`. C keeps: gating, RTC reads, Common/Save writes,
 ROM loading, mail delivery, treasure state, editor buffer ownership.
 
+NES follow-ups (2026-10-11): nesinfo tag-stream proven — 3-byte id +
+1-byte length (`NESTAG_CMD_SIZE` = 3, `NESTAG_SIZE` = 4), next-tag advance
+`data + data[3] + 4` terminating on END/end pointer; VEQ/VNE skip the next
+tag; OFS resets the save cursor; HSC default length = tag length − 2;
+GNO sets first-play bit `1 << game_no`; BBR copies via `bbramp`, QDS uses a
+24-bit offset; `special_zelda()` runs only in process1's load path (mode 1,
+SPE tag, first payload byte 1, `first_play == FALSE`) — process3's SPE is a
+no-op log; TCS/ICS update in mode −1, validate in mode 0; MOV offsets/size
+`<< 4`; ESZ in 16-byte units; FIL stubbed. `update_highscore`'s HSC offset
+word packs a flag: `ofs = ofs_data & 0x7FF`, `bit = (ofs_data >> 15) & 1`.
+`special_zelda()` proven verbatim: markers `[0]=0x00`, `[1]=0x5A`,
+`0x52A-0x52C=0xFF`, `0x52D-0x52F=0x00`, `0x51E-0x520=0x5A`,
+`0x521-0x523=0xA5`, then per-slot checksums (name/items/world-flags/
+slot-active + three bytes) narrowed to u16, embedded checksum at
+`0x524+2i` rewritten only on mismatch — no wholesale slot clear.
+Acquisition pools proven with no differences: COMMON00/01/04/06 shop-A,
+02/03/05/13 lottery, 07/09/10/11/12 homepage, 08/14 island, 15-18
+special-present. The 20th shared-profile entry is `FTR_KOB_DISKSYSTEM8`
+(adjacent ID, range `0x36A-0x37D` inclusive): Excitebike texture, Excitebike
+palette, emulator game 14, AGB `0xFF`; `fFC_reference_model_idx_table` is
+`@unused` (DnM/DnM+ leftover). C `famicom_emu_cleanup` checklist: display
+fade-in, `famicom_cleanup()` (bit 2 on nonzero), `my_alloc_cleanup()` →
+`zelda_CleanupArena()`, XFB restore + bookkeeping clear, `sAdo_SubGameEnd()`;
+init failure and ROM-load-check failure set bit 1, cleanup failure sets bit
+2. `scene.rs` `FamicomEmu` `cleanup_fn: None` gap confirmed in the current
+tree and fixed to `Some("famicom_emu_cleanup")`. New pure exports (8):
+`pc_nesinfo_next_tag`, `pc_nesinfo_hsc_default_len`, `pc_nesinfo_shift4`,
+`pc_nesinfo_gno_bit`, `pc_nesinfo_hs_ofs`, `pc_nesinfo_hs_flag`,
+`pc_zelda_repair_bbram`, `pc_famicom_pool`. C keeps: all three parser
+passes, ROM patching, save/memory-card IO, BBRAM/ROM ownership, emulator
+lifecycle and teardown.
+
 New `rust/src/notice_overlay.rs`, registered as
 `mod notice_overlay` in `rust/src/lib.rs`.
 Decomp-verified against `m_notice_ovl.c`,

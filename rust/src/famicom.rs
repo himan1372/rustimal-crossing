@@ -510,6 +510,229 @@ pub extern "C" fn pc_fbdemo_wipe1_step(
 }
 
 #[cfg(test)]
+/// nesinfo tag-stream parser kernels (`famicom_nesinfo.cpp`).
+///
+/// The stream is a compact binary command stream: each tag is a 3-byte
+/// identifier (`NESTAG_CMD_SIZE` = 3) plus a 1-byte payload length, so the
+/// full header is `NESTAG_SIZE` = 4 bytes. The next-tag helper advances by
+/// `data + data[3] + 4` and terminates on the END tag or the stream end.
+/// (Do not conflate the two constants: the brief's "NESTAG_CMD_SIZE is 4"
+/// merged them; the traversal formula is unaffected.)
+///
+/// VEQ/VNE skip the NEXT TAG when their condition fails (not an arbitrary
+/// byte count). OFS resets the save-data cursor; HSC/BBR/QDS advance it.
+/// In `update_highscore`, the HSC offset word packs a flag bit:
+/// `ofs = ofs_data & 0x7FF`, `bit = (ofs_data >> 15) & 1` — mask before
+/// using the offset. `special_zelda()` runs only in process1's load path
+/// (mode 1, SPE tag, first payload byte 1, first_play == FALSE) — never
+/// during save serialization, where SPE is a no-op log.
+/// Stays in C: all three processing passes, ROM patching, save/memory-card
+/// IO, BBRAM/ROM buffer ownership.
+
+/// Tag identifier width in bytes (`NESTAG_CMD_SIZE`).
+pub const NESTAG_CMD_SIZE: i32 = 3;
+/// Full tag header width: 3-byte id + 1-byte length (`NESTAG_SIZE`).
+pub const NESTAG_SIZE: i32 = 4;
+
+/// Next-tag advance: `cur + payload_len + NESTAG_SIZE`.
+#[no_mangle]
+pub extern "C" fn pc_nesinfo_next_tag(cur: usize, payload_len: u8) -> usize {
+    cur + payload_len as usize + NESTAG_SIZE as usize
+}
+
+/// HSC default-data length: the tag length includes the 2-byte offset
+/// word, so defaults are `tag_len - 2` bytes starting at `data[6]`.
+#[no_mangle]
+pub extern "C" fn pc_nesinfo_hsc_default_len(tag_len: u8) -> u8 {
+    tag_len.wrapping_sub(2)
+}
+
+/// MOV offset/size and ESZ expansion: values are shifted left by 4
+/// (ESZ is in 16-byte units).
+#[no_mangle]
+pub extern "C" fn pc_nesinfo_shift4(x: u16) -> u32 {
+    (x as u32) << 4
+}
+
+/// GNO first-play bit: `1 << game_no` in the save-data flags word.
+#[no_mangle]
+pub extern "C" fn pc_nesinfo_gno_bit(game_no: u8) -> u32 {
+    1u32 << game_no
+}
+
+/// `update_highscore` HSC offset word: low 11 bits are the offset.
+#[no_mangle]
+pub extern "C" fn pc_nesinfo_hs_ofs(ofs_data: u16) -> u16 {
+    ofs_data & 0x7FF
+}
+
+/// `update_highscore` HSC offset word: bit 15 is a flag.
+#[no_mangle]
+pub extern "C" fn pc_nesinfo_hs_flag(ofs_data: u16) -> u16 {
+    (ofs_data >> 15) & 1
+}
+
+/// `special_zelda()` BBRAM repair (`famicom_nesinfo.cpp`): marker resets
+/// plus the three-slot checksum repair. Pure over the caller-supplied
+/// BBRAM buffer; returns 0 and does nothing when the buffer is shorter
+/// than 0x530 bytes. Repairs in place: sets [0x000]=0x00, [0x001]=0x5A
+/// ('Z'), fills 0x52A-0x52C with 0xFF, zeroes 0x52D-0x52F, fills
+/// 0x51E-0x520 with 0x5A, fills 0x521-0x523 with 0xA5 — then for each of
+/// the 3 slots sums the name (8B @ +2+8i), items (0x28B @ +0x1A+0x28i),
+/// world flags (0x180B @ +0x92+0x180i), the slot-active byte (+0x512+i),
+/// and bytes at 0x515+i/0x518+i/0x51B+i, narrows to u16, and rewrites the
+/// embedded checksum at 0x524+2i ONLY on mismatch. It does NOT clear slot
+/// contents wholesale.
+/// Byte-sum helper for the Zelda checksum (`calcSum`).
+fn zelda_calc_sum(b: &[u8], off: usize, n: usize) -> u16 {
+    b[off..off + n].iter().fold(0u32, |a, &x| a + x as u32) as u16
+}
+
+#[no_mangle]
+pub extern "C" fn pc_zelda_repair_bbram(bbram: *mut u8, len: usize) -> u8 {
+    const NEED: usize = 0x530;
+    if bbram.is_null() || len < NEED {
+        return 0;
+    }
+    let b = unsafe { std::slice::from_raw_parts_mut(bbram, len) };
+    b[0x000] = 0x00;
+    b[0x001] = 0x5A;
+    b[0x52A..0x52D].fill(0xFF);
+    b[0x52D..0x530].fill(0x00);
+    b[0x51E..0x521].fill(0x5A);
+    b[0x521..0x524].fill(0xA5);
+    for i in 0..3usize {
+        let mut checksum: u32 = 0;
+        checksum += zelda_calc_sum(b, 2 + i * 8, 8) as u32;
+        checksum += zelda_calc_sum(b, 0x1A + i * 0x28, 0x28) as u32;
+        checksum += zelda_calc_sum(b, 0x92 + i * 0x180, 0x180) as u32;
+        checksum += zelda_calc_sum(b, 0x512 + i, 1) as u32;
+        checksum += b[0x515 + i] as u32;
+        checksum += b[0x518 + i] as u32;
+        checksum += b[0x51B + i] as u32;
+        let chksum16 = checksum as u16;
+        if b[0x524 + i * 2] != (chksum16 >> 8) as u8 || b[0x525 + i * 2] != chksum16 as u8 {
+            b[0x524 + i * 2] = (chksum16 >> 8) as u8;
+            b[0x525 + i * 2] = chksum16 as u8;
+        }
+    }
+    1
+}
+
+/// Acquisition pools for the 19 NES furniture items (`ftr_list.c`).
+/// Pool membership is source-proven; it identifies the acquisition
+/// mechanism, not probabilities or availability dates.
+pub const POOL_SHOP_A: u8 = 0;
+pub const POOL_LOTTERY: u8 = 1;
+pub const POOL_HOMEPAGE: u8 = 2;
+pub const POOL_ISLAND: u8 = 3;
+pub const POOL_SPECIAL_PRESENT: u8 = 4;
+pub const POOL_NONE: u8 = 0xFF;
+
+/// Acquisition pool for a `FTR_FAMICOM_COMMONnn` furniture index
+/// (0-18): 00/01/04/06 shop-A, 02/03/05/13 lottery, 07/09/10/11/12
+/// homepage, 08/14 island, 15-18 special-present.
+#[no_mangle]
+pub extern "C" fn pc_famicom_pool(ftr_idx: u8) -> u8 {
+    match ftr_idx {
+        0 | 1 | 4 | 6 => POOL_SHOP_A,
+        2 | 3 | 5 | 13 => POOL_LOTTERY,
+        7 | 9 | 10 | 11 | 12 => POOL_HOMEPAGE,
+        8 | 14 => POOL_ISLAND,
+        15 | 16 | 17 | 18 => POOL_SPECIAL_PRESENT,
+        _ => POOL_NONE,
+    }
+}
+
+/// Furniture index of the adjacent Disk System item accepted by the
+/// shared profile: `FTR_KOB_DISKSYSTEM8` maps to the 20th table entries —
+/// Excitebike texture, Excitebike palette, emulator game ID 14, no
+/// GBA-image mapping (0xFF). The `fFC_reference_model_idx_table` is
+/// `@unused` (a DnM/DnM+ leftover), all zeros.
+pub const FFC_DISKSYSTEM_IDX: u8 = 19;
+
+/// C `famicom_emu_cleanup` responsibilities (the checklist a Rust
+/// cleanup callback must cover): display fade-in, `famicom_cleanup()`
+/// (bit 2 in room-message-control flags on nonzero), `my_alloc_cleanup()`
+/// → `zelda_CleanupArena()`, single-XFB → double-XFB restore plus clearing
+/// the framebuffer bookkeeping, `sAdo_SubGameEnd()`. Init failure sets bit
+/// 1 (as does a ROM-load check failure in `famicom_emu_main`); cleanup
+/// failure sets bit 2. TARGET_PC differs: cleanup frees the 4MB malloc'd
+/// heap and toggles `g_pc_nes_active`.
+
+    #[test]
+    fn nesinfo_tag_kernels() {
+        // Header: 3-byte id + 1-byte length = 4.
+        assert_eq!(NESTAG_CMD_SIZE, 3);
+        assert_eq!(NESTAG_SIZE, 4);
+        // Next-tag advance: cur + len + 4.
+        assert_eq!(pc_nesinfo_next_tag(100, 6), 110);
+        assert_eq!(pc_nesinfo_next_tag(0, 0), 4);
+        // HSC default length = tag_len - 2.
+        assert_eq!(pc_nesinfo_hsc_default_len(8), 6);
+        assert_eq!(pc_nesinfo_hsc_default_len(2), 0);
+        // MOV/ESZ shift.
+        assert_eq!(pc_nesinfo_shift4(0x10), 0x100);
+        // GNO bit.
+        assert_eq!(pc_nesinfo_gno_bit(0), 1);
+        assert_eq!(pc_nesinfo_gno_bit(18), 1 << 18);
+        // High-score offset word: low 11 bits + flag bit.
+        assert_eq!(pc_nesinfo_hs_ofs(0x87FF), 0x7FF);
+        assert_eq!(pc_nesinfo_hs_flag(0x87FF), 1);
+        assert_eq!(pc_nesinfo_hs_flag(0x07FF), 0);
+    }
+
+    #[test]
+    fn zelda_repair() {
+        let mut b = vec![0xAAu8; 0x800];
+        // Too short -> no-op.
+        assert_eq!(pc_zelda_repair_bbram(b.as_mut_ptr(), 0x52F), 0);
+        assert_eq!(b[0], 0xAA);
+        assert_eq!(pc_zelda_repair_bbram(b.as_mut_ptr(), 0x800), 1);
+        // Markers.
+        assert_eq!(b[0], 0x00);
+        assert_eq!(b[1], 0x5A);
+        assert_eq!(&b[0x52A..0x52D], &[0xFF; 3]);
+        assert_eq!(&b[0x52D..0x530], &[0x00; 3]);
+        assert_eq!(&b[0x51E..0x521], &[0x5A; 3]);
+        assert_eq!(&b[0x521..0x524], &[0xA5; 3]);
+        // Untouched slot data is preserved (not cleared wholesale).
+        assert_eq!(b[0x100], 0xAA);
+        // Checksum repair: corrupt slot 0's embedded checksum, re-run.
+        b[0x524] ^= 0xFF;
+        let before = (b[0x524], b[0x525]);
+        assert_eq!(pc_zelda_repair_bbram(b.as_mut_ptr(), 0x800), 1);
+        // Embedded checksum now matches the computed u16 sum.
+        let mut sum: u32 = 0;
+        for &x in &b[2..10] { sum += x as u32; }
+        for &x in &b[0x1A..0x1A + 0x28] { sum += x as u32; }
+        for &x in &b[0x92..0x92 + 0x180] { sum += x as u32; }
+        sum += b[0x512] as u32 + b[0x515] as u32 + b[0x518] as u32 + b[0x51B] as u32;
+        let s16 = sum as u16;
+        assert_eq!((b[0x524], b[0x525]), ((s16 >> 8) as u8, s16 as u8));
+        assert_ne!(before, (b[0x524], b[0x525]));
+        // Idempotent: a valid checksum is not rewritten.
+        let after = (b[0x524], b[0x525]);
+        b[0x524] = after.0; b[0x525] = after.1;
+        assert_eq!(pc_zelda_repair_bbram(b.as_mut_ptr(), 0x800), 1);
+        assert_eq!((b[0x524], b[0x525]), after);
+    }
+
+    #[test]
+    fn famicom_pools() {
+        assert_eq!(pc_famicom_pool(0), POOL_SHOP_A);
+        assert_eq!(pc_famicom_pool(2), POOL_LOTTERY);
+        assert_eq!(pc_famicom_pool(7), POOL_HOMEPAGE);
+        assert_eq!(pc_famicom_pool(8), POOL_ISLAND);
+        assert_eq!(pc_famicom_pool(15), POOL_SPECIAL_PRESENT);
+        assert_eq!(pc_famicom_pool(18), POOL_SPECIAL_PRESENT);
+        assert_eq!(pc_famicom_pool(19), POOL_NONE);
+        assert_eq!(FFC_DISKSYSTEM_IDX, 19);
+        // 20th table entry: game 14, no AGB mapping.
+        assert_eq!(FFC_GAME_TABLE[19], 14);
+        assert_eq!(FFC_AGB_TABLE[19], 0xFF);
+    }
+
 mod tests {
     use super::*;
 
