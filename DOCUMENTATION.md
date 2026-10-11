@@ -3436,6 +3436,55 @@ C ABI (all `pc_`-prefixed, 10 exports): `pc_fw_npc0_next`,
 C callers rewired yet, per the usual pattern. No test runs,
 per the standing rule.
 
+### Runtime Port Progress: Cherry Blossom Festival NPCs
+
+New `rust/src/cherry_blossom.rs`, registered as `mod
+cherry_blossom` in `rust/src/lib.rs`. Decomp-verified against
+`ac_hanami_npc0.c`, `ac_hanami_npc0_talk.c_inc`,
+`ac_hanami_npc0_anime.c_inc`, `ac_hanami_npc1.c`,
+`ac_hanami_npc1_talk.c_inc`, `ac_hanami_npc1_anime.c_inc`,
+`m_event_map_npc_data.c_inc`, `m_event_schedule.c_inc`
+(GAFE01_00 Rev 0 USA). All 13 brief claims PROVEN.
+
+Ported (pure kernels; the talk state machine, the tumbler and
+fan tool actors, the positional sound, and RNG calls stay in
+C):
+
+- NPC0: the action selection with the parity rule
+  (`idx = RANDOM(2); idx <<= (event_idx & 1)` → even events
+  choose WAIT/MERRY, odd choose WAIT/DRINK), the loop tables
+  (base {1,2,1}, rnd {2.0f,3.0f,1.0f}), the four clap sounds,
+  the four initial angles via DEG2SHORT_ANGLE2, the talk
+  message arithmetic (base[looks] + RANDOM(3) + event_idx *
+  3), and the tumbler condition (odd event_idx and a NULL
+  right-hand actor).
+- NPC1: the seven-entry initial angle table via
+  DEG2SHORT_ANGLE2 indexed by the pool layout, the think
+  selection (next_action wins; otherwise strict 135° turn
+  test, walk on no wall flags, else turn), the 100.0f squared
+  radius (strict >) with home-angle projection, the 0.0f/319.0f
+  block-edge clamps, the walk-end rule (ANY collision flag or
+  move_timer > 60), and the talk message arithmetic
+  (base[looks] + RANDOM(3), confirmed with no event_idx
+  offset).
+- The festival layout: eight slots (five hanami NPCs, the two
+  Sakura tables, SONCHO2) with their field-unit coordinates, a
+  single map variant on a shrine block, the five-NPC mask, and
+  the IDs (SP_NPC_EV_HANAMI_0..4 = 0xD032–0xD036,
+  SP_NPC_EV_SONCHO2 = 0xD074, SAKURA_TABLE0 = 0x582A,
+  SAKURA_TABLE1 = 0x582B).
+- Also added to `event_day.rs`: CHERRY_BLOSSOM_PETALS (65)
+  with the April 3 00:00 → April 8 23:00 schedule row — a
+  distinct event from the festival itself.
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_cb_npc0_next`,
+`pc_cb_npc0_msg`, `pc_cb_npc0_def_angle`,
+`pc_cb_npc0_make_tumbler`, `pc_cb_npc1_next`,
+`pc_cb_npc1_msg`, `pc_cb_npc1_def_angle`,
+`pc_cb_npc1_out_of_range`, `pc_cb_npc1_project_radius`,
+`pc_cb_layout_pos`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

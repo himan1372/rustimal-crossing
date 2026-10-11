@@ -168,6 +168,7 @@ pub mod event {
     pub const FISHING_TOURNEY_2: u16 = 54;
     pub const HARVEST_FESTIVAL: u16 = 56;
     pub const TOY_DAY_JINGLE: u16 = 61;
+    pub const CHERRY_BLOSSOM_PETALS: u16 = 65;
     pub const NEW_YEARS_EVE_COUNTDOWN: u16 = 64;
     pub const WEATHER_CLEAR: u16 = 116;
     pub const HANDBILL_BROKER: u16 = 72;
@@ -263,6 +264,11 @@ pub mod schedule {
             begin: DateSpec { month: rtc::month::APRIL, day: 5, hour: 10 },
             end: DateSpec { month: rtc::month::APRIL, day: 7, hour: 21 },
             event: event::CHERRY_BLOSSOM_FESTIVAL,
+        },
+        ScheduleRow { // Cherry blossom petals: Apr 3 00:00 -> Apr 8 23:00
+            begin: DateSpec { month: rtc::month::APRIL, day: 3, hour: 0 },
+            end: DateSpec { month: rtc::month::APRIL, day: 8, hour: 23 },
+            event: event::CHERRY_BLOSSOM_PETALS,
         },
         ScheduleRow { // Apr 22, 10:00-17:00
             begin: DateSpec { month: rtc::month::APRIL, day: 22, hour: 10 },
