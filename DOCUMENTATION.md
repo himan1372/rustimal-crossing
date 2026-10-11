@@ -3029,6 +3029,45 @@ C ABI (all `pc_`-prefixed, 10 exports): `pc_ds_pos2texel`,
 `pc_ds_shop_slot_idx`, `pc_ds_resolve_slot`. No C callers rewired
 yet, per the usual pattern. No test runs, per the standing rule.
 
+### Runtime Port Progress: Town Tune Composer
+
+New `rust/src/melody.rs`, registered as `mod melody` in
+`rust/src/lib.rs`. Decomp-verified against `m_melody.c`,
+`m_melody.h`, `m_mscore_ovl.c`, `ac_mscore_control.c`,
+`ac_mscore_control.h`, `m_name_table.h`, `m_bgm.c`,
+`m_start_data_init.c` (GAFE01_00 Rev 0 USA). All 12 brief claims
+checked; no behavioral corrections.
+
+Ported (pure encoding and transition kernels; the overlay input,
+the audio calls, the rendering, the actor checks, the submenu
+lifecycle, the GBA state machine, and the save stay in C):
+
+- The packed-u64 ↔ 16-step conversions with the exact nibble order
+  and low-nibble masking.
+- The literal default tune and the all-HOLD clear action.
+- The asymmetric C-up/C-down transitions with the exact sound
+  behavior (0→15 silent, 15→14 plays `SysTrgStart(0)`).
+- The cursor advance/back with the index-16 end position, and the
+  edit-end save/continue/restore branches.
+- The music-board item check, the GBA message/timeout constants,
+  and the note names.
+
+Deliberately NOT ported: the overlay input polling, the audio and
+rendering, the board facing/interaction checks, the submenu and
+dialogue state machines, and the GBA transfer flow. The caller
+audit is complete: the composer overlay, the GBA read path, the
+NPC/quest melody hooks, and `m_bgm.c`'s hourly time-signal
+(instruments 0xFE island / 0xFF mainland) all consume the same
+saved u64 — keep it authoritative.
+
+C ABI (all `pc_`-prefixed, 11 exports): `pc_ml_unpack`,
+`pc_ml_pack`, `pc_ml_clear`, `pc_ml_step_up`,
+`pc_ml_step_up_sound`, `pc_ml_step_down`,
+`pc_ml_step_down_sound`, `pc_ml_cursor_advance`,
+`pc_ml_cursor_back`, `pc_ml_edit_end`, `pc_ml_is_music_board`. No C
+callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
