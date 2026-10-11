@@ -5124,6 +5124,51 @@ C ABI (all `pc_`-prefixed, 8 exports):
 callers rewired yet, per the usual pattern.
 All 7 unit tests pass.
 
+### Runtime Port Progress: Pause (debug helper)
+
+New `rust/src/pause.rs`, registered as `mod
+pause` in `rust/src/lib.rs`. Decomp-verified
+against `m_pause.c`, `include/m_pause.h`,
+`m_play.c`, and `zurumode.h` (ACGC-PC-Port
+tree, GAFE01_00 Rev 0 USA base). 9/9 sections
+PROVEN, with one significant brief correction.
+
+Key finding: `m_pause.c` is not a pause-menu
+UI. It is a tiny debug-mode-gated input/state
+helper with no graphics, options, or overlay
+state machine: it returns 1 when the gameplay
+update may proceed and 0 when it stays gated,
+and the caller inverts the result.
+
+Brief correction: the brief's `int timer` /
+`++timer > 8` matches the retail N64 form,
+but the PC-port tree carries `f32 timer` with
+a separate dt-accumulation block (`timer +=
+dt_num_60fps_frames` while Z+R held without a
+fresh R press; return check tests `timer >
+8.0f` strictly). The port follows the tree.
+
+Ported (`PauseState { enabled: i32, timer:
+f32 }`, 8 bytes, `repr(C)`; pad `now`/`on`
+bitfields and dt injected so the kernel stays
+engine-free; the `ZURUMODE2_ENABLED()` gate,
+the `!Pause_proc` inversion, dt sourcing, the
+separate `g_pc_paused` coarse pause, and pad
+polling stay in C):
+
+- `pc_pause_init` (`Pause_ct`): zero the
+  state.
+- `pc_pause_proc`: R held + D-pad Down newly
+  pressed toggles `enabled` before the return
+  check; Z+R held without fresh R accumulates
+  dt; returns 1 (and resets the timer) when
+  disabled or when Z is held with a fresh R
+  press or the timer past 8.0, else 0.
+
+C ABI: `pc_pause_init`, `pc_pause_proc`. No C
+callers rewired yet, per the usual pattern.
+All 7 unit tests pass.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
