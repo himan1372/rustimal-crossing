@@ -92,6 +92,7 @@ mod train;
 mod tortimer;
 mod totakeke;
 mod majin;
+mod post_office;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

@@ -2606,6 +2606,64 @@ Gaps / do-not-port: the reset-hole effect, the text-entry overlay,
 the demo-clip coordination, the weather-clip sound handling, and the
 Groundhog controller handshake.
 
+### Runtime Port Progress: Post Office Clerks (Pelly / Phyllis / Pete)
+
+New `rust/src/post_office.rs`, registered as `mod post_office` in
+`rust/src/lib.rs`. Decomp-verified against `m_post_office.c`,
+`m_npc.c`, `ac_npc_post_girl.c`, `ac_npc_post_girl.c_inc`,
+`ac_npc_post_man.c`, `ac_npc_post_man_move.c_inc`,
+`ac_aprilfool_control.c` (GAFE01_00 Rev 0 USA). All 14 brief claims
+checked verbatim; no corrections. Nuances carried: the choice
+adjustment is an EXACT-VALUE switch on status (0 or 1 only — status 3
+gets no adjustment, do not rewrite as a bitmask test); the loan-balance
+comma byte is written at `str[l]` but the free-string copy receives
+length `l` — reproduce, do not "fix"; the delivery advance and
+force-flag clear happen only if `mPO_make_post_man()` succeeds;
+delivery is scene-gated (skipped in PLAYERSELECT/TITLE_DEMO); Pete's
+start action and Y position are birth-type-indexed; the receipt path's
+ignored `mPO_receipt_proc()` return is preserved (do not fix without
+retail evidence). Bonus finds: the second 8-entry status-indexed table
+for the repay-after path, the 5-entry receive table embedding the
+refusal IDs, the desk-full → `force_mail_delivery_flag = TRUE` path in
+`aPG_actor_dt`, and `draw_type = (npc_id == POST_GIRL) ? 0 : 1`.
+
+Ported (pure data/kernels; the counter state machine, the mail
+subsystem, Pete's movement/delivery actor, the submenu UI, the font
+formatting, and the April Fools overrides all stay in C):
+
+- Clerk status bitmask (desk-full from the aggregate stored-mail
+  count vs 5, loan/first-job/bank-account branches) — dual bitmask and
+  8-entry-table index.
+- Opening greeting (`msg_no[status] + draw_type`) and the repay-after
+  table; `draw_type` 0 for Pelly, 1 for Phyllis.
+- Business-menu choice adjustment with the exact-value condition.
+- Destination-validation outcome codes and the refusal tables
+  (`{0x8e1,0x8b5,0x1bd7}` by `dest-1`; the 5-entry receive table by
+  `dest+1`).
+- Bank-account init eligibility (native, no loan, house size >= 3,
+  renew == FALSE) and the loan millions/remainder split.
+- Delivery schedule (`<9` → 09:00, `<17` → 17:00, else next-day 09:00,
+  min/sec zeroed).
+- Pete's dialogue bases/bounds by talk_type (rolls in C), the
+  14-entry talk-permit table, birth-type start Y/actions, April Fools
+  indices (Pelly 0x0007, Phyllis 0x0008, Pete 0x0009).
+- Constants: POST_GIRL D003, POST_GIRL2 D012, POST_MAN D011, name
+  indices 0x20D/0x20E/0x20F, MAIL_STORAGE_SIZE 5, HOME_MAILBOX_SIZE 10.
+
+C ABI (all `pc_`-prefixed): `pc_post_clerk_status`,
+`pc_post_greet_msg`, `pc_post_repay_after_msg`,
+`pc_post_adjust_choice`, `pc_post_refuse_msg`,
+`pc_post_bank_account_eligible`, `pc_post_next_delivery_hour`,
+`pc_post_next_delivery_next_day`, `pc_post_pete_msg_base`,
+`pc_post_pete_talk_permit`, `pc_post_draw_type`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the 30-action counter machine, `mPO_receipt_proc()`
+and the delivery procs, Pete's route tables and mailbox animation,
+the April Fools dialogue overrides, and the loan-balance font
+formatting.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
