@@ -4702,6 +4702,93 @@ C ABI (all `pc_`-prefixed, 11 exports):
 per the usual pattern. No test runs, per the
 standing rule.
 
+### Runtime Port Progress: Town map
+
+New `rust/src/town_map.rs`, registered as `mod
+town_map` in `rust/src/lib.rs`. Decomp-verified
+against `m_map_ovl.c`, `m_map_ovl.h`,
+`m_map_ovl_h.h`, and `m_field_make.h`
+(GAFE01_00 Rev 0 USA). 10/10 sections PROVEN,
+with one brief correction and one source-data gap.
+
+Key correction: the brief's "6x7 = 42 acres" is
+wrong. `FG_BLOCK_X_NUM` = 5, `FG_BLOCK_Z_NUM` =
+6, so the interior map is 5x6 = 30 acres.
+`mMP_BLOCKX_MAX`/`mMP_BLOCKZ_MAX` are only the
+texture-table scan bounds. Verified against the
+header.
+
+Source-data gap: `mMP_house_pos_list` (the three
+`(x, z)` villager-house positions) lives in a
+binary `.inc` asset absent from the decomp, so
+its contents are not recoverable here; the
+matching algorithm is ported with the table
+contents injected.
+
+Ported (pure kernels; overlay allocation and
+lifecycle, all save/field access, `mFI_`
+conversions, collision queries, NPC/player
+identity and name conversion, private/animal free
+checks, input callbacks, transitions, sound,
+font rendering, matrices, display lists,
+textures, palettes, and the resident-cache
+assembly stay in C):
+
+- The full `l_map_texture` table (108 entries,
+  compressed to 69 distinct `kan_tizu_*` texture
+  indices) and the `l_map_pal` table (palette 1
+  for exactly the 20 verified types, 0 elsewhere)
+  with `pc_map_tex_idx`/`pc_map_pal_idx`.
+- The full `pluss_bridge` table (19 non-0xFF
+  entries verified verbatim) and the saved-
+  bridge coordinate predicate in
+  `pc_map_bridge_type`.
+- `mMP_check_bg_kind`: rejects kinds 0-8, the
+  two border-cliff transitions (61, 62), and the
+  two tunnels (9, 10).
+- `mMP_check_layer`: 2/1/0/default-1, minus one
+  when `!mRF_CheckFieldStep3()`, clamped to zero.
+- `mMP_set_house_data`'s position lookup:
+  first entry with `x == ut_x && z == ut_z - 1`,
+  entry-0 fallback (`pc_map_house_pos_match`).
+- The ordered building-flag chain
+  (SHOP/POLICE/POST/SHRINE/STATION/DUMP/MUSEUM/
+  TAILORS/DOCK) as `pc_map_building_label`.
+- The pure selection/bounds kernel of
+  `mMP_move_Play` as `pc_map_cursor_step`: exit
+  on A/B/Start (X only when data0 == 1), then
+  C-left/down/up/right with bounds bx in
+  [0,4], bz in [0,5] and +/-22.0 target steps.
+- The 18-frame cursor pulse tables (brightness
+  for the green prim-color component; scale)
+  as `pc_map_cursor_pulse`.
+- Cursor init math (bx*22.0, -bz*22.0, frame 0),
+  the window-frame selection
+  (4->4T, 3->3T, 1->T, 0->1T, else 2T),
+  `mMP_get_label_cnt` (true count for NPC/
+  player, 1 for buildings), the house-icon
+  offsets ({5,13,17}/{−4,−11,−18} with %3//3),
+  and the two-entry town-name color table.
+
+Brief nuances preserved: the free-player name is
+`"free    "` (4 spaces); the villager sort is a
+swap-and-restart loop (stays in C); the cursor
+frame is ported in its N64 `++`/`%=` form rather
+than the PC dt-accumulating f32; and
+`get_player_actor_withoutCheck` vs the structure-
+exit-door position stays in C.
+
+C ABI (all `pc_`-prefixed, 14 exports):
+`pc_map_check_bg_kind`, `pc_map_tex_idx`,
+`pc_map_pal_idx`, `pc_map_bridge_type`,
+`pc_map_check_layer`, `pc_map_house_pos_match`,
+`pc_map_building_label`, `pc_map_cursor_step`,
+`pc_map_cursor_pulse`, `pc_map_cursor_init`,
+`pc_map_win_frame`, `pc_map_label_top_cnt`,
+`pc_map_house_offset`, `pc_map_land_color`. No C
+callers rewired yet, per the usual pattern. No
+test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

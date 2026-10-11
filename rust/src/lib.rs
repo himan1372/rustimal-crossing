@@ -128,6 +128,7 @@ mod fish_actor;
 mod famicom;
 mod town_board;
 mod house_board;
+mod town_map;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

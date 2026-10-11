@@ -2,7 +2,7 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 130 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 131 modules in `rust/src/` (decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
@@ -176,6 +176,14 @@ candidate for a future pure-kernel port once its boundary is verified.
   count?); `aMR_CLIP->check_danna_kill_proc()` implementation and registration;
   the `mCkRh_DecideNowGokiFamilyCount` call site on house entry.
 - **Balloon follow-ups** — the NULL-guard/call mismatch in the present drop (`item_tree_fruit_drop_proc` guard vs `fruit_set_proc` call); the little-shake double-set comment; the draw callback's present-skip condition; the rare-list selection internals and `mFI_GetOtherFruit()`; the `anim_frame`/`dt` accumulators.
+- **Town-map follow-ups** — `mMP_house_pos_list` contents live in a binary `.inc`
+  asset absent from the decomp (matching algorithm ported, contents injected);
+  the PC-port dt-accumulating `cursor_frame` f32 vs the N64 `++`/`%=` form;
+  `mMP_make_max_no_table` acre-loop bounds (starts at field index (0,1), scan
+  count); the full resident-cache assembly (`mPr_CheckPrivate`, the
+  first-introduction condition, `mNpc_CheckFreeAnimalInfo`, name conversion,
+  the swap-and-restart villager sort); the `add_calc(0.7, 19.0, 1.8)` cursor
+  easing; exit-door vs player-position selection in `mMP_set_init_data`.
 - **Mushroom follow-ups** — the column-refill logic when `possible_cols` hits 0;
   the per-row candidate bitfields and the `mMsr_SetBlockMashroom` scan order
   (incl. the "bruh" early break); `lbRTC_IsOverTime` future-timestamp handling;
@@ -242,8 +250,10 @@ fbdemo transition math; the 6502 core and wrapper stay in C)
 (15-slot record kernels: first-empty scan, full-board shift, page clear, init
 handbills, auto-post time) + `house_board.rs` (128-byte message line check)
 
-**Town map** — the map overlay UI.
-`m_map_ovl.c`
+✅ **Town map** — the map overlay UI.
+`m_map_ovl.c` → `town_map.rs` (108-entry texture/palette tables,
+bridge substitution, layer conversion, house-pos match, building-label
+precedence, cursor selection/animation kernels). Interior is 5x6 = 30 acres.
 
 **Diary** — the player diary.
 `m_diary.c`, `m_diary_ovl.c`
@@ -314,7 +324,7 @@ Philip asked "what's next" before — if he asks again, the high-value gameplay 
 2. **Summer festival stalls** — `ac_yatai.c` + `ac_ev_yomise.c` (real stall behavior; the footrace files were a mislabel)
 3. **Groundhog Day / April Fools / Birthdays** — small bounded event sets
 4. **Leftover event pieces** — ball-toss scoring, fishing record DB, footrace controller (see section above)
-5. **Bulletin boards / town map / diary** — small UI overlays
+5. **Diary** — small UI overlay
 6. **NES games** — huge win if feasible, but the emulator core is the hard part
 7. **GBA Island** — needs link-cable hardware behavior; defer
 
