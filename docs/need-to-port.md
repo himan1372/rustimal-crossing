@@ -181,9 +181,17 @@ candidate for a future pure-kernel port once its boundary is verified.
   demo/talk/handover. Corrections: `Radio_c` is padded (0x000/0x004/0x008, not
   the brief's 0x000/0x001/0x005); `FTR_START(FTR_RADIO_TEST)` is 0x1FCC
   (radio.rs's 1011 is the furniture table index).
-- **Footrace controller** — the `_00` phase state machine (`aTKC_set`/`aTKC_go`), the
-  shared save area (slot 8), the `_01` bitfield and `aTKC_FLAG_15` semantics (unresolved),
-  stumble/dash effects.
+- **Footrace controller** — RESOLVED: controller kernels are in `tokyoso.rs`
+  (action enum, `_00==3`→WAIT2 override, set-start predicate, `_01` set/clear
+  with the `(2+idx)&3`/`idx&3` asymmetry, kansen leave predicates, dash/stumble
+  rolls, kokeru-done, late-race predicate, goal-think mapping, NPC0 birth reset,
+  NPC1 birth/self-delete phases, timer/event/slot/mask constants). `aTKC_FLAG_15`
+  is PROVEN unused (declaration only, zero `0x8000` literals). Still in C:
+  controller lifecycle + setupAction, save-area writes, NPC clip, animation
+  init, effect creation, all RNG calls, the BUGFIXES branch, the double
+  setupAction call order. Corrections: event constant is 15 (0xF), not 0xE;
+  `_00=2` exists (NPC0 birth sets it, NPC1 birth requires it); NPC0's destructor
+  ASSIGNS flags (wipes bits); NPC1's `_00==3` self-delete is in its move callback.
 - **Hatsumode open question** — `root_table`/`proc_idx_table` have 4 entries but 5 NPCs
   can spawn (possible retail out-of-bounds read at index 4); needs assembly-level
   confirmation before porting.

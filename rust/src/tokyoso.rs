@@ -332,6 +332,158 @@ pub extern "C" fn pc_tokyoso_spawn_pos(slot: u8, out: *mut i32) -> u8 {
     1
 }
 
+
+/// Controller action enum (`ac_tokyoso_control.c`), separate from the
+/// shared save field `_00`.
+pub const ACT_WAIT: i32 = 0;
+pub const ACT_WAIT2: i32 = 1;
+pub const ACT_STRECH: i32 = 2;
+pub const ACT_READY: i32 = 3;
+pub const ACT_SET: i32 = 4;
+pub const ACT_GO: i32 = 5;
+pub const ACT_GOAL: i32 = 6;
+pub const ACT_IREKAE_1: i32 = 7;
+pub const ACT_IREKAE_2: i32 = 8;
+/// Shared save-area identity: event 15 (0xF), slot 8.
+pub const FOOTRACE_EVENT: i32 = 15;
+pub const FOOTRACE_SLOT: i32 = 8;
+/// Controller frame timers.
+pub const TIMER_WAIT: i32 = 600;
+pub const TIMER_READY: i32 = 120;
+pub const TIMER_WARMUP: i32 = 240;
+pub const TIMER_RUN: i32 = 300;
+/// Combined flag masks (`ac_tokyoso_control.h`).
+pub const READY_ALL: u16 = 0x380;
+pub const STRETCH_ALL: u16 = 0x60;
+pub const KANSEN_ALL: u16 = 0x1800;
+pub const GOAL_ALL: u16 = 0x6000;
+/// Bit 15 is declared (`aTKC_FLAG_15`) but has zero uses and zero
+/// `0x8000` literals anywhere in the tokyoso sources — reserved, not
+/// repurposed. Preserve it through read-modify-write.
+pub const FLAG_15: u16 = 0x8000;
+
+/// WAIT2 override (`aTKC_actor_move`): when `_00 == 3` and the current
+/// action is not WAIT2, the controller is forced into WAIT2 (the
+/// NPC0-deletion recovery path).
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_wait2_override(phase: u8, action: i32) -> i32 {
+    if phase == 3 && action != ACT_WAIT2 {
+        ACT_WAIT2
+    } else {
+        action
+    }
+}
+
+/// `aTKC_set` start predicate: the race starts when the full ready
+/// mask is NOT present — `(flags & READY_ALL) == 0`. NPCs clearing
+/// their own ready bits is the start trigger. The C body then calls
+/// `aTKC_setupAction(actor, GO)` TWICE (decomp `// @BUG`), with the
+/// flags/lap/goal initialization between the two calls — the call
+/// order is part of the retail behavior, not cleaned up here.
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_set_starts(flags: u16) -> i32 {
+    (flags & READY_ALL == 0) as i32
+}
+
+/// `_01` spectator-transition bit operations. NOTE the asymmetry: the
+/// goal-init SET uses `(2 + idx) & 3` while the spectator CLEAR uses
+/// `idx & 3`, where `idx = npc_id - SP_NPC_EV_TOKYOSO_0`.
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_01_set(u01: u8, npc_id: u16) -> u8 {
+    let idx = npc_id.wrapping_sub(SP_NPC_EV_TOKYOSO_0);
+    u01 | (1u8 << ((2 + idx) & 3))
+}
+
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_01_clear(u01: u8, npc_id: u16) -> u8 {
+    let idx = npc_id.wrapping_sub(SP_NPC_EV_TOKYOSO_0);
+    u01 & !(1u8 << (idx & 3))
+}
+
+/// `aTKN1_kansen_bf` leaves audience setup when RACE_ACTIVE is set or
+/// its `_01` bit is set.
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_kansen_bf_leave(race_active: i32, u01_bit: i32) -> i32 {
+    (race_active != 0 || u01_bit != 0) as i32
+}
+
+/// `aTKN1_kansen` leaves ordinary audience behavior when either
+/// runner has a nonzero goal result or its `_01` bit is set.
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_kansen_leave(goal0: i32, goal1: i32, u01_bit: i32) -> i32 {
+    (goal0 != 0 || goal1 != 0 || u01_bit != 0) as i32
+}
+
+/// Dash-effect roll (`think_idx == 11`): `RANDOM_F(1.0f)` is drawn on
+/// EVERY running-state update (even when no effect spawns); the effect
+/// fires when the sample is below 0.1.
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_dash_roll(rng: f32) -> i32 {
+    (rng < 0.1f32) as i32
+}
+
+/// Stumble selection: only in the lead-check branch — the runner must
+/// be leading AND the sample below 0.1, otherwise it stays in the
+/// normal running state (think 11 vs 12).
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_stumble_roll(leading: i32, rng: f32) -> i32 {
+    (leading != 0 && rng < 0.1f32) as i32
+}
+
+/// Stumble exit (`aTKN1_kokeru`): the stumble animation's stop
+/// procedure must return TRUE AND `speed == 0.0f` before the runner
+/// transitions (to think 13, the get-up init).
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_kokeru_done(anim_stopped: i32, speed: f32) -> i32 {
+    (anim_stopped != 0 && speed == 0.0f32) as i32
+}
+
+/// Late-race target override (`aTKC_clip_next_run`): when the lap
+/// count equals SUBLAP_NUM (8) and the next angle is positive, the
+/// target is overridden with two extra `RANDOM_F(10.0f)` perturbations.
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_late_race(lap: i32, next_angle: i16) -> i32 {
+    (lap == SUBLAP_NUM && next_angle > 0) as i32
+}
+
+/// Goal-result think mapping (`aTKN1_local_to_goal`): think `13 + goal`.
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_goal_think(goal: i32) -> i32 {
+    13 + goal
+}
+
+/// NPC0 birth recovery (`ac_tokyoso_npc0.c`): a newly created NPC0
+/// seeing `_00 == 3` resets it to 0 and clears flags (sets
+/// `*did_reset`); otherwise the phase passes through.
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_npc0_birth(phase: u8, did_reset: *mut i32) -> u8 {
+    let reset = (phase == 3) as i32;
+    unsafe {
+        if !did_reset.is_null() {
+            *did_reset = reset;
+        }
+    }
+    if reset != 0 {
+        0
+    } else {
+        phase
+    }
+}
+
+/// NPC1 birth requires `_00 == 2` (set by NPC0's schedule birth from
+/// `_00 == 1` — the phase the brief's lifecycle table missed).
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_npc1_birth_ok(phase: u8) -> i32 {
+    (phase == 2) as i32
+}
+
+/// NPC1's `_00 == 3` self-delete lives in its MOVE callback (not its
+/// destructor, unlike NPC0's flag assignment).
+#[no_mangle]
+pub extern "C" fn pc_tokyoso_npc1_self_delete(phase: u8) -> i32 {
+    (phase == 3) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -423,5 +575,54 @@ mod tests {
         assert_eq!(pc_tokyoso_spawn_pos(5, p.as_mut_ptr()), 1);
         assert_eq!(p, [5, 8]);
         assert_eq!(pc_tokyoso_spawn_pos(6, p.as_mut_ptr()), 0);
+    }
+
+    #[test]
+    fn controller_kernels() {
+        // WAIT2 override: _00==3 forces WAIT2 unless already there.
+        assert_eq!(pc_tokyoso_wait2_override(3, ACT_GO), ACT_WAIT2);
+        assert_eq!(pc_tokyoso_wait2_override(3, ACT_WAIT2), ACT_WAIT2);
+        assert_eq!(pc_tokyoso_wait2_override(1, ACT_GO), ACT_GO);
+        // Set starts when the ready-all mask is NOT fully present.
+        assert_eq!(pc_tokyoso_set_starts(0x000), 1);
+        assert_eq!(pc_tokyoso_set_starts(0x380), 0);
+        assert_eq!(pc_tokyoso_set_starts(0x060), 1); // stretch bits only, no ready bits
+        // _01 set/clear asymmetry: set uses (2+idx)&3, clear uses idx&3.
+        let npc = SP_NPC_EV_TOKYOSO_0 + 1; // idx 1
+        assert_eq!(pc_tokyoso_01_set(0, npc), 0b1000); // (2+1)&3 = 3
+        assert_eq!(pc_tokyoso_01_clear(0b1010, npc), 0b1000); // 1&3 = 1
+        // Kansen transitions.
+        assert_eq!(pc_tokyoso_kansen_bf_leave(1, 0), 1);
+        assert_eq!(pc_tokyoso_kansen_bf_leave(0, 1), 1);
+        assert_eq!(pc_tokyoso_kansen_bf_leave(0, 0), 0);
+        assert_eq!(pc_tokyoso_kansen_leave(0, 2, 0), 1);
+        assert_eq!(pc_tokyoso_kansen_leave(0, 0, 0), 0);
+        // Dash/stumble rolls.
+        assert_eq!(pc_tokyoso_dash_roll(0.05), 1);
+        assert_eq!(pc_tokyoso_dash_roll(0.1), 0);
+        assert_eq!(pc_tokyoso_stumble_roll(1, 0.05), 1);
+        assert_eq!(pc_tokyoso_stumble_roll(0, 0.05), 0); // must be leading
+        // Kokeru exit needs anim stop AND zero speed.
+        assert_eq!(pc_tokyoso_kokeru_done(1, 0.0), 1);
+        assert_eq!(pc_tokyoso_kokeru_done(1, 0.5), 0);
+        assert_eq!(pc_tokyoso_kokeru_done(0, 0.0), 0);
+        // Late-race predicate.
+        assert_eq!(pc_tokyoso_late_race(8, 100), 1);
+        assert_eq!(pc_tokyoso_late_race(8, -100), 0);
+        assert_eq!(pc_tokyoso_late_race(7, 100), 0);
+        // Goal think mapping.
+        assert_eq!(pc_tokyoso_goal_think(1), 14);
+        // NPC0 birth reset; NPC1 birth/self-delete phases.
+        let mut r = 0;
+        assert_eq!(pc_tokyoso_npc0_birth(3, &mut r), 0);
+        assert_eq!(r, 1);
+        assert_eq!(pc_tokyoso_npc0_birth(1, &mut r), 1);
+        assert_eq!(r, 0);
+        assert_eq!(pc_tokyoso_npc1_birth_ok(2), 1);
+        assert_eq!(pc_tokyoso_npc1_birth_ok(1), 0);
+        assert_eq!(pc_tokyoso_npc1_self_delete(3), 1);
+        assert_eq!(pc_tokyoso_npc1_self_delete(2), 0);
+        // FLAG_15 is reserved-but-unused.
+        assert_eq!(FLAG_15, 0x8000);
     }
 }
