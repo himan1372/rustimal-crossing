@@ -167,6 +167,8 @@ pub mod event {
     pub const FISHING_TOURNEY_1: u16 = 29;
     pub const RUMOR_FIREWORKS_SHOW: u16 = 31;
     pub const FIREWORKS_SHOW: u16 = 32;
+    pub const RUMOR_MORNING_AEROBICS: u16 = 33;
+    pub const TALK_MORNING_AEROBICS: u16 = 34;
     pub const MORNING_AEROBICS: u16 = 35;
     pub const METEOR_SHOWER: u16 = 37;
     pub const HARVEST_MOON_FESTIVAL: u16 = 43;
@@ -254,7 +256,7 @@ pub struct ScheduleRow {
 pub mod schedule {
     use super::*;
 
-    pub const ROWS: [ScheduleRow; 18] = [
+    pub const ROWS: [ScheduleRow; 20] = [
         ScheduleRow { // Jan 1, 06:00-10:00
             begin: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 6 },
             end: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 10 },
@@ -399,6 +401,16 @@ pub mod schedule {
             begin: DateSpec { month: rtc::month::SEPTEMBER, day: 21, hour: 15 },
             end: DateSpec { month: rtc::month::SEPTEMBER, day: 23, hour: 16 },
             event: event::SPORTS_FAIR_TUG_OF_WAR,
+        },
+        ScheduleRow { // Aerobics rumor: Jul 14 00:00 -> Jul 24 23:00
+            begin: DateSpec { month: rtc::month::JULY, day: 14, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::JULY, day: 24, hour: 23 },
+            event: event::RUMOR_MORNING_AEROBICS,
+        },
+        ScheduleRow { // Aerobics talk: Jul 26 00:00 -> Aug 30 23:00
+            begin: DateSpec { month: rtc::month::JULY, day: 26, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::AUGUST, day: 30, hour: 23 },
+            event: event::TALK_MORNING_AEROBICS,
         },
     ];
 
@@ -632,7 +644,7 @@ mod tests {
 
     #[test]
     fn schedule_rows() {
-        assert_eq!(schedule::ROWS.len(), 18);
+        assert_eq!(schedule::ROWS.len(), 20);
         assert_eq!(schedule::ROW_COUNT, 134);
         let ny = &schedule::ROWS[0];
         assert_eq!((ny.begin.month, ny.begin.day, ny.begin.hour), (1, 1, 6));

@@ -3745,6 +3745,63 @@ C ABI (all `pc_`-prefixed, 15 exports):
 yet, per the usual pattern. No test runs, per the standing
 rule.
 
+### Runtime Port Progress: Morning Aerobics (Taisou)
+
+New `rust/src/taisou.rs`, registered as `mod taisou` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_taisou_npc0.c`, `ac_taisou_npc0_talk.c_inc`,
+`ac_taisou_npc0_anime.c_inc`, `include/ac_taisou_npc0.h`,
+`include/audio.h`, `m_event_map_npc_data.c_inc`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`ac_npc_anim_def.h` (GAFE01_00 Rev 0 USA). All 10 brief claims
+PROVEN.
+
+Ported (pure kernels; the radio counter, RNG call order, NPC
+clip lifecycle, the leader/group globals, animation init,
+demo/talk, Tortimer's radio-card inventory mutations, and the
+event-manager handlers stay in C):
+
+- The failure arithmetic: the five rates {0.0, 0.05, 0.1, 0.15,
+  0.3} with retail's `> 4 → 0` type fallback, the
+  `(measure + 1) % 10` next action, the eligibility predicate
+  (no failure actor designated, next action neither 0 nor 9,
+  float below rate), and the `1 + RANDOM(8)` rejection
+  predicate (the re-roll loop stays in C).
+- The 13-entry action→animation table with numeric IDs
+  (INTRO1_A 81 … TIRED1 105) plus the `(anime_dir & 1)`
+  variant bit.
+- All ten segment start-ratio tables (varying lengths
+  3/5/3/5/3/5/5/5/5/2), the end/morph ratios, the ratio
+  lengths, and the `aTS0_set_current` frame-sync math. The
+  taisou6 array's unsorted `{0.0, 0.5, 1.0, 1.5, 0.96875}`
+  order is preserved as written.
+- The delay math: NPC 0 never gets the RANDOM(48) offset; the
+  per-step 0.2/0.8 ratio adjustment; the over-block test
+  against `startRatio[seg][seq + 1]` (the NEXT boundary).
+- Dialogue: row 0 while Morning Aerobics is active (row 1 for
+  the Sports Fair variant), Copper's {9829, 9832} bases, the
+  villager `base + type*3 + rand2` formula with the fixed +2
+  for action == 10, the 180°/0° init-angle rule, the
+  smallest-ID leader selection, and the 7-slot shrine layout
+  (TAISOU_0..4 = 0xD04E–0xD052, radio 0x582C, Tortimer 0xD078).
+- Also added to `event_day.rs`: RUMOR_MORNING_AEROBICS (33)
+  with the Jul 14–24 rumor row and TALK_MORNING_AEROBICS (34)
+  with the Jul 26–Aug 30 row (both MULTIDAY-encoded, appended
+  at the end; the Jul 25–Aug 31 06:00 row already existed).
+
+C ABI (all `pc_`-prefixed, 18 exports):
+`pc_taisou_failure_rate`, `pc_taisou_next_action`,
+`pc_taisou_failure_eligible`, `pc_taisou_failure_reject`,
+`pc_taisou_anim_id`, `pc_taisou_anim_variant`,
+`pc_taisou_start_ratio`, `pc_taisou_sync_frame`,
+`pc_taisou_has_delay`, `pc_taisou_delay_step`,
+`pc_taisou_over_block`, `pc_taisou_msg_row`,
+`pc_taisou_npc_type`, `pc_taisou_villager_msg`,
+`pc_taisou_copper_msg`, `pc_taisou_init_angle`,
+`pc_taisou_leader_update`, `pc_taisou_spawn_pos`. No C callers
+rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
