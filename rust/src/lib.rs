@@ -99,6 +99,7 @@ mod stalk_market;
 mod lost_found;
 mod bank;
 mod catalog;
+mod design;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

@@ -2980,6 +2980,55 @@ C ABI (all `pc_`-prefixed, 8 exports): `pc_cl_check_collect_bit`,
 `pc_cl_sell_price_wallet`. No C callers rewired yet, per the usual
 pattern. No test runs, per the standing rule.
 
+### Runtime Port Progress: Able Sisters Design Patterns
+
+New `rust/src/design.rs`, registered as `mod design` in
+`rust/src/lib.rs`. Decomp-verified against `m_needlework.h`,
+`m_needlework.c`, `m_design_ovl.c`, `m_design_ovl.h`,
+`m_cporiginal_ovl.h`, `m_private.h`, `m_common_data.h`,
+`ac_needlework_indoor.c`, `ac_npc_needlework_talk.c_inc`,
+`ac_npc_needlework.h`, `ac_flag.c` (GAFE01_00 Rev 0 USA). All 12
+brief claims checked; no behavioral corrections. The brief's open
+`flag_design_set` question is CLOSED by a full use-site search: the
+byte at record offset 0x011 is a "custom design applied" marker
+whose only live consumer is the island flagpole (set on apply,
+tested at render); it is dead state on player/shop records in
+retail — preserved, never invented for.
+
+Ported (pure record/texture/pixel/color kernels; the drawing input,
+the rendering, the submenu machines, the NPC dialogue, the shop
+actor's double-buffer handoff, the ARAM/ROM default loading, and
+the save records stay in C):
+
+- The record layout constants (0x220 record, 0x20 texture offset,
+  512-byte 4-bit texture).
+- The tile-aware `mDE_POS2TEXEL` mapping with the verified nibble
+  order (odd x = low nibble), plus pixel get/set that preserve the
+  sibling nibble.
+- The RGB5A3→RGB8 conversion with the exact integer math (opaque
+  `(ch*255)/31`, transparent `ch*17`; alpha not converted).
+- The GBA nibble swap (self-inverse) and the `& 15` palette mask.
+- The blank-pattern literal (full 16-char `"blank           "`),
+  the player/shop default palette tables, and the display-order
+  resolution through `my_org_no_table`.
+- The 350-Bell design price, Sable's visit-day counter rule (new
+  date only, non-foreign, cap 10), the shop cloth/umbrella slot
+  split, the 8×12 card-folder constants, and the editor
+  mode/tool ids.
+
+Deliberately NOT ported: the tool/controller behavior, the
+rendering, the submenu and dialogue state machines, the shop
+actor's buffered copy/exchange handoff, the worn-design branch,
+and `ac_broker_design.c` (a furniture broker actor, not the
+pattern editor).
+
+C ABI (all `pc_`-prefixed, 10 exports): `pc_ds_pos2texel`,
+`pc_ds_pixel_get`, `pc_ds_pixel_set`, `pc_ds_nibble_swap`,
+`pc_ds_rgb5a3_to_rgb8`, `pc_ds_palette_mask`,
+`pc_ds_visit_next_days`, `pc_ds_shop_slot_kind`,
+`pc_ds_shop_slot_idx`, `pc_ds_resolve_slot`. No C callers rewired
+yet, per the usual pattern. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
