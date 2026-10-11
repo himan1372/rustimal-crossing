@@ -110,6 +110,7 @@ mod halloween;
 mod fireworks;
 mod cherry_blossom;
 mod harvest;
+mod moon_viewing;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

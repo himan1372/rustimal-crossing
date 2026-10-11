@@ -177,7 +177,7 @@ pub mod event {
     pub const TOY_DAY_JINGLE: u16 = 61;
     pub const CHERRY_BLOSSOM_PETALS: u16 = 65;
     pub const NEW_YEARS_EVE_COUNTDOWN: u16 = 64;
-    pub const WEATHER_CLEAR: u16 = 116;
+    pub const WEATHER_CLEAR: u16 = 109;
     pub const HANDBILL_BROKER: u16 = 72;
     pub const HANDBILL_SHOP_SALE: u16 = 73;
     pub const ARTIST: u16 = 74;
@@ -188,7 +188,9 @@ pub mod event {
     pub const CARPET_PEDDLER: u16 = 79;
     pub const SONCHO_NEW_YEARS_DAY: u16 = 80;
     pub const SONCHO_HALLOWEEN: u16 = 99;
-    pub const SONCHO_FIREWORKS_SHOW: u16 = 97;
+    pub const SONCHO_FIREWORKS_SHOW: u16 = 92;
+    pub const SONCHO_METEOR_SHOWER: u16 = 93;
+    pub const SONCHO_HARVEST_MOON_FESTIVAL: u16 = 97;
     pub const SONCHO_HARVEST_FESTIVAL: u16 = 103;
     pub const SONCHO_BRIDGE_MAKE: u16 = 113;
 
@@ -317,10 +319,20 @@ pub mod schedule {
             end: DateSpec { month: rtc::month::AUGUST, day: 12, hour: 20 },
             event: event::METEOR_SHOWER,
         },
+        ScheduleRow { // Aug 12, 18:00-20:00 (Tortimer meteor shower)
+            begin: DateSpec { month: rtc::month::AUGUST, day: 12, hour: 18 },
+            end: DateSpec { month: rtc::month::AUGUST, day: 12, hour: 20 },
+            event: event::SONCHO_METEOR_SHOWER,
+        },
         ScheduleRow { // lunar date, 18:00-20:00
             begin: DateSpec { month: sched::lunar(8), day: 15, hour: 18 },
             end: DateSpec { month: sched::lunar(8), day: 15, hour: 20 },
             event: event::HARVEST_MOON_FESTIVAL,
+        },
+        ScheduleRow { // lunar date, 18:00-20:00 (Tortimer harvest moon)
+            begin: DateSpec { month: sched::lunar(8), day: 15, hour: 18 },
+            end: DateSpec { month: sched::lunar(8), day: 15, hour: 20 },
+            event: event::SONCHO_HARVEST_MOON_FESTIVAL,
         },
         ScheduleRow { // Halloween rumor: Oct 1 00:00 -> Oct 30 23:00
             begin: DateSpec { month: rtc::month::OCTOBER, day: 1, hour: sched::MULTIDAY | 0 },

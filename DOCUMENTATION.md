@@ -3536,6 +3536,79 @@ C ABI (all `pc_`-prefixed, 8 exports): `pc_hv_npc0_next`,
 No C callers rewired yet, per the usual pattern. No test runs,
 per the standing rule.
 
+### Runtime Port Progress: Moon Viewing (Tukimi)
+
+New `rust/src/moon_viewing.rs`, registered as `mod moon_viewing`
+in `rust/src/lib.rs`. Decomp-verified against `ac_tukimi.c`,
+`ac_tukimi_move.c_inc`, `ac_tukimi_draw.c_inc`,
+`ac_tukimi_npc0_talk.c_inc`, `ac_tukimi_npc1_talk.c_inc`,
+`ac_tukimi_npc1_anime.c_inc`, `m_event_map_npc_data.c_inc`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`, `m_bgm.c`,
+`m_name_table.h` (GAFE01_00 Rev 0 USA). 11 of 12 brief claims
+PROVEN; the 12th DIFFERS: the structure actor is deleted only
+when `ABS(tukimi_b - player_b) > 1` on either block axis, not on
+a plain block mismatch — an adjacent block keeps the actor.
+The brief's plain-mismatch version would delete it too
+aggressively.
+
+The key retail fact: `ac_tukimi_npc0`/`ac_tukimi_npc1` are spawned
+by the METEOR SHOWER event manager, not the Harvest Moon
+Festival manager. The two events share the pool block but keep
+distinct event IDs, effects (eEC_EFFECT_NIGHT13_MOON vs.
+eEC_EFFECT_SHOOTING_SET — and the meteor stop deletes
+eEC_EFFECT_SHOOTING, not _SHOOTING_SET), and music tracks (30
+vs. 250); they must not be merged into one Rust implementation.
+
+Ported (pure kernels; NPC lifecycle, skeleton animation,
+message resources, RNG calls, and the event-manager handlers
+stay in C):
+
+- The structure actor: variant index
+  (`npc_id - NEWYEAR_SHRINE0`; valid IDs 0x582F/0x5830, left and
+  right), the `id = id == 0 ? 6 : 6` background-offset constant
+  (always ID 6, value 100), the 271.0f animation argument,
+  DUMMY_TUKIMI (0xF10A), and the ABS-diff->1 deletion rule.
+- NPC0: the eight-entry `def_angle` table (0xA000..0) plus the
+  seven-entry X/Z offset tables (offsets are ADDED to world
+  position), and the Meteor-Shower-gated dialogue formula
+  `msg_base[looks] + RANDOM(3)` with both base families
+  (0x1EB0/0x3F46). Head target: 40 units forward, 30 units
+  BELOW the eye, priority 3, only in aNPC_ACT_SPECIAL.
+- NPC1: the 5x7 `def_angle` table indexed by
+  `[npc_id - 0xD03F][mFI_GetPuleIdx()]`, the animation index
+  (KUISINBO1 only for event_idx == 4, WAIT1 otherwise), the
+  fifth-NPC special case (no talk turning, KUISINBO1 default;
+  dispatch tests `npc_id == SP_NPC_EV_TUKIMI_4`), the head
+  target (40 forward, 30 ABOVE the eye, skipped for index 4),
+  and the dialogue (`msg[looks] + RANDOM(3) + event_idx * 3`
+  for ordinary indices; separate 0x1EBC/0x3F52 base family and
+  no event_idx term for index 4).
+- The Meteor Shower pool placement: seven 5-slot layouts
+  (SP_NPC_EV_TUKIMI_0..3 = 0xD03F–0xD042, Tortimer fifth),
+  mask 0b0011111; layouts 2/4/7 pair with the first roster,
+  1/3/5/6 with the second (same pairing as fireworks). Layout
+  2's slots 3 and 4 both sit at (13, 2) — preserved verbatim.
+  `mFI_GetPuleIdx()` returns `type - 69` (0–6) for pool blocks,
+  -1 otherwise, so NPC0's 8th angle entry is unreachable in
+  practice.
+- Also added to `event_day.rs`: SONCHO_METEOR_SHOWER (93),
+  SONCHO_HARVEST_MOON_FESTIVAL (97), the Aug 12 and
+  lunar-date schedule rows, plus two corrections from this
+  pass — SONCHO_FIREWORKS_SHOW is 92 (not 97) and
+  WEATHER_CLEAR is 109 (not 116); the earlier fireworks pass
+  had counted raw file lines instead of enum entries. Verified
+  by recounting all 120 `enum event_table` entries against
+  six already-ported anchors.
+
+C ABI (all `pc_`-prefixed, 10 exports):
+`pc_tukimi_should_delete`, `pc_tukimi_npc0_facing`,
+`pc_tukimi_npc0_pos_offset`, `pc_tukimi_npc0_message`,
+`pc_tukimi_npc1_facing`, `pc_tukimi_npc1_animation_index`,
+`pc_tukimi_npc1_is_fifth`, `pc_tukimi_npc1_message`,
+`pc_tukimi_npc1_wants_head_target`, `pc_tukimi_ms_layout`.
+No C callers rewired yet, per the usual pattern.
+No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
