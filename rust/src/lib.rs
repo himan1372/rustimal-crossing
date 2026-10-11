@@ -83,6 +83,7 @@ mod template_select;
 mod species;
 mod uki;
 mod museum;
+mod visitors;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;

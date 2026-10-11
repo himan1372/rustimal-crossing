@@ -2186,6 +2186,42 @@ comes from ROM birth data and is unverified — do not reimplement the
 selection distribution in Rust. Mailing a donatable item donates it
 *at send time* (`mMsm_SetRemailInfo` -> `mMmd_RequestMuseumDisplay`).
 
+### Runtime Port Progress: Special-Visitor Classification (m_npc.h)
+
+New `rust/src/visitors.rs`, registered as `mod visitors` in
+`rust/src/lib.rs`. Decomp-verified against `include/m_npc.h`,
+`include/m_name_table.h`, `src/actor/npc/ac_npc_init.c_inc`,
+`src/actor/npc/ac_npc_curator_move.c_inc` (GAFE01_00 Rev 0 USA).
+
+Special visitors are not one system: NPC identity, the set-NPC manager
+(`ac_set_npc_manager.c`), actor init branches, event scheduling, RNG,
+and saved records all stay in C. There is NO single retail predicate
+deciding "visitor X appears today" — appearance emerges from the
+manager's regular/guest procedures plus event state — so no such kernel
+exists here. Ported are only the source-proven pure classifications:
+
+- NPC ID encoding: `mNpc_GET_IDX` (`& 0x0FFF`), `mNpc_GET_TYPE`
+  (`& 0xF000`), `mNpc_IS_SPECIAL` (type `== 0xD000`);
+  `ITEM_NAME_GET_TYPE` (upper nibble: 13 = special, 14 = villager).
+  `mNpc_EVENT_NPC_NUM` = 5, `mNpc_MASK_NPC_NUM` = 3.
+- Curator item ranges (verbatim, asymmetry preserved): art
+  `0x12AC..=0x12E7` (inclusive), insect `0x2D00..0x2D28` (end
+  EXCLUSIVE), fish `0x2300..=0x2340` (end inclusive).
+- Curator offer classification in `aCR_msg_win_open_wait` priority
+  order: empty / fossil / art / insect / fish / generic fossil / other.
+  (The fossil check itself lives in `museum.rs`.)
+
+C ABI (all `pc_`-prefixed): `pc_visitor_is_special`,
+`pc_visitor_name_type`, `pc_visitor_npc_idx`, `pc_curator_is_art`,
+`pc_curator_is_insect`, `pc_curator_is_fish`, `pc_curator_offer_class`.
+No C callers rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
+Gaps / do-not-port: the `aNPC_actor_init` special path (event-NPC then
+mask-NPC clothing fallback) needs actor pointers + save; the
+`aSNMgr` manager, `mNpc_GetSameEventNpc`/`mNpc_GetSameMaskNpc`
+record lookups, and all visitor scheduling stay in C.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
