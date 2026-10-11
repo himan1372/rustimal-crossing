@@ -146,6 +146,10 @@ candidate for a future pure-kernel port once its boundary is verified.
 - **April Fools / Birthdays** — `ac_aprilfool_control.c`; `m_birthday_ovl.c`,
   `ac_birth_control.c` (not started).
 - **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
+- **Bee follow-ups** — CALC_EASE short-angle wraparound; appear rotation.z increment
+  and scale easing; position integration ownership; force-catch/table-catch request
+  events; `disappear_timer > 1.0` fallback in CAUGHT; ant scale chase; the exact
+  honeycomb actor callbacks and their update ordering.
 - **Fish follow-ups** — the full test/kaseki state machines and their complete transition
   tables; exact UKI_ACTOR status synchronization around the catch animation
   (`aGTT_comeback`/`aGKK_comeback`); the species-indexed `aGYO_hosei_y[]` and
@@ -212,8 +216,9 @@ flee predicate; test/kaseki state machines stay in C)
 **Fish & bug records** — the encyclopedia/collection tracking.
 `m_fishrecord.c`
 
-**Bees** — the bee-tree shake behavior (spawn side is in `bee_ant.rs`; hive/attack actors partially).
-`ac_ghog.c` (check against `bee_ant.rs` before porting)
+✅ **Bees** — the bee-tree shake behavior. → `bee_ant.rs` (tree-shake decision
+helpers: eligibility, retry window, shock/status frames, force-catch; audit-fixed
+type ids, status values, s16 target frame, 8.9f speed; ghog hive visual stays in C)
 
 ---
 
