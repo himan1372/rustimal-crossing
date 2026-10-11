@@ -2,10 +2,12 @@
 
 **Status as of 2026-10-11 (evening)**
 
-- **Ported to Rust:** 140 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 167 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
 - 2026-10-11 (claude): marked birthdays, event NPC placement, holiday scenery, buildings & scenery,
   household radio, calendar overlay and the engine-level batch as ported.
+- 2026-10-11 (muse): module count corrected 140 → 167 (includes support/infrastructure
+  modules the entries below don't name individually); refreshed the suggested port order.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
 
@@ -343,13 +345,16 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 ## Suggested port order (opinionated)
 
 Philip asked "what's next" before — if he asks again, the high-value gameplay systems still in C are:
-1. **Snowman** — seasonal, well-bounded (`m_snowman.c`)
-2. **Summer festival stalls** — `ac_yatai.c` + `ac_ev_yomise.c` (real stall behavior; the footrace files were a mislabel)
-3. **Groundhog Day / April Fools / Birthdays** — small bounded event sets
-4. **Leftover event pieces** — ball-toss scoring, fishing record DB, footrace controller (see section above)
-5. **Passwords** — secret codes ✅ (`password.rs`)
-6. **NES games** — huge win if feasible, but the emulator core is the hard part
-7. **GBA Island** — needs link-cable hardware behavior; defer
+1. **Summer festival stalls** — `ac_yatai.c` + `ac_ev_yomise.c` (stall *prop* kernels are in
+   `holiday_scenery.rs`; the `ac_ev_yomise.c` stall NPCs, talk scripts, and item handoff are still C)
+2. **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c`
+   (the `ac_goza.c` mat is in `props.rs`)
+3. **Leftover event pieces** — ball-toss scoring, fishing record DB writes, footrace controller,
+   aerobics radio counter/group systems (see section above)
+4. **GBA Island** — needs link-cable hardware behavior; defer
+   (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
+
+Already done from the old list: Snowman ✅, April Fools ✅, Birthdays ✅, Passwords ✅, NES games ✅.
 
 - **Password follow-ups** — the stateful check-overlay pre-fill from
   `menu_info->data2` (not spaces); the POPULAR `hit_rate = 4` checksum-bit quirk;
