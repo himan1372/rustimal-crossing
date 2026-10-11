@@ -4461,6 +4461,74 @@ C ABI (all `pc_`-prefixed, 12 exports):
 No C callers rewired yet, per the usual pattern. No
 test runs, per the standing rule.
 
+### Runtime Port Progress: Fish actors
+
+New `rust/src/fish_actor.rs`, registered as `mod
+fish_actor` in `rust/src/lib.rs`. Decomp-verified
+against `ac_gyoei.c`, `ac_gyoei.h`,
+`ac_gyoei_move.c_inc`, `ac_gyoei_draw.c_inc`,
+`ac_gyoei_clip.c_inc`, `ac_gyoei_type.c_inc`,
+`ac_gyoei_model.c_inc`, `ac_gyo_kage.c`,
+`ac_gyo_kage.h`, `ac_gyo_release.c`,
+`ac_gyo_release.h`, `ac_gyo_test.c`,
+`ac_gyo_kaseki.c` (GAFE01_00 Rev 0 USA). 11/11
+sections PROVEN or DIFFERS-with-correction.
+
+Architecture: swimming fish are *embedded
+controller slots* (two `aGYO_CTRL_ACTOR` slots in
+the `GYOEI_ACTOR`), not standalone actors per fish.
+The kage actor is a separate short-lived
+water-surface visual, not the ordinary ground
+shadow. The release actor is a standalone actor
+created on catch, linked to the float through
+`UKI_ACTOR.child_actor`.
+
+Ported (pure kernels; slot/actor allocation, clip
+callbacks, catch registration, float linkage,
+collision/background APIs, rendering,
+effects/sound, and the full test/kaseki state
+machines stay in C):
+
+- The 45-entry size/search/bite tables, the
+  shadow-scale table, the test/kaseki behavior
+  dispatch (with SALMON2→SALMON normalization),
+  and the rod-indexed search-area/bite-time
+  tables.
+- The release math: initial velocity toward the
+  water target, gravity, the water-contact
+  revert rule, the shrink/delete thresholds
+  (`powf(rate, dt)`), and the shadow-size formula
+  with the 6-entry correction arrays kept as-is.
+- The kage alpha, the ripple-argument switch, the
+  flee predicate, and the float search/bite
+  helpers.
+
+Brief corrections: `sizeof` values are GYOEI_ACTOR
+0x634, aGYO_CTRL_ACTOR 0x254, GYO_RELEASE_ACTOR
+0x1C0, `exist[4]` at 0x61C, `segment_type[4]` at
+0x620; the shadow-scale table is not in
+`ac_gyoei.c` itself; the regular and gold rod
+search-area tables are identical; the kage
+`draw_frame` wraps modularly and the ripple gate
+is a one-shot; `aGYR_empty_area` returns 0 when
+no segment is free; gyo_flags bit 0x10 is
+kaseki-only; the whale gets no flee ripple; the
+6-entry shadow-correction arrays carry a verbatim
+`@BUG` comment and were NOT extended.
+
+C ABI (all `pc_`-prefixed, 16 exports):
+`pc_fish_size_class`, `pc_fish_search_class`,
+`pc_fish_bite_class`, `pc_fish_shadow_scale`,
+`pc_fish_behavior_program`,
+`pc_fish_release_velocity`,
+`pc_fish_release_gravity`, `pc_fish_release_revert`,
+`pc_fish_release_shrink`, `pc_fish_release_shadow`,
+`pc_fish_kage_alpha`, `pc_fish_kage_ripple`,
+`pc_fish_flee`, `pc_fish_search_ok`,
+`pc_fish_bite_time`, plus ITM_FISH_START. No C
+callers rewired yet, per the usual pattern. No
+test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
