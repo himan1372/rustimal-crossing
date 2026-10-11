@@ -2936,6 +2936,50 @@ C ABI (all `pc_`-prefixed, 7 exports): `pc_bn_deposit`,
 `pc_bn_deposit_save_error`. No C callers rewired yet, per the usual
 pattern. No test runs, per the standing rule.
 
+### Runtime Port Progress: Catalog UI & Order Transaction
+
+New `rust/src/catalog.rs`, registered as `mod catalog` in
+`rust/src/lib.rs`. Decomp-verified against `m_catalog_ovl.c`,
+`m_catalog_ovl.h`, `m_tag_ovl.c`, `ac_npc_shop_common.c`,
+`ac_npc_shop_common.h`, `m_shop.c`, `m_private.h` (GAFE01_00 Rev 0
+USA). All 12 brief claims checked; no behavioral corrections. The
+catalog-to-order chain turned out fully traceable (stronger than the
+brief's "strong reconstruction"): the "Order" tag runs
+`mTG_order_proc`, which converts the FTR-space selection to
+ITEM1-space and carries `price == 0` as `slot_no = 0`, mapping to
+ORDER_UNAVAILABLE.
+
+Ported (pure data/selection/transaction kernels; rendering,
+animation, input, item-name decoding, the FTR index tables, and the
+save stay in C):
+
+- The collection-bit test (`idx >> 5` / `idx & 0x1F`).
+- The menu constants, the nine category ids, and the five collected
+  bitfield sizes (other categories reuse the furniture bitfield).
+- The completion rule and the `top_idx + y_idx` selection.
+- The price rules: unconditional zero for haniwa/fossils/music and
+  the non-FTR fallback; list-gated and always-priced cases documented
+  with the verbatim special index ranges.
+- The order-selection mapping (`price == 0` → slot 0 →
+  ORDER_UNAVAILABLE; slot 1 → ORDER_OFFER; EMPTY_NO → cancel).
+- The order-confirmation outcome, the funds check (wallet + bags),
+  the payment wallet arithmetic (bags consumed smallest-first, the
+  remainder stays in the wallet and may exceed WALLET_MAX), and the
+  sales cap clamp.
+
+Deliberately NOT ported: the rendering/animation/input state
+machines, `aNSC_set_ftr_order`'s inventory writes (no NULL check in
+retail — the caller guarantees a free slot), the FTR→ITEM1 id
+conversion, the per-shop-level sales caps' values, and the
+five-slot queue itself (owned by the sibling `special_delivery`
+module).
+
+C ABI (all `pc_`-prefixed, 8 exports): `pc_cl_check_collect_bit`,
+`pc_cl_completed`, `pc_cl_selected_index`, `pc_cl_order_slot`,
+`pc_cl_order_action`, `pc_cl_order_check_msg`, `pc_cl_money_check`,
+`pc_cl_sell_price_wallet`. No C callers rewired yet, per the usual
+pattern. No test runs, per the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
