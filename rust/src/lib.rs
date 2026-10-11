@@ -97,6 +97,11 @@ mod step3_data;
 mod wall_hit_dir;
 mod wall_priority;
 mod wall_solver;
+mod birthday_ovl;
+mod birth_control;
+mod event_map_npc;
+mod go_home_npc;
+mod holiday_scenery;
 
 const CISO_HEADER_SIZE: usize = 0x8000;
 const CISO_MAP_OFFSET: usize = 8;

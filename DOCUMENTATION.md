@@ -2133,6 +2133,76 @@ Gaps: `title_demo_move`'s settings-overlay hold and `mTD_rtc_set` /
 `mTD_rtc_reserve` need C-side state (`GAME_PLAY`, common data) and stay
 in C. The 1800-sample `pactN_key_data` tables stay in C as data.
 
+### Runtime Port Progress: Birthdays, Event NPC Placement, Holiday Scenery
+
+By claude (task `port-event-holiday-actors`). Primary source: ac-decomp
+(github.com/ACreTeam/ac-decomp @ 09ca8e8); secondary: ACGC-PC-Port
+(diffed file by file); background: hunter-r.com (no text on these
+systems, video-only) and Nookipedia's GameCube event list (dates and
+locations agree with the decomp block kinds). Five new modules, pure logic
+plus `pc_*` C ABI; no C callers rewired; no test runs.
+
+- `birthday_ovl.rs` (`m_birthday_ovl.c`): the "When's your birthday?"
+  picker. Cursor month/day/OK; C-up/down edits validate against the fixed
+  leap year 2000 (Feb 29 always allowed) and repair invalid dates:
+  month change clamps the day, day wraps 1 <-> month end, month wraps
+  1 <-> 12. START or A on OK closes and stores `now_private->birthday`.
+- `birth_control.rs` (`ac_birth_control.c`): not birthdays, but the
+  per-acre actor spawner. Unit classification (ITEM2 / PROPS with
+  snowman `EMPTY_NO` vs `RSV_NO` clear / STRUCT), unit-centre table
+  (20..620), retail stale-actor rule (both axes must be stale, a quirk)
+  vs the PC borderless rule (Chebyshev <= 1), move-actor bitfield, GBA
+  island-boat poll in blocks (5,5)/(4,6) (GBA2 state values 1 =
+  success, 9 = transmitting).
+- `event_map_npc.rs` (`m_event_map_npc.c` + `_data.c_inc`): 17 event
+  maps (well / 7 pond layouts / none), villager selection (drop
+  villagers who don't know the player when there's a surplus, then
+  `RANDOM`), refill on reload (lowest free index, discarded `RANDOM`
+  kept for RNG parity), event-shirt cloth +1 for male looks, Halloween
+  naming, lap check (2 structure / 1 near NPC / 0). Tables generated
+  by `tools/gen_evmn.py` with names resolved from `m_name_table.h`;
+  event ids confirmed by compiling `m_event.h`'s enum with mingw32 gcc.
+- `go_home_npc.rs` (`ac_go_home_npc.c` + `mGH_*` in `m_event.c`): the
+  visit by a villager who moved away. The window opens **more than** 7
+  days after move-out (the decomp comment says "less than"; the code
+  wins). One meeting per player; the record is cleared at 60 days, when
+  every player has talked to them, or when the villager is back in town.
+  Message `12827 + looks*4 (+1+RANDOM(3) on repeat)`. `lbRTC_Add_DD`
+  single-month rollover reproduced.
+- `holiday_scenery.rs`: koinobori, yatai (3x3 height tables), shrine =
+  wishing well (leaf type: Christmas terms 15-16, cherry term 4; lights
+  <6:00 / >=18:00; +-22.5 deg talk cone with no wrap-around; town-rating
+  replies and the golden-axe/HEM gate; apology item refusals; present
+  glide with accel/brake), lotus (palette by term, flower shown
+  May 26 - Aug 25, bobber-hit sway with retail `add_calc`), tukimi.
+
+**PC-port bug found: `lbRTC_IsEqualDate` on little-endian.** The function
+compares `union { int raw; lbRTC_ymd_c ymd; }`. On mingw32 i686 `raw` is
+day-major, so 2002-01-20 vs 2002-02-05 returns OVER (retail LESS);
+reproduced with MSYS2 mingw32 gcc. 19 call sites are affected: go-home
+visit/deletion, turnip prices (`m_kabu_manager.c`), fish records, bridge,
+`m_soncho.c`, and `lbRTC_GetIntervalDays2`. The Rust
+`game_time::interval_days_ymd` already orders correctly.
+`pc_lbrtc_is_equal_date` is a drop-in correct version; the C side is not
+changed.
+
+Other PC divergences noted: tukimi despawns only beyond one block
+(borderless) while the identical yatai rule was left at "any other
+block"; shrine present speed is dt-scaled and clamped; shrine water
+scroll uses a PC `texture_frame`; koinobori cull override skipped in
+borderless mode.
+
+C ABI (20): `pc_birthday_ovl_init/play`, `pc_birthday_is_valid_date`,
+`pc_birth_control_classify_unit/should_delete/boat_item`,
+`pc_evmn_get_map_idx/get_event_block_kind/get_joint_npc_max/
+get_event_set_ut_in_block/get_npc_idx_random/set_npc_joint_random`,
+`pc_lbrtc_is_equal_date`, `pc_gohome_check_birth/talk_msg_no`,
+`pc_shrine_leaf_type/lights_on`, `pc_lotus_pal_no/flower_visible`,
+`pc_scenery_should_despawn`. `cargo check` (host and
+i686-pc-windows-gnu) and `cargo check --tests` are clean apart from the
+crate-standard "never used" warnings; clippy is clean apart from two
+indexed loops kept to mirror the C tables.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
