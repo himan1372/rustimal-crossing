@@ -3658,11 +3658,20 @@ C):
   existed and matches the verified window).
 
 Deliberately NOT ported as retail behavior: the
-`root_table`/`proc_idx_table` 4-entry tables are exposed with
-only 4 valid indices — 5 HATUMODE NPCs spawn, so index 4 is an
-open retail out-of-bounds question that needs
-assembly-level confirmation; the helper reports invalid instead
-of reproducing the read.
+`root_table`/`proc_idx_table` 4-entry tables (`{ 5, 4, 9, 3 }` /
+`{ 4, 27, 27, 20 }`) are exposed with only 4 valid indices —
+index 4 is reachable in retail (HATUMODE_4 yields `idx = 4`, signed
+arithmetic, no guard anywhere on the birth → think 1 → READY2 →
+`aHN0_ready2` path; the ready2 save-area check retries rather than
+skipping), so retail PROVABLY reads 1 byte out of bounds on each
+table on every normal run (resolved 2026-10-11; only the OOB
+bytes' contents need the binary). The helper reports invalid
+instead of reproducing the read (UB in Rust too, values
+unknowable). Downstream: an OOB think byte indexes the 46-entry
+`dt_tbl` (a second OOB if ≥ 46); an OOB root byte indexes the
+10-entry `aHN0_root`. The parallel tables in
+`aHTMD_clip_set_start` are correctly sized at 5 — the defect is
+specific to `aHN0_ready2`.
 
 C ABI (all `pc_`-prefixed, 19 exports):
 `pc_hatsumode_offer_msg`, `pc_hatsumode_choice_continue`,

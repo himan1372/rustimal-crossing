@@ -32,9 +32,15 @@
 //! (20+yp[0], yp[2], 85+yp[1]); `aHN0_make_msg` uses a bitwise
 //! `& 3`, not `% 4`; the route wrap pre-increments (`root++`,
 //! then 10→5, 5→0) — not plain modulo; `root_table`/`proc_idx_table`
-//! have only 4 entries but 5 HATUMODE NPCs spawn, so index 4 is an
-//! open retail question (the helper reports invalid rather than
-//! reproducing an out-of-bounds read); the flag masks are consumed
+//! have only 4 entries but 5 HATUMODE NPCs spawn, and index 4 IS
+//! reachable: HATUMODE_4 flows birth → think 1 → READY2 → `aHN0_ready2`
+//! with no bounds check anywhere on the path (the ready2 guard only
+//! validates the save area and retries), so retail provably performs a
+//! 1-byte out-of-bounds read on each table on every normal run
+//! (resolved 2026-10-11; only the OOB bytes' contents need the binary —
+//! plausibly `root_table[4]` aliases `proc_idx_table[0]` = 4, unproven).
+//! The helper reports invalid rather than reproducing the OOB read
+//! (UB in Rust too, values unknowable); the flag masks are consumed
 //! on read; think 28's 0x4000 detour goes to think 43 (0x2B);
 //! `aHTC_inori_end` clears `flags0 & ~0x8000` (brief-missed).
 
@@ -256,9 +262,16 @@ pub extern "C" fn pc_hatsumode_start_root(npc_idx: u8) -> i32 {
 
 /// Returns the `aHN0_ready2` route root and think index for an
 /// additional-NPC index via `out[0..2]`; returns 1 on success.
-/// The source tables have only 4 entries while 5 NPCs can spawn,
-/// so index 4 reports invalid instead of reproducing a retail
-/// out-of-bounds read.
+/// The source tables (`{ 5, 4, 9, 3 }` / `{ 4, 27, 27, 20 }`) have only
+/// 4 entries while 5 NPCs spawn: index 4 is reachable in retail and the
+/// C code reads 1 byte out of bounds on each table (no guard; the
+/// ready2 save-area check retries rather than skipping). The helper
+/// reports invalid (returns 0) instead of reproducing that read — the
+/// OOB bytes' values are unknowable without the binary, and the read
+/// is UB in Rust as well. Downstream, an OOB think byte indexes the
+/// 46-entry `dt_tbl` (a second OOB if ≥ 46) and an OOB root byte
+/// indexes the 10-entry `aHN0_root`; the parallel tables in
+/// `aHTMD_clip_set_start` are correctly sized at 5.
 #[no_mangle]
 pub extern "C" fn pc_hatsumode_ready2(npc_idx: u8, out: *mut u8) -> u8 {
     if out.is_null() {

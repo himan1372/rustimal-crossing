@@ -194,9 +194,14 @@ candidate for a future pure-kernel port once its boundary is verified.
   setupAction call order. Corrections: event constant is 15 (0xF), not 0xE;
   `_00=2` exists (NPC0 birth sets it, NPC1 birth requires it); NPC0's destructor
   ASSIGNS flags (wipes bits); NPC1's `_00==3` self-delete is in its move callback.
-- **Hatsumode open question** — `root_table`/`proc_idx_table` have 4 entries but 5 NPCs
-  can spawn (possible retail out-of-bounds read at index 4); needs assembly-level
-  confirmation before porting.
+- **Hatsumode open question** — RESOLVED 2026-10-11: `root_table`/`proc_idx_table`
+  really do have only 4 entries (`{ 5, 4, 9, 3 }` / `{ 4, 27, 27, 20 }`), index 4 really is
+  reachable (HATUMODE_4 = 0xD05C − 0xD058 = 4, signed arithmetic), and retail PROVABLY
+  performs a 1-byte out-of-bounds read on each table in `aHN0_ready2` on every normal
+  run — the sole read site guards only the save area (and retries), never the index.
+  `pc_hatsumode_ready2` keeps its "reports invalid" behavior (OOB values unknowable
+  without the binary; UB in Rust too). Only the OOB bytes' *contents* remain unconfirmed
+  (no retail binary here).
 - **Groundhog Day** — RESOLVED: pure controller/NPC kernels are in `groundhog.rs`
   (time-term buckets, TIME_CHECK predicate, initial-action selection, message-index
   computation with the term-decrement order, discrete frame-speed values, event-idx
@@ -403,8 +408,7 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 Philip asked "what's next" before — if he asks again, the high-value gameplay systems still in C are:
 1. **Bulletin-board follow-ups** — the complete automatic-post batch trigger and its
    scheduling (see section above)
-2. **Hatsumode open question** — `root_table`/`proc_idx_table` have 4 entries but 5 NPCs
-   (possible retail out-of-bounds read at index 4); needs assembly-level confirmation
+2. **Hatsumode open question** — RESOLVED 2026-10-11 (retail OOB read at index 4 proven)
 3. **GBA Island** — needs link-cable hardware behavior; defer
    (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
 
