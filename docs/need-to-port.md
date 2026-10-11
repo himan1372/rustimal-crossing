@@ -160,8 +160,16 @@ candidate for a future pure-kernel port once its boundary is verified.
   NPC lifecycle, demo/talk framework, inventory/Bells mutation, RNG, message resources.
   Open: the `flag` field's purpose (zero references); the area-clearing lifecycle
   (generic 5-slot recycling only).
-- **Tug-of-war rope actor & orchestration** — rope prop actor (offset kernel now in `props.rs`), NPC clip, the
-  `fdtug_start`/`fdtug_stop`/`fdtug_in` event-manager handlers.
+- **Tug-of-war rope actor & orchestration** — RESOLVED: rope kernels are in
+  `tunahiki.rs` (there is no `props.rs` anywhere in the repo): three-unit
+  collision-offset X positions, vertex fact + 60-entry flag table + deformed
+  vertex X, `fdtug_start`/`stop`/`in` return trees, event/area/place/state
+  constants. Still in C: rope actor lifecycle + draw + display lists, controller
+  save-area access, NPC schedules + clip + creation/deletion, fdtug
+  placement/fades/status, all animation RNG + effects/audio. Corrections: the
+  rope's attr 100 IS `mCoBG_ATTRIBUTE_NONE` (never writes the attribute); the
+  talk-freeze is ANY-single-flag (`(flag & TALK_ALL) == 0`); the tug sound is
+  member-gated, not team-gated.
 - **Morning aerobics radio & group systems** — radio counter (`sAdos_GetRadioCounter`),
   leader/group globals, Tortimer's radio-card inventory/calendar mutations.
   (The radio *actor/furniture* and its BGM are now in `radio.rs`; the counter and group

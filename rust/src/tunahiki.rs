@@ -59,7 +59,7 @@ pub const FLAG_TALK0: u16 = 1 << 5;
 pub const FLAG_TALK_ALL: u16 = 0x03E0;
 /// Rope-shake bit (15).
 pub const FLAG_SHAKE: u16 = 1 << 15;
-/// Rope pull increment per controller update: `speed * 0.025f32`.
+/// Rope pull increment per controller update: `speed * 0.025f`.
 pub const ROPE_SPEED_STEP: f32 = 0.025;
 /// Rope displacement clamp bounds (strict comparisons).
 pub const ROPE_MIN: f32 = -10.0;
@@ -70,7 +70,7 @@ pub const SHAKE_AMPLITUDE: f32 = 0.3;
 pub const COUNTER_RESET: u16 = 2;
 pub const COUNTER_LIMIT: u16 = 65;
 /// NPC1 animation frame tracks the shared counter:
-/// `current_frame = counter * 0.5f32`.
+/// `current_frame = counter * 0.5f`.
 pub const COUNTER_TO_FRAME: f32 = 0.5;
 
 /// NPC index: `aTNC_NPCID2IDX(id) = id - SP_NPC_EV_TUNAHIKI_0`.
@@ -106,7 +106,7 @@ pub extern "C" fn pc_tunahiki_talk_flag(npc_id: u16) -> u16 {
 
 /// NPC1 pull direction: +1 when `((npc_id - SP_NPC_EV_TUNAHIKI_1)
 /// & 2) == 0`, else −1. The facing angles are
-/// `DEG2SHORT_ANGLE2(±90.0f32)` = ±16384.
+/// `DEG2SHORT_ANGLE2(±90.0f)` = ±16384.
 #[no_mangle]
 pub extern "C" fn pc_tunahiki_dir(npc_id: u16) -> i32 {
     if npc_id.wrapping_sub(SP_NPC_EV_TUNAHIKI_1) & 2 == 0 {
@@ -204,7 +204,7 @@ pub extern "C" fn pc_tunahiki_counter_step(counter: u16) -> u16 {
 /// Selects the next pull speed from the values the C caller
 /// sampled (`aTNN1_aiko`): `rng < 0.45` → `rand_mag + 3.0`;
 /// `rng < 0.9` → `-(rand_mag + 3.0)`; otherwise 0. The `fqrand()`
-/// sample and the conditional `RANDOM_F(20.0f32)` call stay in C so
+/// sample and the conditional `RANDOM_F(20.0f)` call stay in C so
 /// the global random sequence is unchanged.
 #[no_mangle]
 pub extern "C" fn pc_tunahiki_next_speed(rng: f32, rand_mag: f32) -> f32 {
@@ -217,7 +217,7 @@ pub extern "C" fn pc_tunahiki_next_speed(rng: f32, rand_mag: f32) -> f32 {
     }
 }
 
-/// Footstep-effect condition: `speed * dir > 8.0f32`, tested when
+/// Footstep-effect condition: `speed * dir > 8.0f`, tested when
 /// the animation crosses frames 12/18 (`aTNN1_aiko`).
 #[no_mangle]
 pub extern "C" fn pc_tunahiki_footstep(speed: f32, dir: i32) -> bool {
@@ -294,6 +294,120 @@ pub extern "C" fn pc_tunahiki_spawn_pos(slot: u8, out: *mut i32) -> u8 {
     out[0] = px;
     out[1] = pz;
     1
+}
+
+
+/// Event-manager identity of the tug-of-war event
+/// (`mEv_EVENT_SPORTS_FAIR_TUG_OF_WAR`; the rope's draw path uses the
+/// literal 0xE).
+pub const TUG_EVENT_TYPE: i32 = 0xE;
+/// Shared event save-area ID used by the controller, NPCs, and rope.
+pub const TUG_SAVE_AREA_ID: i32 = 9;
+/// Common placement ID used by `field_day_ct` / `field_day_delete`.
+pub const TUG_COMMON_PLACE_ID: i32 = 5;
+/// Controller/NPC lifecycle states (`ac_tunahiki_control.h`).
+pub const TUG_NPC_STATE0: i32 = 0;
+pub const TUG_NPC_STATE1: i32 = 1;
+pub const TUG_NPC_STATE2: i32 = 2;
+/// Controller constructor explicitly initializes rope, rope_base, flag,
+/// npc_state, and _14 to these; speed, next_speed, and counter are NOT
+/// explicitly initialized (they start at zero only via the generic
+/// reserve zeroing).
+pub const TUG_CTOR_ROPE: f32 = 0.0;
+pub const TUG_CTOR_ROPE_BASE: f32 = 0.0;
+pub const TUG_CTOR_FLAG: u16 = 0;
+
+/// Rope-actor collision lifecycle (`aRP_actor_ct` / `aRP_actor_dt`,
+/// `ac_rope.c`): three `mCoBG_SetPlussOffset` calls at unit-center
+/// X offsets (i-1)*40 with the constructor's mode and the destructor's.
+pub const ROPE_OFFSET_STEP: f32 = 40.0;
+pub const ROPE_OFFSET_COUNT: i32 = 3;
+pub const ROPE_OFFSET_MODE_CT: i32 = 2;
+pub const ROPE_OFFSET_MODE_DT: i32 = 0;
+/// Attribute argument passed to the helper: this equals
+/// `mCoBG_ATTRIBUTE_NONE`, so the rope never writes the unit attribute.
+pub const ROPE_OFFSET_ATTR: i32 = 100;
+
+/// World X of the i-th (0-based) collision-offset call, given the
+/// field-unit-center X: x0-40, x0, x0+40 with fixed Z.
+#[no_mangle]
+pub extern "C" fn pc_rope_offset_x(unit_center_x: f32, i: i32) -> f32 {
+    unit_center_x + (i - 1) as f32 * ROPE_OFFSET_STEP
+}
+
+/// Vertex-deformation fact (`aRP_make_vtx`): the event save area's
+/// `rope` float times 100, converted to int (C truncation toward zero).
+#[no_mangle]
+pub extern "C" fn pc_rope_fact(rope: f32) -> i32 {
+    (rope * 100.0f32) as i32
+}
+
+/// The 60-entry (0x3C) vertex flag table (`aRP_make_vtx`): vertices
+/// whose flag is 1 receive the displacement. Counted: 22 set.
+pub const ROPE_VTX_FLAGS: [u8; 60] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1,
+];
+
+/// Deformed vertex X: `vtx->v.ob[0] = make->v.ob[0] + fact` when the
+/// flag entry is 1 (`flag[0] == 1` in C), else the original X.
+#[no_mangle]
+pub extern "C" fn pc_rope_vtx_x(orig_x: i16, flag: u8, fact: i32) -> i16 {
+    if flag == 1 {
+        (orig_x as i32 + fact) as i16
+    } else {
+        orig_x
+    }
+}
+
+/// `fdtug_start` return tree (`ac_event_manager.c`): 0 when the shrine
+/// block is missing (event gets STATUS_ERROR); 2 when already kept;
+/// 1 when the title fade succeeds (field_day_delete runs before the
+/// new placement); 0 when the fade is still pending.
+#[no_mangle]
+pub extern "C" fn pc_fdtug_start(shrine_exists: i32, kept: i32, fade_ok: i32) -> i32 {
+    if shrine_exists == 0 {
+        0
+    } else if kept != 0 {
+        2
+    } else if fade_ok != 0 {
+        1
+    } else {
+        0
+    }
+}
+
+/// `fdtug_stop` return tree: 2 when not kept; 1 when kept and the
+/// field-day is already over (clears keep) or the closing title fade
+/// completes (field_day_delete runs); 0 when the fade is pending.
+#[no_mangle]
+pub extern "C" fn pc_fdtug_stop(kept: i32, over_status: i32, fade_done: i32) -> i32 {
+    if kept == 0 {
+        2
+    } else if over_status != -1 {
+        1
+    } else if fade_done != 0 {
+        1
+    } else {
+        0
+    }
+}
+
+/// `fdtug_in` return mapping: `shown` is -1 for
+/// `aEvMgr_SHOW_ACTOR_RESULT_NOT_SHOWN` (a real pointer value, NOT
+/// NULL), 0 for NULL, nonzero for a valid placement. Only 1 marks
+/// the event STATUS_SHOW; 2 is not interchangeable with success.
+#[no_mangle]
+pub extern "C" fn pc_fdtug_in(shown: i32) -> i32 {
+    if shown == -1 {
+        2
+    } else if shown != 0 {
+        1
+    } else {
+        0
+    }
 }
 
 #[cfg(test)]
@@ -399,5 +513,47 @@ mod tests {
         assert_eq!(pc_tunahiki_spawn_pos(5, out.as_mut_ptr()), 1);
         assert_eq!(out, [10, 8]);
         assert_eq!(pc_tunahiki_spawn_pos(6, out.as_mut_ptr()), 0);
+    }
+
+    #[test]
+    fn rope_actor_kernels() {
+        // Collision offsets: x0-40, x0, x0+40.
+        assert_eq!(pc_rope_offset_x(100.0, 0), 60.0);
+        assert_eq!(pc_rope_offset_x(100.0, 1), 100.0);
+        assert_eq!(pc_rope_offset_x(100.0, 2), 140.0);
+        // Attribute 100 is ATTRIBUTE_NONE — the helper never writes it.
+        assert_eq!(ROPE_OFFSET_ATTR, 100);
+        // Vertex fact: f32*100 truncated toward zero.
+        assert_eq!(pc_rope_fact(2.5), 250);
+        assert_eq!(pc_rope_fact(-1.234), -123);
+        // Flag table: 60 entries, 22 set, at the decomp positions.
+        assert_eq!(ROPE_VTX_FLAGS.len(), 60);
+        assert_eq!(ROPE_VTX_FLAGS.iter().filter(|&&f| f == 1).count(), 22);
+        assert_eq!(ROPE_VTX_FLAGS[15], 0);
+        assert_eq!(ROPE_VTX_FLAGS[16], 1);
+        assert_eq!(ROPE_VTX_FLAGS[28], 0);
+        assert_eq!(ROPE_VTX_FLAGS[29], 1);
+        assert_eq!(ROPE_VTX_FLAGS[30], 1);
+        assert_eq!(ROPE_VTX_FLAGS[31], 0);
+        assert_eq!(ROPE_VTX_FLAGS[51], 1);
+        assert_eq!(ROPE_VTX_FLAGS[53], 0);
+        assert_eq!(ROPE_VTX_FLAGS[54], 1);
+        // Vertex X: flag==1 adds fact, else original.
+        assert_eq!(pc_rope_vtx_x(1000, 1, 250), 1250);
+        assert_eq!(pc_rope_vtx_x(1000, 0, 250), 1000);
+        // fdtug_start: shrine missing -> 0; kept -> 2; fade ok -> 1; pending -> 0.
+        assert_eq!(pc_fdtug_start(0, 0, 1), 0);
+        assert_eq!(pc_fdtug_start(1, 1, 1), 2);
+        assert_eq!(pc_fdtug_start(1, 0, 1), 1);
+        assert_eq!(pc_fdtug_start(1, 0, 0), 0);
+        // fdtug_stop: not kept -> 2; over -> 1; fade done -> 1; pending -> 0.
+        assert_eq!(pc_fdtug_stop(0, -1, 0), 2);
+        assert_eq!(pc_fdtug_stop(1, 0, 0), 1);
+        assert_eq!(pc_fdtug_stop(1, -1, 1), 1);
+        assert_eq!(pc_fdtug_stop(1, -1, 0), 0);
+        // fdtug_in: -1 sentinel -> 2; valid -> 1; NULL -> 0.
+        assert_eq!(pc_fdtug_in(-1), 2);
+        assert_eq!(pc_fdtug_in(1), 1);
+        assert_eq!(pc_fdtug_in(0), 0);
     }
 }

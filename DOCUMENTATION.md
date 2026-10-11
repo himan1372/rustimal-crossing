@@ -3742,6 +3742,28 @@ C ABI (all `pc_`-prefixed, 15 exports):
 `pc_tunahiki_next_speed`, `pc_tunahiki_footstep`,
 `pc_tunahiki_next_think`, `pc_tunahiki_msg`,
 `pc_tunahiki_spawn_pos`. No C callers rewired
+
+#### Addendum 2026-10-11 (muse): rope actor and event-manager kernels
+
+Extended `rust/src/tunahiki.rs` with the rope-actor and `fdtug_*`
+kernels, decomp-verified 12/12 (the brief's "`props.rs`" does not
+exist anywhere in the repo — the rope had no Rust equivalent).
+New `pc_`-prefixed exports: `pc_rope_offset_x` (the three collision
+calls at x0-40, x0, x0+40 with mode 2 on construction / 0 on
+destruction), `pc_rope_fact` (`(int)(rope * 100.0f)`), `pc_rope_vtx_x`
+(flag==1 → orig + fact), and the `fdtug_start` / `fdtug_stop` /
+`fdtug_in` return trees (with the `(mEv_place_data_c*)-1` sentinel →
+2, valid → 1, NULL → 0). Constants: the 60-entry `ROPE_VTX_FLAGS`
+table (22 set), `TUG_EVENT_TYPE = 0xE`, `TUG_SAVE_AREA_ID = 9`,
+`TUG_COMMON_PLACE_ID = 5`, the three `TUG_NPC_STATE` values, and the
+constructor defaults. Corrections: the rope's offset attribute 100
+IS `mCoBG_ATTRIBUTE_NONE` (it never writes the unit attribute);
+`mCoBG_TidyChangeOffset` is effectively a no-op; the talk-freeze is
+any-single-flag, not all-five; the tug sound is member-gated, not
+team-gated; talk flags are set only by NPC1s. Also fixed a
+pre-existing C-style `0.0f` suffix (compile error) in the file. All
+7 module tests pass (run per Philip's 2026-10-11 authorization).
+
 yet, per the usual pattern. No test runs, per the standing
 rule.
 
