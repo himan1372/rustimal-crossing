@@ -4,6 +4,8 @@
 
 - **Ported to Rust:** 140 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
+- 2026-10-11 (claude): marked birthdays, event NPC placement, holiday scenery, buildings & scenery,
+  household radio, calendar overlay and the engine-level batch as ported.
 - This doc is updated as work lands: ✅ marks show what's done, and the trailing
   "Leftover pieces" section collects the small follow-ups each port batch uncovers.
 
@@ -98,6 +100,7 @@ effects, and event orchestration stay in C until differential tests pass. The ev
 - ✅ Harvest Festival: `ac_harvest_npc0.c`, `ac_harvest_npc1.c` → `harvest.rs`
 - ✅ Moon viewing: `ac_tukimi.c`, `ac_tukimi_npc0.c`, `ac_tukimi_npc1.c` → `moon_viewing.rs`
 - Groundhog Day: `ac_groundhog_control.c`, `ac_groundhog_npc0.c`, `ac_goza.c`
+  (only the `ac_goza.c` mat prop is ported, in `props.rs`; the groundhog controller/NPC are still C)
 - ✅ First shrine visit: `ac_hatumode_control.c`, `ac_hatumode_npc0.c` → `hatsumode.rs`
 - ✅ Morning aerobics: `ac_taisou_npc0.c` → `taisou.rs`
 - ✅ Tug of war: `ac_tunahiki_control.c`, `ac_tunahiki_npc0.c`, `ac_tunahiki_npc1.c` → `tunahiki.rs`
@@ -106,14 +109,15 @@ effects, and event orchestration stay in C until differential tests pass. The ev
 - ✅ Field Day footrace: `ac_tokyoso_control.c`, `ac_tokyoso_npc0.c`, `ac_tokyoso_npc1.c` → `tokyoso.rs`
   (note: these files are the footrace, NOT summer festival stalls — the old label here was wrong)
 - Summer festival stalls (actual): `ac_yatai.c`, `ac_ev_yomise.c`
+  (the `ac_yatai.c` stall prop kernels are in `holiday_scenery.rs`; the `ac_ev_yomise.c` stall NPCs are still C)
   (SP_NPC_EV_YOMISE, SP_NPC_EV_YOMISE2, FIREWORKS_STALL0, FIREWORKS_STALL1)
 - ✅ April Fools: `ac_aprilfool_control.c` → `aprilfool.rs` (NPC→index table, message-ID table, per-player bitfields, talk-check/talk-set/get-message logic; actor lifecycle, event-manager activation, save-area allocation, and NPC talk state machines stay in C)
-- Birthdays: `m_birthday_ovl.c`, `ac_birth_control.c`
-- Event NPC placement: `m_event_map_npc.c`, `ac_go_home_npc.c`
+- ✅ Birthdays: `m_birthday_ovl.c`, `ac_birth_control.c` → `birthday_ovl.rs`, `birth_control.rs` (claude)
+- ✅ Event NPC placement: `m_event_map_npc.c`, `ac_go_home_npc.c` → `event_map_npc.rs`, `go_home_npc.rs` (claude)
 
-**Holiday scenery actors** — carp streamers, festival stalls, shrine, lotus.
+✅ **Holiday scenery actors** — carp streamers, festival stalls, shrine, lotus. → `holiday_scenery.rs` (claude)
 `ac_koinobori.c`, `ac_yatai.c`, `ac_shrine.c`, `ac_lotus.c`, `ac_tukimi.c`
-(`ac_yatai.c` is the actual stall prop actor — still in C; see the leftover section below.)
+(`ac_yatai.c` is the stall *prop* — its kernels are ported here; the `ac_ev_yomise.c` stall NPCs are still C, see the leftover section below.)
 
 ---
 
@@ -133,19 +137,21 @@ candidate for a future pure-kernel port once its boundary is verified.
   mail stay in C). RNG order (including the extra unused `fqrand()`) must be preserved.
 - **Fishing tourney host & save areas** — `ac_ev_angler.c` talk flow, entry flags, the
   `aEANG_event_data_c` / `aEANG_event_common_c` ownership, Chip's position persistence.
-- **Tug-of-war rope actor & orchestration** — rope prop actor, NPC clip, the
+- **Tug-of-war rope actor & orchestration** — rope prop actor (offset kernel now in `props.rs`), NPC clip, the
   `fdtug_start`/`fdtug_stop`/`fdtug_in` event-manager handlers.
 - **Morning aerobics radio & group systems** — radio counter (`sAdos_GetRadioCounter`),
   leader/group globals, Tortimer's radio-card inventory/calendar mutations.
+  (The radio *actor/furniture* and its BGM are now in `radio.rs`; the counter and group
+  systems above are still C.)
 - **Footrace controller** — the `_00` phase state machine (`aTKC_set`/`aTKC_go`), the
   shared save area (slot 8), the `_01` bitfield and `aTKC_FLAG_15` semantics (unresolved),
   stumble/dash effects.
 - **Hatsumode open question** — `root_table`/`proc_idx_table` have 4 entries but 5 NPCs
   can spawn (possible retail out-of-bounds read at index 4); needs assembly-level
   confirmation before porting.
-- **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c`, `ac_goza.c` (not started).
-- **Birthdays** — `m_birthday_ovl.c`, `ac_birth_control.c` (not started; April Fools control kernels are now in `aprilfool.rs`).
-- **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` (not started).
+- **Groundhog Day** — `ac_groundhog_control.c`, `ac_groundhog_npc0.c` (not started; the `ac_goza.c` mat is ported in `props.rs`).
+- ✅ **Birthdays** — `m_birthday_ovl.c`, `ac_birth_control.c` → `birthday_ovl.rs`, `birth_control.rs` (claude; April Fools control kernels are in `aprilfool.rs`).
+- ✅ **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` → `event_map_npc.rs`, `go_home_npc.rs` (claude).
 - **Bulletin-board follow-ups** — the complete automatic-post batch trigger and its
   saved-time update; the 43-entry announcement date table and five-post batch
   selection; whether other code validates or normalizes the house message.
@@ -287,35 +293,41 @@ month adjustments, confirmation branch).
 ✅ **Selection/choice UI** — generic list and yes/no prompts. → `choice.rs`
 `m_choice.c` (option admission, clamped cursor, dt-based auto-repeat, B-to-last shortcut, determination commit; `m_select.c` is a separate debug scene selector — only its index wraparound is ported)
 
-**Calendar overlay** — the calendar UI.
-`m_calendar_ovl.c`
+✅ **Calendar overlay** — the calendar UI. → `calendar.rs` (claude)
+`m_calendar_ovl.c`, `m_calendar.c` (save bookkeeping, 36-month grid, fixed/floating events, icons, page flips, day cursor, diary hand-off; drawing stays in C)
 
 ---
 
-## Buildings & scenery actors (not yet ported)
+## ✅ Buildings & scenery actors
 
-Town structures and decorative actors. None of these have Rust modules.
+Town structures and decorative actors, ported by claude: → `buildings.rs` (shops, lighthouse +
+switch, cottages, tent, statues, windmill, structure table), `props.rs` (signs, mailbox, flag,
+raffle drum, harvest tables, e-Reader terminal, title logo, sports-fair props, misc) and
+`kk_credits.rs` (`ac_mikanbox`: K.K. show roll, song pick, cameo timer). Logic/data only;
+models and display lists stay in C.
 `ac_conveni.c` (convenience store), `ac_cottage.c`, `ac_tent.c`, `ac_toudai.c` (lighthouse), `ac_lighthouse_switch.c`, `ac_windmill.c`, `ac_douzou.c` (statues), `ac_mikanbox.c` (orange box), `ac_mikuji.c` (fortune), `ac_nameplate.c`, `ac_sign.c`, `ac_mailbox.c`, `ac_structure.c`, `ac_mural.c`, `ac_kago.c` (palanquin), `ac_dump.c` (dump), `ac_tama.c`, `ac_rope.c`, `ac_ball.c`, `ac_goza.c`, `ac_garagara.c`, `ac_misin.c`, `ac_mbg.c`, `ac_pterminal.c`, `ac_reserve.c`, `ac_sample.c`, `ac_super.c`, `ac_dummy.c`, `ac_flag.c`, `ac_htable.c`, `ac_animal_logo.c`, `ac_animal_logo_misc.c`
 
-**Household actors** — radio, etc.
-`ac_radio.c` (also plays K.K. songs — see K.K. Slider above)
+✅ **Household actors** — radio, etc. → `radio.rs` (claude)
+`ac_radio.c` plus the aerobics radio furniture and the stereo K.K. disc playback / room BGM
+(`ac_my_room` `aMR_MiniDiskCommon*`; songs are `BGM_MD0 + n`)
 
 ---
 
 ## Engine-level (ported only in part, or intentionally C-side)
 
-These are partially covered (`frame_loops.rs`, `scene.rs`, `graphics.rs`) but the files below have no direct Rust equivalent. Most should stay in C unless there's a reason.
-- Camera: `m_camera2.c`, `m_view.c`
-- Lighting: `m_lights.c`
-- Controller/rumble: `m_controller.c`, `m_vibctl.c`
-- Actor shadows: `m_actor_shadow.c`
-- Actor/game tables: `m_actor_dlftbls.c`, `m_game_dlftbls.c`
-- BG items/textures: `m_bg_item.c`, `m_bg_tex.c`, `m_land.c`
-- Clipping: `m_clip.c`
-- String/font core: `m_string.c` (font tables are ported in `npc_reply.rs`)
-- Intro demo: `ac_intro_demo.c`, `ac_present_demo.c`, `ac_ride_off_demo.c`
-- Field drawing: `ac_field_draw.c`, `ac_fieldm_draw.c`, `ac_effectbg.c`
-- Misc: `m_watch_my_step.c`, `m_eappli.c`, `m_prenmi.c`, `m_banti.c`, `m_hand_ovl.c`, `m_huusui_room.c`, `m_huusui_room_ovl.c`, `m_mark_room.c`, `m_mark_room_ovl.c`, `m_tag_ovl.c`, `m_timeIn_ovl.c`, `m_warning_ovl.c`, `m_cpmail_ovl.c`, `m_cpwarning_ovl.c`, `ac_handOverItem.c`, `ac_boxManager.c`, `ac_boxMove.c`, `ac_boxTrick01.c`, `ac_buggy.c`, `ac_fallS.c`, `ac_fallSESW.c`, `ac_set_manager.c`
+These are partially covered (`frame_loops.rs`, `scene.rs`, `graphics.rs`). The logic/data of the files
+below was ported by claude (2026-10-11); display-list emission and the per-mode camera procs stay in C.
+- ✅ Camera: `m_camera2.c`, `m_view.c` → `camera.rs`, `view.rs` (per-mode camera state machines stay in C)
+- ✅ Lighting: `m_lights.c` → `lights.rs`
+- ✅ Controller/rumble: `m_controller.c`, `m_vibctl.c` → `controller.rs`
+- ✅ Actor shadows: `m_actor_shadow.c` → `actor_shadow.rs`
+- ✅ Actor/game tables: `m_actor_dlftbls.c`, `m_game_dlftbls.c` → `engine_tables.rs` (game table already in `scene.rs`)
+- ✅ BG items/textures: `m_bg_item.c`, `m_bg_tex.c`, `m_land.c` → `engine_tables.rs`, `game_string.rs` (`m_bg_tex` is BSS layout only)
+- ✅ Clipping: `m_clip.c` → `engine_tables.rs` (clip table reset)
+- ✅ String/font core: `m_string.c` → `game_string.rs` (font tables are ported in `npc_reply.rs`)
+- ✅ Intro demo: `ac_intro_demo.c`, `ac_present_demo.c`, `ac_ride_off_demo.c` → `demo_actors.rs`
+- ✅ Field drawing: `ac_field_draw.c`, `ac_fieldm_draw.c`, `ac_effectbg.c` → `field_effects.rs`, `engine_tables.rs`
+- ✅ Misc (→ `hud.rs`, `game_string.rs`, `engine_tables.rs`, `menu_overlays.rs`, `room_scoring.rs`, `hand_over_item.rs`, `field_effects.rs`; `m_tag_ovl` UI stays C apart from its bell-bag rule): `m_watch_my_step.c`, `m_eappli.c`, `m_prenmi.c`, `m_banti.c`, `m_hand_ovl.c`, `m_huusui_room.c`, `m_huusui_room_ovl.c`, `m_mark_room.c`, `m_mark_room_ovl.c`, `m_tag_ovl.c`, `m_timeIn_ovl.c`, `m_warning_ovl.c`, `m_cpmail_ovl.c`, `m_cpwarning_ovl.c`, `ac_handOverItem.c`, `ac_boxManager.c`, `ac_boxMove.c`, `ac_boxTrick01.c`, `ac_buggy.c`, `ac_fallS.c`, `ac_fallSESW.c`, `ac_set_manager.c`
 
 ---
 
