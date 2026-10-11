@@ -118,6 +118,9 @@ mod room_scoring_tables;
 mod room_scoring;
 mod menu_overlays;
 mod camera;
+mod buildings;
+mod props;
+mod kk_credits;
 
 const CISO_HEADER_SIZE: usize = 0x8000;
 const CISO_MAP_OFFSET: usize = 8;

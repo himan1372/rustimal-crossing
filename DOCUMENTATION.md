@@ -2295,6 +2295,72 @@ C ABI (8): `pc_math_sins`, `pc_math_atans_table`,
 Clippy is clean except intentional indexed loops. Tests are written but
 not run.
 
+## Buildings, scenery and household actors (2026-10-11, claude)
+
+Research covered 33 actor files in ac-decomp (primary), diffed against
+ACGC-PC-Port (secondary; 21 files differ, mostly dt scaling). The pure
+logic and data are in three new modules. Model, collision and display
+code stays in C.
+
+- `buildings.rs`:
+  - Nook's Nook 'n' Go / Nookway door parameters, player check and
+    closed-shop message choice. Nookway's "open" fallback uses its
+    closed text.
+  - Lighthouse night window, door test and beam colour pulse; the
+    lighthouse switch status, reach test and pole spin model.
+  - Cottage door/light rules, including the AUS rule. The tent's light,
+    plus its never-despawn bug.
+  - Statue offsets and sparkle timers, the talk gate and the eye-texture
+    quirk.
+  - The structure slot pool, and `STRUCTURE_SETUP`: 83 rows generated
+    by `tools/gen_structure_table.py` through a gcc harness.
+- `props.rs`:
+  - Mailbox opening and the Resetti gate (`reset_count < 3`, AUS `< 4`).
+  - Island flag hoist/lower curves.
+  - Raffle-drum ball physics.
+  - Harvest-table fork probe (cumulative-step quirk).
+  - Signboard wobble and block/unit normalisation.
+  - Notice/nameplate/dump/flag messages; radio note puffs; sports fair
+    variants; sewing-machine cloth; debug moving platform.
+  - Post office e-Reader letter parsing (256-byte buffer).
+  - Title logo constants and the PRESS START pulse.
+- `kk_credits.rs` (`ac_mikanbox` clip): K.K. show text-roll pages and
+  alpha, song choice from the uncollected aircheck bits (52 songs, reset
+  when all are owned), show timer (4800 frames), and the 20:45–20:55
+  cameo of `SP_NPC_MAJIN5` in frames [3600, 3610). 50 Hz values are
+  included.
+
+Quirks and bugs:
+- Cottage door angle: `y > -DEG2SHORT_ANGLE(180.0f)` is +32768 under
+  GCC, so the check never passes there (verified at -O0 and -O2). The
+  PC port patches it to -32768. Retail Metrowerks evidently folds it
+  differently. `my_cottage_can_enter` exposes both behaviours.
+- Tent: the despawn test reads both blocks from the tent's own position,
+  so the tent never despawns.
+- `ac_windmill` has no constructor and never sets `action_proc`, so its
+  move would call NULL. It is dead N64-era code.
+- The mailbox destructor frees only one of its two skeletons.
+- The e-Reader letter "password" mail type never applies:
+  `ITEM_NAME_GET_TYPE(npc_id == NAME_TYPE_SPNPC)` is always 0.
+- Statue eyes: the girl face-7 entry points at the boy face-7 texture.
+- K.K. songs on house radios are not played by `ac_radio`; that is
+  `aMR_RadioCommonMove` (my_room). `ac_radio` is the aerobics radio.
+
+PC-port notes:
+- `TOUDAI_ACTOR` outgrew the structure slot, so the slots are 0x300
+  bytes.
+- `ac_dump` lost its acre-change despawn, and `ac_radio` despawns only
+  when more than one acre away.
+- The title logo gained a PC settings menu and reloads the save after
+  the title demo.
+
+C ABI (3): `pc_toudai_night`, `pc_str_setup_profile`,
+`pc_mkbc_roll_alpha` (all unique).
+
+`cargo check` (host + i686-pc-windows-gnu, lib and tests) is clean.
+Clippy is clean for the new files. Tests are written but not run.
+Tables were script-checked against the C.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
