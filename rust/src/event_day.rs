@@ -162,6 +162,7 @@ pub mod event {
     pub const MORNING_AEROBICS: u16 = 35;
     pub const METEOR_SHOWER: u16 = 37;
     pub const HARVEST_MOON_FESTIVAL: u16 = 43;
+    pub const RUMOR_HALLOWEEN: u16 = 48;
     pub const HALLOWEEN: u16 = 49;
     pub const FISHING_TOURNEY_2: u16 = 54;
     pub const HARVEST_FESTIVAL: u16 = 56;
@@ -289,6 +290,11 @@ pub mod schedule {
             begin: DateSpec { month: sched::lunar(8), day: 15, hour: 18 },
             end: DateSpec { month: sched::lunar(8), day: 15, hour: 20 },
             event: event::HARVEST_MOON_FESTIVAL,
+        },
+        ScheduleRow { // Halloween rumor: Oct 1 00:00 -> Oct 30 23:00
+            begin: DateSpec { month: rtc::month::OCTOBER, day: 1, hour: sched::MULTIDAY | 0 },
+            end: DateSpec { month: rtc::month::OCTOBER, day: 30, hour: 23 },
+            event: event::RUMOR_HALLOWEEN,
         },
         ScheduleRow { // Oct 31 18:00 -> Nov 1 00:00
             begin: DateSpec { month: rtc::month::OCTOBER, day: 31, hour: sched::MULTIDAY | 18 },

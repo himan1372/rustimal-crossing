@@ -3335,6 +3335,57 @@ C ABI (all `pc_`-prefixed, 9 exports): `pc_cd_set_now_time`,
 `pc_cd_layout_pos`. No C callers rewired yet, per the usual
 pattern. No test runs, per the standing rule.
 
+### Runtime Port Progress: Halloween Special NPC
+
+New `rust/src/halloween.rs`, registered as `mod halloween` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_halloween_npc.c`, `ac_halloween_npc.h`,
+`ac_halloween_npc_talk.c_inc`,
+`ac_halloween_npc_schedule.c_inc`,
+`ac_event_manager.c`, `m_event_map_npc.c`,
+`m_event_schedule.c_inc`, `m_name_table.h` (GAFE01_00 Rev 0
+USA). All 10 brief claims PROVEN.
+
+This actor is NOT Jack: Jack is the separate Pumpkin event
+actor (`ac_ev_pumpkin.c`). This is the special Halloween NPC
+layered on the ordinary NPC engine, doing trick-or-treat
+interactions. Jack's actor remains research-only.
+
+Ported (pure kernels; the talk state machine, RNG calls, the
+schedule callbacks, and the save stay in C):
+
+- The trick-candidate scan (`aHWN_get_trick_type`): FTR0/FTR1
+  eligible if not quest and not the two excluded furniture
+  (Jack-o'-lantern 295, Jack-in-the-box 305); ITEM1 eligible
+  if not a tool and not quest. The pure branch decision
+  (`count > 0 && random_f < 0.5`) is ported; the RNG and item
+  selection stay in C to preserve call order.
+- The trick-type enum (CHG_CLOTH 0 / CHG_ITEM 1).
+- All 14 talk states (END_WAIT 13 → `none_proc1`) and the two
+  think states (APPROACH / APPROACH_WAIT).
+- The forced-talk trigger: horizontal strictly < 70.0f,
+  vertical strictly < 20.0f, block coordinates must match.
+- The message IDs: greeting 2442, normal talk 2479 + looks,
+  first-call continuing 0x098B + looks * 6, item restarts
+  (0x098C/098E/098F/0990 + looks * 6 — the scaling lives inside
+  `aHWN_restart_msg_win`), clothing-trick completion
+  0x098D + looks * 6.
+- The tool ranges (net→rod 0x2200-0x2203, golden 0x2239-0x223C),
+  candy 0x2806, the trick clothing 0x2411, and EMPTY_NO 0x0000.
+- The event-manager spawn constants: SP_NPC_HALLOWEEN 0xD025,
+  the contiguous SP_NPC_EV_HALLOWEEN_0..4 (0xD020-0xD024)
+  derivation, and the 0x51 event parameter.
+- The schedule model: step cap 2, request priority 4, the
+  70-unit request arg.
+- Also added to `event_day.rs`: the RUMOR_HALLOWEEN event ID
+  (48) and the Oct 1 00:00 → Oct 30 23:00 rumor schedule row.
+
+C ABI (all `pc_`-prefixed, 5 exports): `pc_hwn_trick_candidates`,
+`pc_hwn_trick_decision`, `pc_hwn_force_talk`,
+`pc_hwn_is_tool_range`, `pc_hwn_event_npc_name`. No C callers
+rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
