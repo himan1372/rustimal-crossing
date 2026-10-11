@@ -254,7 +254,7 @@ pub struct ScheduleRow {
 pub mod schedule {
     use super::*;
 
-    pub const ROWS: [ScheduleRow; 16] = [
+    pub const ROWS: [ScheduleRow; 18] = [
         ScheduleRow { // Jan 1, 06:00-10:00
             begin: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 6 },
             end: DateSpec { month: rtc::month::JANUARY, day: 1, hour: 10 },
@@ -389,6 +389,16 @@ pub mod schedule {
             begin: DateSpec { month: rtc::month::DECEMBER, day: 25, hour: sched::MULTIDAY | 0 },
             end: DateSpec { month: rtc::month::DECEMBER, day: 31, hour: 23 },
             event: event::RUMOR_NEW_YEARS_DAY,
+        },
+        ScheduleRow { // Tug of War: Mar 19 15:00 -> Mar 21 16:00
+            begin: DateSpec { month: rtc::month::MARCH, day: 19, hour: 15 },
+            end: DateSpec { month: rtc::month::MARCH, day: 21, hour: 16 },
+            event: event::SPORTS_FAIR_TUG_OF_WAR,
+        },
+        ScheduleRow { // Tug of War: Sep 21 15:00 -> Sep 23 16:00
+            begin: DateSpec { month: rtc::month::SEPTEMBER, day: 21, hour: 15 },
+            end: DateSpec { month: rtc::month::SEPTEMBER, day: 23, hour: 16 },
+            event: event::SPORTS_FAIR_TUG_OF_WAR,
         },
     ];
 
@@ -622,7 +632,7 @@ mod tests {
 
     #[test]
     fn schedule_rows() {
-        assert_eq!(schedule::ROWS.len(), 16);
+        assert_eq!(schedule::ROWS.len(), 18);
         assert_eq!(schedule::ROW_COUNT, 134);
         let ny = &schedule::ROWS[0];
         assert_eq!((ny.begin.month, ny.begin.day, ny.begin.hour), (1, 1, 6));

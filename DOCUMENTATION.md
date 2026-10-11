@@ -3678,6 +3678,73 @@ C ABI (all `pc_`-prefixed, 19 exports):
 yet, per the usual pattern. No test runs, per the standing
 rule.
 
+### Runtime Port Progress: Tug of War (Tunahiki)
+
+New `rust/src/tunahiki.rs`, registered as `mod tunahiki` in
+`rust/src/lib.rs`. Decomp-verified against
+`ac_tunahiki_control.c`, `ac_tunahiki_npc0.c`,
+`ac_tunahiki_npc0_schedule.c_inc`,
+`ac_tunahiki_npc0_talk.c_inc`, `ac_tunahiki_npc1.c`,
+`ac_tunahiki_npc1_schedule.c_inc`,
+`ac_tunahiki_npc1_talk.c_inc`,
+`include/ac_tunahiki_control.h`, `m_event_map_npc_data.c_inc`,
+`m_event_schedule.c_inc`, `ac_event_manager.c` (GAFE01_00 Rev 0
+USA). All 8 brief claims PROVEN.
+
+The design: one controller owns the shared rope simulation
+(`aEv_tunahiki_c`, 0x18 bytes); NPC1 participants animate from
+it and feed pull speeds back through the shared save area.
+
+Ported (pure kernels; the event save area, actor lifecycle,
+rope actor, NPC clip, animation frame-control, RNG calls,
+effects, audio, and demo/talk stay in C):
+
+- The full `aTNC_wait` controller update: ±0.3 shake from
+  `game_frame & 1` while SHAKE is set, the TALK_ALL freeze,
+  `rope_base += speed * 0.025`, the strict ±10 clamp with
+  speed zeroing, `rope = rope_base + shake`, and the counter
+  reset to 2 (not 0) at 65.
+- The `aTNN1_aiko` deterministic parts: the speed-selection
+  chain (`rng < 0.45` → `mag+3`; `< 0.9` → `-(mag+3)`; else 0 —
+  RNG values supplied by the C caller), the footstep condition
+  (`speed * dir > 8.0`), and the end-state decision
+  (`-(base*dir) > 5` → 2; `< -5` with `next_speed*dir >= 0` →
+  3; else 1, keeping the zero-speed equality on branch 3).
+- ID decomposition: index, member bit, the raw team mask (0 or
+  2 — not normalized), and the delete/talk flag shifts.
+- Team direction (`(npc_id - TUNAHIKI_1) & 2`), the home
+  offsets (dir×95 for ID indices 2–3, else dir×85; z dir×5),
+  and the `home.x + rope_base` follow rule (not `rope`).
+- Dialogue arithmetic (`base + msg_no + rand3`; NPC0 msg_no 0,
+  NPC1 3/6/9) and the 6-slot shrine placement
+  (TUNAHIKI_0..4 = 0xD05F–0xD063, Tortimer (10, 8)), mask
+  0b0011111.
+- Also added to `event_day.rs`: the two verified tug-of-war
+  windows (Mar 19 15:00 → Mar 21 16:00, Sep 21 15:00 → Sep 23
+  16:00; plain date ranges, no rumor row — the fair-level
+  rumors cover it).
+
+Deliberately NOT ported as retail behavior: the constructor
+never initializes speed/next_speed/counter (their values come
+from the save-area allocator — no zero-init added); several
+NPC1 paths dereference the save area with no null check (only
+NPC0's destructor guards), so the port preserves the
+call-order assumptions; the redundant second save-area fetch
+in `aTNC_wait` is folded (documented); the `#ifdef TARGET_PC`
+tick loop in `aTNC_actor_move` is PC-port, not retail.
+
+C ABI (all `pc_`-prefixed, 15 exports):
+`pc_tunahiki_npc_index`, `pc_tunahiki_member`,
+`pc_tunahiki_team_mask`, `pc_tunahiki_delete_flag`,
+`pc_tunahiki_talk_flag`, `pc_tunahiki_dir`,
+`pc_tunahiki_home_offset`, `pc_tunahiki_follow_x`,
+`pc_tunahiki_rope_step`, `pc_tunahiki_counter_step`,
+`pc_tunahiki_next_speed`, `pc_tunahiki_footstep`,
+`pc_tunahiki_next_think`, `pc_tunahiki_msg`,
+`pc_tunahiki_spawn_pos`. No C callers rewired
+yet, per the usual pattern. No test runs, per the standing
+rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
