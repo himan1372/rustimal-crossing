@@ -3229,6 +3229,59 @@ C ABI (all `pc_`-prefixed, 10 exports): `pc_hi_room_kind`,
 `pc_hi_entry_start`. No C callers rewired yet, per the usual
 pattern. No test runs, per the standing rule.
 
+### Runtime Port Progress: Event-Day NPCs and Controllers
+
+New `rust/src/event_day.rs`, registered as `mod event_day` in
+`rust/src/lib.rs`. Decomp-verified against `m_event.h`,
+`m_event_schedule.c_inc`, `ac_event_manager.c`,
+`m_event_map_npc.c`, `m_event_map_npc_data.c_inc`,
+`ac_ev_turkey.c`, `ac_tokyoso_control.c`,
+`ac_groundhog_control.c`, `ac_ev_santa.c`, `lb_rtc.h`
+(GAFE01_00 Rev 0 USA). Every claim PROVEN; one count corrected
+(the schedule table has 134 rows, not 137+).
+
+Ported — Layer A only (pure data and helpers). The calendar
+scheduler, event-manager placement, NPC registration, and all
+NPC actor state machines stay in C:
+
+- The event-ID encoding: 3-bit type / 29-bit subtype with the
+  verbatim get/set semantics. The source's `mEv_SET` quirk
+  (uses `mEv_SET_TYPE(subtype)`) is inert and resolved to
+  VALUES — small subtypes land at `subtype << 29`.
+- The schedule date-field codecs: weekly data, lunar month,
+  save-month, hour-slot, and the TODAY/MULTIDAY flag bits.
+- The 14 decomp-verified schedule rows as raw encoded data
+  (the full 134-row table stays in C; date decoding stays in C).
+- The special-visitor→NPC-kind mapping, verbatim — including
+  the carpet peddler's kind being `mEv_SPNPC_ARABIAN` and the
+  `default:` fall-through to SHOP.
+- The 17-entry event-map type table (IDs only; index 6
+  Halloween has no fixed data — dynamic naming), the
+  `SP_NPC_EV_HALLOWEEN_0` (0xD020) naming rule, and the New
+  Year layout positions with the NPC mask.
+- Franklin's present logic: `PRESENT_NUM` 12, `ALL_BITS`
+  0xFFF, the reset predicate, and the n-th-ungiven mapping
+  (the RANDOM pick stays in C).
+- The tokyoso controller states (nine, with the source's own
+  `STRECH` typo carried), and Jingle's four wish categories.
+- Tortimer's 30 `SONCHO_*` event IDs as a documented name list
+  with the four index-verified pairings.
+
+Deliberately NOT ported: the daily event-list construction and
+active/inactive transitions, the event-manager block/unit
+search and actor placement, NPC registration and
+participation, the special-visitor schedule/save mutations, the
+Jack/Franklin/Jingle/Tortimer/Wisp talk and think state
+machines, the activity controllers' runtime behavior, and save
+mutations.
+
+C ABI (all `pc_`-prefixed, 7 exports): `pc_ed_get_type`,
+`pc_ed_get_subtype`, `pc_ed_weekly_data`,
+`pc_ed_special_type2kind`, `pc_ed_halloween_npc_name`,
+`pc_ed_franklin_all_given`, `pc_ed_franklin_nth_ungiven`. No C
+callers rewired yet, per the usual pattern. No test runs, per
+the standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

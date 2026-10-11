@@ -104,6 +104,7 @@ mod melody;
 mod museum_display;
 mod shop_interior;
 mod house_interior;
+mod event_day;
 mod bee_ant;
 mod special_delivery;
 mod leaflet;
