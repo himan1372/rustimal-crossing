@@ -3116,6 +3116,67 @@ C ABI (all `pc_`-prefixed, 10 exports): `pc_md_query`,
 `pc_md_fossil_display_item`. No C callers rewired yet, per the
 usual pattern. No test runs, per the standing rule.
 
+### Runtime Port Progress: Shop Interiors & Fitting Rooms
+
+New `rust/src/shop_interior.rs`, registered as `mod shop_interior`
+in `rust/src/lib.rs`. Decomp-verified against
+`ac_shop_design.c`, `ac_shop_manekin.c`, `ac_shop_umbrella.c`,
+`ac_shop_indoor.c`, `ac_shop_level.c`, `ac_shop_goods.c`,
+`ac_shop_goods.h`, `m_name_table.h`, `m_shop.h` (GAFE01_00 Rev 0
+USA). Two brief corrections carried: saplings and
+Halloween-status flower bags map to `RSV_SHOP_HALLOWEEN`, not
+`RSV_SHOP_PLANT`; and the carpet default at index 3 (DEPART_1F) is
+`ITM_CARPET70`, not `ITM_CARPET68`.
+
+Ported (pure mapping/state kernels; rendering, texture/DMA,
+collision registration, the actor engine callbacks, and the save
+stay in C):
+
+- All 26 reserved shop IDs (`RSV_SHOP_*` 0xFE00-0xFE18 plus
+  `RSV_FE1F`).
+- The item→reserved-slot classification, verbatim, including the
+  source-commented unreachable signboard check inside the tool
+  range and the sold-sentinel round-trips.
+- The sold-slot routing: per-category route, goods-list sentinel,
+  and field-ground write, with the retail quirks preserved (sold
+  clothing's FG write is `RSV_NO`, not `RSV_SHOP_SOLD_CLOTH`;
+  stationery takes the bare `return TRUE` path with no report and
+  no write; grab bags report and write immediately).
+- The mannequin counting predicate (clothing OR the
+  `RSV_SHOP_SOLD_CLOTH` sentinel), the clothing/naked texture
+  indices, the `(count+1)` bank sizes, the coordinate normalization
+  with first-match search semantics.
+- The umbrella state machine (WAIT/DELETE/NONE), the 0.001f
+  delete step, the `item - ITM_UMBRELLA_START` model index, and a
+  draw-scale accessor that preserves the retail first-record
+  behavior verbatim.
+- The five indoor room types, the wall/carpet defaults, and the
+  texture-bank alternation.
+- The lottery drum positions per shop index (the 5th entry is
+  unreachable — DEPART_2 keeps `actor_specific = -1`).
+- The shop-building scan bounds (`[SHOP0, SHOP3+1]`, with the
+  source's own `@BUG` comment that the upper bound includes the
+  post office) and the three renewal-date exclusions (Nook sale
+  within 2 days, lottery day within 2 days, Black Friday).
+- The thrown-item display pool size (`aSG_SINGLE_DRAW_NUM` = 9).
+
+Deliberately NOT ported: merchandise rendering and display
+lists, the drop-animation physics and sound, the wall/carpet
+texture copying and DMA, the mannequin/umbrella collision
+registration and teardown, the shop-level actor's field-ground
+rewrite iteration and lost-and-found/deposit side effects (the
+C caller supplies the items; Rust only answers the bounds and
+constants), and the save mutations.
+
+C ABI (all `pc_`-prefixed, 11 exports): `pc_si_item_to_slot`,
+`pc_si_sold_route`, `pc_si_sold_sentinel`,
+`pc_si_sold_fg_write`, `pc_si_is_mannequin_spot`,
+`pc_si_umbrella_delete_step`, `pc_si_umbrella_draw_scale`,
+`pc_si_alternate_bank`, `pc_si_drum_pos`,
+`pc_si_is_shop_building`, `pc_si_renewal_blocked`. No C callers
+rewired yet, per the usual pattern. No test runs, per the
+standing rule.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
