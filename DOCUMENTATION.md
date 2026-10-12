@@ -1756,6 +1756,37 @@ exactly one write (the bee's world position); the bee is constructed
 dormant at the (-1,-1,-1) sentinel and deleted if the drop fails. 13 new
 pure exports.
 
+Fish follow-ups (2026-10-11): action IDs proven — standard `aGTT_`
+7 states (SWIM/WAIT/ESCAPE/NEAR/TOUCH/BITE/COMEBACK), special `aGKK_`
+11 states (adds SWIM2/3/4 and WAIT_MONSTER, whose callback is `none_proc1`
+but which has a real initializer — the state is preserved, not deleted).
+`setupAction` stores the ID, installs the callback, then calls the
+initializer immediately; transition side effects are never deferred.
+`aGYO_hosei_y[45]` proven verbatim — render-only (subtracted in the model
+matrix), never physics. `aGYO_anime_ptn[45]` proven; frame tables are
+`aGYO_frame_ptn_fast[8]` / `aGYO_frame_ptn_slow[16]` (the brief's pt1/pt2
+names were wrong); `aGYO_anime_frame` increments before reading, wraps to
+0 at sequence end (decrementing `swork2` on wrap iff `gyo_flags & 0x200`),
+NONE forces index 0 and returns 0; the renderer picks
+`displayList[(int)(frame * 0.5f)]`, so `dl_c` is unreachable. Bobber sync
+proven: `UKI_ACTOR` is 0x2C8 (the brief's 0x2B8 was wrong — that's
+`hamon_accum`'s offset); `gyo_command`/`gyo_status`/`gyo_type` at
+0x288/0x28C/0x290; `aUKI_set_proc` runs the initializer BEFORE storing the
+proc; `gyo_status = 8` is the release/create handoff, reset to 0 BEFORE the
+creation call. Special differences proven: TOUCH bite not gated on
+`aGYO_check_fall`, COMEBACK trash shadow tire-only (standard: can/boot/
+tire), WAIT expiry chooses `{SWIM, SWIM2, SWIM}` via `RANDOM(3)`, and the
+yaw-copy directions (SWIM2/SWIM4 shape→world, SWIM3 world→shape).
+`aGYO_overlay_entry_c` (0x1C08) does not exist in fish source — that size
+is the insect overlay; fish scratch is `aGYO_overlay_c` = 2 × 0x3C00.
+New pure exports: `pc_gyo_anime_frame`, `pc_gyo_dl_index`,
+`pc_gyo_bite_timer`, `pc_gyo_trash_pick`, `pc_gkk_wait_swim_choice`,
+plus the `gtt::`/`gkk::`/`gyo_status::` enums, UKI layout constants, and
+the `GYO_HOSEI_Y`/`GYO_ANIME_PTN`/`GYO_FRAME_PTN_*`/`GYO_BITE_TIMER`/
+`GYO_GOMI` tables. C keeps: actor lifecycle, creation helpers, bobber
+procedures, speed/angle routines, fall/bridge/wall checks, rendering, RNG,
+inventory/label transfer.
+
 New `rust/src/bee_ant.rs`, verified against `src/actor/ac_bee.c`,
 `src/actor/ac_ant.c`, `src/actor/ac_insect_clip.c_inc`,
 `src/actor/ac_set_ovl_insect.c`, and `src/bg_item/bg_item_common.c_inc`
@@ -5876,67 +5907,6 @@ C ABI (all `pc_`-prefixed, 9 exports):
 `pc_yomise_page_msg`. No C callers rewired
 yet, per the usual pattern. All 5 unit
 tests pass.
-
-## Follow-ups: gyroid, cockroach, balloon, town map, diary, mushroom, igloo, snowman (2026-10-12, claude)
-
-These resolve the eight follow-up items in `docs/need-to-port.md`. Each
-module gains a "Follow-ups resolved" section before its tests, plus a
-`followup_tests` module (written, not run). ac-decomp was the primary
-source and ACGC-PC-Port the secondary one. IDs were compiled from the
-real `m_name_table.h` with mingw32 gcc.
-
-Build fixes found along the way:
-- `lib.rs` had silently lost 32 `mod` lines. 31 went in `1abae7bd` and
-  `aprilfool` in `f2c6a5f9`, so those modules (game_math, calendar,
-  buildings, notice_overlay, choice, …) were not compiled at all. They
-  are re-registered. `letter_score_tables` is intentionally included
-  via `#[path]` from `letter_score.rs`.
-- Three files had a new section inserted between `#[cfg(test)]` and
-  `mod tests`. This made real items test-only: `bee_ant.rs`
-  `pc_calc_ease` (an exported C symbol), `famicom.rs` NES tag constants,
-  and `notice_overlay.rs` `NOTICE_HANDBILL_BASE`. The attribute now sits
-  directly on `mod tests`.
-
-Highlights (full detail in each module and in `docs/need-to-port.md`):
-- Gyroids:
-  - `HANIWA_START`/`END` verified (0x15B0/0x17AB).
-  - `mHW_MSG_MOU` is used (pockets full).
-  - The turnip spoil over the stored slots is `mAGrw_SpoilAllPossession`.
-  - Buy flow, money roll, and the last-block reuse quirk.
-- Cockroaches:
-  - The saved count grows at player-data load.
-  - Stomping permanently removes one.
-  - `aMR_CheckDannaKill` ignores FTR1 furniture.
-- Balloons:
-  - Stuck balloon if the unit lookup fails.
-  - One-sided shake.
-  - Present resolves on pickup (80% rare furniture, else biased fruit).
-- Town map:
-  - Exact house-pos lookup rules (asset still absent).
-  - Scan starts at (1,1).
-  - Retail vs PC cursor counters.
-- Diary:
-  - On the next-land load path, the original-design block overwrites
-    the diary buffer.
-  - The read→write panel overshoots to -101.4 for one frame.
-  - Layout rules are exact.
-- Mushrooms:
-  - The player-acre exclusion removes a whole row and column.
-  - The column refill is dead code.
-  - Clearing counts both time directions.
-- Igloo:
-  - PC frame and steam accumulators.
-  - The unused mochi table is recorded.
-  - Rumor row: event 2, told only in winter.
-- Snowman:
-  - Born-check packing.
-  - New balls appear from 06:00.
-  - Head-jump arc and dust.
-  - The FG probe's NULL deref is modelled.
-
-`cargo check` is clean (host + i686, lib and tests). `cargo clippy` has
-0 errors, and none of its warnings fall in the new sections. No
-`pc_*` symbols are duplicated. Tests are written but not run.
 
 ## File Reference
 

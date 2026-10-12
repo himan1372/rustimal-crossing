@@ -163,67 +163,64 @@ Small, bounded follow-ups identified during the 2026-10-11 event-port batch.
 - ✅ **Bulletin-board follow-ups** — batch trigger, board-write, save-check, and house-message kernels in `notice_overlay.rs` (8 new exports).
 - ✅ **NES follow-ups** — nesinfo parser kernels, `special_zelda()` repair, acquisition pools in `famicom.rs` (8 new exports); `scene.rs` FamicomEmu `cleanup_fn` gap fixed.
 - ✅ **Bee follow-ups** — easing/APPEAR/catch-request/CAUGHT/ant-scale kernels in `bee_ant.rs` (13 new exports; `angle2` does NOT wrap — brief corrected).
-- ✅ **Gyroid follow-ups** — RESOLVED 2026-10-12 (claude) → `haniwa.rs`. HANIWA_START/END
-  verified with gcc (0x15B0/0x17AB; name-table HANIWA_NUM is 127, the Rust `HANIWA_NUM` = 3
-  is `mAGrw_HANIWA_NUM`). `FTR_NO_2_IDX(f) = f << 2`, so the random select only yields
-  south-facing ids 0x15B0..0x17A8. DOREWO survives until the selected tag points elsewhere;
-  the shown message lags one frame. CORRECTIONS: `mHW_MSG_MOU` IS used (literal 6 when the
-  pockets are full), and the stored-slot turnip spoil is `mAGrw_SpoilAllPossession`, not
-  SetDigItem. Buy flow: bags are spent smallest-first and change goes back to the wallet.
-  QUIRK: the last candidate block is reused for the remaining gyroids.
-- ✅ **Cockroach follow-ups** — RESOLVED 2026-10-12 (claude) → `cockroach.rs`. Growth runs
-  at player-data load (`m_start_data_init.c`), not on house entry. Spawning moves roaches
-  saved→visible; leaving adds the visible ones back; a stomp only decrements visible, so
-  YES, stomping permanently lowers the saved count. `check_danna_kill_proc` =
-  `aMR_CheckDannaKill`, registered in `aMR_SetClip`; BUG: it only tests FTR0 ids
-  (0x1000..=0x2000), so 0x3000+ furniture never kills. QUIRK: an existing infestation adds
-  the full day gap.
-- ✅ **Balloon follow-ups** — RESOLVED 2026-10-12 (claude) → `balloon.rs`. A failed unit
-  lookup keeps count 0, so the present is never dropped and the balloon never deleted. The
-  little shake is one-sided (+500 / 0). The present draws unless escaping + dropped + timer
-  moved (PC uses `<=`). The present resolves on pickup: 80% rare furniture, else
-  `mFI_GetOtherFruit` (50% next-fruit bias; oranges only in peach towns). Stuck in a tree:
-  18000 frames.
-- ✅ **Town-map follow-ups** — RESOLVED 2026-10-12 (claude) → `town_map.rs`. The house-pos
-  lookup rules are exact (0x03B8 terminator, 3 entries, `ut_z - 1`; a missing block falls
-  back to the FIRST row's entry); the contents are still the absent asset. The max-no
-  scan starts at (1,1) and covers 5×6. Retail vs PC cursor counters. Player slots skip the
-  intro player and fill with "free". The villager sort restarts after each swap.
-  `add_calc(0.7,19,1.8)` easing. Indoors with a pending door → exit door.
-- ✅ **Diary follow-ups** — RESOLVED 2026-10-12 (claude) → `diary.rs`. Checksum = u16 word
-  sum == 0. BUG: on the next-land load path the original-design block is copied into
-  `l_keepDiary`, so a corrupt diary becomes design bytes. Speeds: 16/3, 16/7, ×2 / ×0.5
-  scaling capped at 8 (read) / 2 (write). Panel `-0.6n²` overshoots to -101.4 for one frame.
-  Exit line = min(lines, `_24`). Layout limited to 31 lines; trailing-newline and `i != 30`
-  rules; empty-entry `text[-1]` read; 12 month textures listed.
-- ✅ **Mushroom follow-ups** — RESOLVED 2026-10-12 (claude) → `mushroom.rs`. BUG: the
-  player-acre exclusion removes the player's whole row AND column. The `possible_cols`
-  refill is dead code (never decremented). Rows are picked uniformly; the "bruh" break ends
-  the scan. Clears count quarter-hours in either direction (future stamps clear too).
-  Startup uses acre (0,0) (nothing spared) with no season check. Column-0 trees wrap
-  neighbour offsets.
-- ✅ **Igloo follow-ups** — RESOLVED 2026-10-12 (claude) → `kamakura.rs`. PC `anim_frame`
-  wraps at 1024; the steam accumulator is a shared function `static`. The chase factor is
-  0.019532442×dt. The camper is 1 random resident (already in `event_map_npc.rs`). The mochi
-  table is unused (1400-frame loop, recorded). Rumor event 2, window Jan 2 → Feb 23 20:00,
-  told only in winter.
-- ✅ **Snowman follow-ups** — RESOLVED 2026-10-12 (claude) → `snowman.rs`. Reward ids
-  verified with gcc. `move_dist` lives in common-area part 0 (ball A) / 1, and is kept only
-  for an untouched ball. The FG probe's NULL deref is modelled as a reject. Arc
-  `(8t − t²/7.5)·25` (peak 3000 at t=30), 5 dust puffs −90°..90°. `snowman_start` blocks on
-  SNOWMAN0/3/6 + born check; new balls appear from 06:00.
+- ✅ **Fish follow-ups** — action-state tables (standard 7, special 11), bobber-sync protocol, draw tables in `fish_actor.rs` (5 new exports + data tables; UKI_ACTOR is 0x2C8 not 0x2B8; 0x1C08 is insect-only, not fish).
+
+### 🔄 In progress (claude — claimed 2026-10-12, `port-followups-gyroid-to-snowman`)
+
+Do NOT edit `haniwa`/`cockroach`/`balloon`/`town_map`/`diary`/`mushroom`/`kamakura`/`snowman.rs` until claude posts completion.
+
+- 🔄 **Gyroid follow-ups** — HANIWA_START/END numerics (verify against the build);
+  `FTR_NO_2_IDX` mapping for `mSP_RandomHaniwaSelect`; the `mHW_MSG_DOREWO`
+  interruption special case; `mAGrw_SetDigItem` running `mAGrw_SpoilKabu` over the
+  stored haniwa slots; inventory-transfer semantics (`m_tag_ovl`/`m_hand_ovl`/
+  `m_inventory_ovl`).
+- 🔄 **Cockroach follow-ups** — the house-entry → infestation-update → actor-spawn →
+  stomp/death → saved-count-update call chain (does stomping decrement the saved
+  count?); `aMR_CLIP->check_danna_kill_proc()` implementation and registration;
+  the `mCkRh_DecideNowGokiFamilyCount` call site on house entry.
+- 🔄 **Balloon follow-ups** — the NULL-guard/call mismatch in the present drop (`item_tree_fruit_drop_proc` guard vs `fruit_set_proc` call); the little-shake double-set comment; the draw callback's present-skip condition; the rare-list selection internals and `mFI_GetOtherFruit()`; the `anim_frame`/`dt` accumulators.
+- 🔄 **Town-map follow-ups** — `mMP_house_pos_list` contents live in a binary `.inc`
+  asset absent from the decomp (matching algorithm ported, contents injected);
+  the PC-port dt-accumulating `cursor_frame` f32 vs the N64 `++`/`%=` form;
+  `mMP_make_max_no_table` acre-loop bounds (starts at field index (0,1), scan
+  count); the full resident-cache assembly (`mPr_CheckPrivate`, the
+  first-introduction condition, `mNpc_CheckFreeAnimalInfo`, name conversion,
+  the swap-and-restart villager sort); the `add_calc(0.7, 19.0, 1.8)` cursor
+  easing; exit-door vs player-position selection in `mMP_set_init_data`.
+- 🔄 **Diary follow-ups** — the card-load repair path (`mFRm_ReturnCheckSum`
+  gate) for a corrupt diary checksum; the `chase_f()` scroll easing and
+  distance-scaled speeds; the read→write scroll's quadratic `_28`
+  animation to exactly -100.0f; `mDI_Play_write`'s editor-state copy
+  (`_22 → _48`, `_24 → _46`) and `_18 = min(lines, _24)` clamp; the
+  `mDI_set_writing_body` end-of-text `i != 30` special case and
+  trailing-newline `line_len--` rules; the full 12-entry `month_tex_table`
+  texture references.
+- 🔄 **Mushroom follow-ups** — the column-refill logic when `possible_cols` hits 0;
+  the per-row candidate bitfields and the `mMsr_SetBlockMashroom` scan order
+  (incl. the "bruh" early break); `lbRTC_IsOverTime` future-timestamp handling;
+  the startup cleanup's (0, 0) player acre and missing event-status check.
+- 🔄 **Igloo follow-ups** — the `anim_frame` accumulator and the `graph_dt_period_elapsed`
+  steam cadence; the villager-selection policy inside `mEvMN_GetNpcJointEv`; the
+  unused `aKI_mochi_anime_data` table; the frame-rate-independent chase factor;
+  the `mEv_EVENT_RUMOR_KAMAKURA` rumor row.
+- 🔄 **Snowman follow-ups** — `@BUG` NULL dereference in the foreground-search during
+  the head-jump assembly; reward furniture IDs computed from the X-macro expansion
+  (verify against the build before wiring); the `move_dist` common-area accessor;
+  the event-manager birth orchestration (`snowman_start`, `mEv_snowman_born_check`);
+  assembly dust effects and the parabolic head-jump arc.
+
+---
 
 ### ⏳ Open (unclaimed)
 
-- ⏳ **Fish follow-ups** — the full test/kaseki state machines and their complete transition
-  tables; exact UKI_ACTOR status synchronization around the catch animation
-  (`aGTT_comeback`/`aGKK_comeback`); the species-indexed `aGYO_hosei_y[]` and
-  animation-pattern tables; `aGYO_overlay_entry_c` (0x1C08) model tables.
 - ⏳ **Insect follow-ups** — per-family transition tables for the 14 behavior programs;
   exact net-hit/inventory handoff; per-family work-slot and flag semantics;
   how the Rust spawn tables pass type/position/release metadata into the C controller;
   `aINS_overlay_entry_c` (0x1C08) model tables; chou flower-search offset tables
   and exact RNG call order.
+
+---
+
 ## Nature & seasonal
 
 ✅ **Snowman building** — snowballs, snowman moods and rewards. → `snowman.rs`

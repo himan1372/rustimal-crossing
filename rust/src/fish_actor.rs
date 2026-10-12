@@ -368,6 +368,272 @@ pub extern "C" fn pc_fish_bite_time(rod: i32, bite_class: i32) -> f32 {
 }
 
 #[cfg(test)]
+/// Fish action-state machines, bobber-sync protocol, and draw tables
+/// (`ac_gyo_test.c`, `ac_gyo_kaseki.c`, `ac_gyoei_draw.c_inc`,
+/// `ac_uki_move.c_inc`).
+///
+/// The two behavior programs share `aGYO_CTRL_ACTOR` but NOT a state
+/// machine: standard fish have 7 actions, special fish have 11 (including
+/// `WAIT_MONSTER`, whose callback is `none_proc1` but which has a real
+/// initializer — preserve it, don't delete the state). `setupAction`
+/// stores the ID, installs the callback from the parallel table, then
+/// calls the initializer IMMEDIATELY — transition side effects are never
+/// deferred a tick.
+///
+/// The bobber (`UKI_ACTOR`, 0x2C8 bytes — NOT 0x2B8, which is
+/// `hamon_accum`'s offset) syncs via `gyo_command`/`gyo_status`/`gyo_type`
+/// at offsets 0x288/0x28C/0x290. `aUKI_set_proc` runs the procedure
+/// initializer BEFORE storing the new `proc`. `gyo_status = 8` is the
+/// release/create handoff: the fish resets it to 0 BEFORE calling the
+/// creation helper.
+///
+/// `aGYO_hosei_y` is a RENDER-ONLY vertical correction (subtracted in the
+/// model matrix), never applied to the actor's world position or AI.
+/// `aGYO_displayList` is 45 pointers to `(dl_a, dl_b, dl_c)` triples; the
+/// renderer picks `[(int)(frame * 0.5f)]`, so `dl_c` is unreachable via
+/// that expression. There is NO fish-specific `aGYO_overlay_entry_c`
+/// (0x1C08) anywhere in the tree — that size belongs to the insect
+/// overlay `aINS_overlay_entry_c`; the fish overlay scratch is
+/// `aGYO_overlay_c` = 2 × 0x3C00 bytes.
+
+/// Standard-fish actions (`aGTT_ACTION_*`).
+pub mod gtt {
+    pub const SWIM: u8 = 0;
+    pub const WAIT: u8 = 1;
+    pub const ESCAPE: u8 = 2;
+    pub const NEAR: u8 = 3;
+    pub const TOUCH: u8 = 4;
+    pub const BITE: u8 = 5;
+    pub const COMEBACK: u8 = 6;
+    pub const NUM: u8 = 7;
+}
+
+/// Special-fish actions (`aGKK_ACTION_*`).
+pub mod gkk {
+    pub const SWIM: u8 = 0;
+    pub const SWIM2: u8 = 1;
+    pub const SWIM3: u8 = 2;
+    pub const SWIM4: u8 = 3;
+    pub const WAIT: u8 = 4;
+    pub const WAIT_MONSTER: u8 = 5;
+    pub const ESCAPE: u8 = 6;
+    pub const NEAR: u8 = 7;
+    pub const TOUCH: u8 = 8;
+    pub const BITE: u8 = 9;
+    pub const COMEBACK: u8 = 10;
+    pub const NUM: u8 = 11;
+}
+
+/// Bobber `gyo_status` protocol values.
+pub mod gyo_status {
+    pub const NONE: i32 = 0;
+    pub const TOUCHABLE: i32 = 1;
+    pub const TOUCH_OK: i32 = 2;
+    pub const BITE_ANIM: i32 = 3;
+    pub const BITE_ACTIVE: i32 = 4;
+    pub const COMEBACK: i32 = 5;
+    pub const CATCH_ANIM: i32 = 6;
+    pub const GET_HANDOFF: i32 = 7;
+    pub const RELEASE_CREATE: i32 = 8;
+}
+
+/// `UKI_ACTOR` layout facts (`ac_uki.h`).
+pub const UKI_ACTOR_SIZE: usize = 0x2C8;
+pub const UKI_GYO_COMMAND_OFS: usize = 0x288;
+pub const UKI_GYO_STATUS_OFS: usize = 0x28C;
+pub const UKI_GYO_TYPE_OFS: usize = 0x290;
+
+/// Animation pattern types (`aGYO_ANIME_PAT_TYPE_*`).
+pub const ANIME_PAT_NONE: i32 = 0;
+pub const ANIME_PAT_FAST: i32 = 1;
+pub const ANIME_PAT_SLOW: i32 = 2;
+
+/// Species animation-pattern table (`aGYO_anime_ptn[45]`).
+pub const GYO_ANIME_PTN: [i32; 45] = [
+    1, 2, 2, 2, 2, 1, 2, 2, 1, 2, 2, 2, 2, 1, 1,
+    2, 1, 1, 1, 2, 2, 2, 2, 1, 1, 2, 2, 1, 1, 1,
+    1, 2, 1, 1, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0,
+];
+
+/// Fast animation-frame sequence (`aGYO_frame_ptn_fast[8]`).
+pub const GYO_FRAME_PTN_FAST: [i32; 8] = [1, 1, 0, 0, 2, 2, 0, 0];
+/// Slow animation-frame sequence (`aGYO_frame_ptn_slow[16]`).
+pub const GYO_FRAME_PTN_SLOW: [i32; 16] =
+    [1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0];
+
+/// Species render Y-offset table (`aGYO_hosei_y[45]`): subtracted from the
+/// model's world Y in the draw matrix ONLY — never touches physics/AI.
+pub const GYO_HOSEI_Y: [f32; 45] = [
+    0.0, 0.0, 2.2, 2.2, 2.2, 0.0, 1.5, 2.2, 0.0, 2.2, 2.2, 2.2, 1.5, 0.0, 0.0,
+    0.0, 0.0, 0.0, 0.0, 2.2, 1.5, 2.2, 1.5, 0.0, 0.0, 2.2, 2.2, 0.0, 0.0, 0.0,
+    0.0, 2.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+];
+
+/// Bite-timer base table (`timer[]` in `aUKI_set_proc_bite`), indexed by
+/// size class; trash uses a flat 26.
+pub const GYO_BITE_TIMER: [i32; 8] = [26, 39, 39, 39, 52, 65, 78, 78];
+/// Trash substitution table (`gomi[8]`), indexed by size class:
+/// `{can, can, boot, boot, boot, tire, tire, tire}` as `aGYO_TYPE_*`
+/// values (41/42/43).
+pub const GYO_GOMI: [i32; 8] = [41, 41, 42, 42, 42, 43, 43, 43];
+
+/// `aGYO_anime_frame`: increments the frame index BEFORE reading the
+/// pattern; wraps to 0 at the sequence end (decrementing `*swork2` on wrap
+/// when `gyo_flags & 0x200`); NONE forces index 0 and returns 0. Writes
+/// back `*anim_frame`; optionally writes back `*swork2`. Returns the frame.
+#[no_mangle]
+pub extern "C" fn pc_gyo_anime_frame(
+    anim_frame: *mut i32,
+    gyo_type: i32,
+    gyo_flags: u32,
+    swork2: *mut i32,
+) -> i32 {
+    if anim_frame.is_null() || gyo_type < 0 || gyo_type as usize >= GYO_ANIME_PTN.len() {
+        return 0;
+    }
+    let af = unsafe { &mut *anim_frame };
+    let mut idx = *af + 1;
+    let ret = match GYO_ANIME_PTN[gyo_type as usize] {
+        ANIME_PAT_FAST => {
+            if idx >= GYO_FRAME_PTN_FAST.len() as i32 {
+                idx = 0;
+                if gyo_flags & 0x200 != 0 && !swork2.is_null() {
+                    unsafe { *swork2 -= 1 };
+                }
+            }
+            GYO_FRAME_PTN_FAST[idx as usize]
+        }
+        ANIME_PAT_SLOW => {
+            if idx >= GYO_FRAME_PTN_SLOW.len() as i32 {
+                idx = 0;
+                if gyo_flags & 0x200 != 0 && !swork2.is_null() {
+                    unsafe { *swork2 -= 1 };
+                }
+            }
+            GYO_FRAME_PTN_SLOW[idx as usize]
+        }
+        _ => {
+            idx = 0;
+            0
+        }
+    };
+    *af = idx;
+    ret
+}
+
+/// Display-list selector: `(int)(frame * 0.5f)`.
+#[no_mangle]
+pub extern "C" fn pc_gyo_dl_index(frame: i32) -> i32 {
+    (frame as f32 * 0.5) as i32
+}
+
+/// `aUKI_set_proc_bite` timer: trash → 26, else
+/// `(int)((f32)(int)timer[size] * 2.0f)`.
+#[no_mangle]
+pub extern "C" fn pc_gyo_bite_timer(trash: bool, size_class: i32) -> i32 {
+    if trash {
+        26
+    } else if size_class >= 0 && (size_class as usize) < GYO_BITE_TIMER.len() {
+        ((GYO_BITE_TIMER[size_class as usize] as f32) * 2.0) as i32
+    } else {
+        26
+    }
+}
+
+/// Trash substitution pick: `gomi[size_type]` (`aGYO_TYPE_*` value).
+#[no_mangle]
+pub extern "C" fn pc_gyo_trash_pick(size_type: i32) -> i32 {
+    if size_type >= 0 && (size_type as usize) < GYO_GOMI.len() {
+        GYO_GOMI[size_type as usize]
+    } else {
+        41
+    }
+}
+
+/// Special-fish WAIT expiry: chooses from `{SWIM, SWIM2, SWIM}` via
+/// `RANDOM(3)` — `rng` is the raw `RANDOM(3.0)` value in [0, 3).
+#[no_mangle]
+pub extern "C" fn pc_gkk_wait_swim_choice(rng: f32) -> u8 {
+    const CHOICE: [u8; 3] = [gkk::SWIM, gkk::SWIM2, gkk::SWIM];
+    let i = (rng as i32).clamp(0, 2) as usize;
+    CHOICE[i]
+}
+
+    #[test]
+    fn action_state_ids() {
+        // standard: 7 actions
+        assert_eq!((gtt::SWIM, gtt::WAIT, gtt::ESCAPE, gtt::NEAR, gtt::TOUCH, gtt::BITE, gtt::COMEBACK, gtt::NUM), (0, 1, 2, 3, 4, 5, 6, 7));
+        // special: 11 actions, WAIT_MONSTER has no-op callback but a real slot
+        assert_eq!((gkk::SWIM, gkk::SWIM2, gkk::SWIM3, gkk::SWIM4, gkk::WAIT, gkk::WAIT_MONSTER, gkk::ESCAPE, gkk::NEAR, gkk::TOUCH, gkk::BITE, gkk::COMEBACK, gkk::NUM), (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11));
+        // bobber protocol + layout
+        assert_eq!((gyo_status::NONE, gyo_status::TOUCHABLE, gyo_status::TOUCH_OK, gyo_status::BITE_ANIM, gyo_status::BITE_ACTIVE, gyo_status::COMEBACK, gyo_status::CATCH_ANIM, gyo_status::GET_HANDOFF, gyo_status::RELEASE_CREATE), (0, 1, 2, 3, 4, 5, 6, 7, 8));
+        assert_eq!(UKI_ACTOR_SIZE, 0x2C8);
+        assert_eq!((UKI_GYO_COMMAND_OFS, UKI_GYO_STATUS_OFS, UKI_GYO_TYPE_OFS), (0x288, 0x28C, 0x290));
+    }
+
+    #[test]
+    fn draw_tables() {
+        assert_eq!(GYO_HOSEI_Y.len(), 45);
+        assert_eq!(GYO_HOSEI_Y[2], 2.2);
+        assert_eq!(GYO_HOSEI_Y[6], 1.5);
+        assert_eq!(GYO_HOSEI_Y[0], 0.0);
+        assert_eq!(GYO_HOSEI_Y[44], 0.0);
+        assert_eq!(GYO_ANIME_PTN.len(), 45);
+        assert_eq!(GYO_ANIME_PTN[0], ANIME_PAT_FAST);
+        assert_eq!(GYO_ANIME_PTN[1], ANIME_PAT_SLOW);
+        assert_eq!(GYO_ANIME_PTN[40], ANIME_PAT_NONE);
+        assert_eq!(GYO_FRAME_PTN_FAST, [1, 1, 0, 0, 2, 2, 0, 0]);
+        assert_eq!(GYO_FRAME_PTN_SLOW, [1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0]);
+        // display-list selector
+        assert_eq!(pc_gyo_dl_index(0), 0);
+        assert_eq!(pc_gyo_dl_index(1), 0);
+        assert_eq!(pc_gyo_dl_index(2), 1);
+        assert_eq!(pc_gyo_dl_index(3), 1);
+    }
+
+    #[test]
+    fn anime_frame_stepping() {
+        // FAST (type 0): increments before read, wraps at 8.
+        let mut af = 0i32;
+        let mut sw = 10i32;
+        assert_eq!(pc_gyo_anime_frame(&mut af, 0, 0, &mut sw), 1); // idx 1 -> 1
+        assert_eq!(af, 1);
+        assert_eq!(pc_gyo_anime_frame(&mut af, 0, 0, &mut sw), 0); // idx 2 -> 0
+        af = 7;
+        assert_eq!(pc_gyo_anime_frame(&mut af, 0, 0, &mut sw), 1); // wrap -> fast[0]
+        assert_eq!(af, 0);
+        assert_eq!(sw, 10); // no decrement without flag 0x200
+        af = 7;
+        assert_eq!(pc_gyo_anime_frame(&mut af, 0, 0x200, &mut sw), 1);
+        assert_eq!(sw, 9); // wrap + flag -> swork2--
+        // SLOW (type 1): wraps at 16.
+        af = 15;
+        assert_eq!(pc_gyo_anime_frame(&mut af, 1, 0, &mut sw), 1); // slow[0]
+        assert_eq!(af, 0);
+        // NONE (type 40): forced to 0, returns 0.
+        af = 5;
+        assert_eq!(pc_gyo_anime_frame(&mut af, 40, 0x200, &mut sw), 0);
+        assert_eq!(af, 0);
+        assert_eq!(sw, 9); // NONE does not touch swork2
+    }
+
+    #[test]
+    fn bite_and_trash() {
+        assert_eq!(pc_gyo_bite_timer(true, 3), 26);
+        assert_eq!(pc_gyo_bite_timer(false, 0), 52); // (int)(26 * 2.0)
+        assert_eq!(pc_gyo_bite_timer(false, 4), 104); // (int)(52 * 2.0)
+        assert_eq!(pc_gyo_bite_timer(false, 7), 156);
+        assert_eq!(pc_gyo_trash_pick(0), 41);
+        assert_eq!(pc_gyo_trash_pick(1), 41);
+        assert_eq!(pc_gyo_trash_pick(2), 42);
+        assert_eq!(pc_gyo_trash_pick(5), 43);
+        assert_eq!(pc_gyo_trash_pick(7), 43);
+        // special WAIT choice: {SWIM, SWIM2, SWIM}
+        assert_eq!(pc_gkk_wait_swim_choice(0.0), gkk::SWIM);
+        assert_eq!(pc_gkk_wait_swim_choice(1.5), gkk::SWIM2);
+        assert_eq!(pc_gkk_wait_swim_choice(2.9), gkk::SWIM);
+    }
+
 mod tests {
     use super::*;
 
