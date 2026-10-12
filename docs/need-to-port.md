@@ -97,7 +97,12 @@ The everyday villager behavior engine. Only the special-event visitors are porte
 (the furniture placement judge, switch bitfields, and haniwa steps are in `furniture.rs`; `ac_arrange_ftr.c` is an empty stub with nothing to port)
 `ac_my_house.c`, `ac_my_indoor.c`, `ac_my_room.c`, `ac_house_clock.c`, `ac_arrange_ftr.c`, `ac_arrange_room.c`
 
-**Mail & letter system** — sending/writing letters, the mailbox UI, letter delivery checks.
+✅ **Mail & letter generation (non-NPC)** — the data model, slot ops, routing, post-office
+delivery and archive (`mail.rs`); Mom's scheduled letters, pools A/B/C (`mother_mail.rs`);
+NPC event/birthday/Christmas/goodbye/password mail (`npc_event_mail.rs`); museum donation
+remail kinds + message table (`museum.rs`); catalog orders + lottery special delivery
+(`special_delivery.rs`); NPC letter-reply scorer + handbill composer (`npc_reply.rs`).
+Still in C: the mailbox overlay UI, the letter-writing UI, and the ROM text resources.
 `m_mail.c`, `m_mailbox_ovl.c`, `m_mail_check.c`, `m_mail_check_ovl.c`, `m_mail_password_check.c`
 
 **Mortgage repayment** — Nook's house-debt payment UI at the post office.
