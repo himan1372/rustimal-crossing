@@ -526,8 +526,11 @@ mod tests {
         // duplicates preserved
         assert_eq!(gracie_msg(0, 10), 0x072B);
         assert_eq!(gracie_msg(0, 24), 0x072B);
-        assert_eq!(gracie_msg(1, 11), 0x073C);
+        // msg_no_1 duplicates 0x073C at 10/24 and 0x073D at 11/25.
+        assert_eq!(gracie_msg(1, 10), 0x073C);
         assert_eq!(gracie_msg(1, 24), 0x073C);
+        assert_eq!(gracie_msg(1, 11), 0x073D);
+        assert_eq!(gracie_msg(1, 25), 0x073D);
         assert_eq!(gracie_msg(0, 26), 0x074C);
         assert_eq!(gracie_msg(1, 26), 0x074C);
         assert_eq!(gracie_result_msg_idx(0), 12);

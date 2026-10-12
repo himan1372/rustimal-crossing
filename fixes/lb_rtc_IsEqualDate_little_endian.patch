@@ -1,0 +1,21 @@
+diff --git a/src/lb_rtc.c b/src/lb_rtc.c
+index eddbc69..4c945c6 100644
+--- a/src/lb_rtc.c
++++ b/src/lb_rtc.c
+@@ -334,7 +334,16 @@ extern int lbRTC_IsEqualDate(
+   ymd1.ymd.month = m1;
+   ymd1.ymd.day = d1;
+ 
++#ifdef TARGET_PC
++  /* The union type-pun relies on big-endian layout (raw = year<<16 |
++   * month<<8 | day on GameCube). On little-endian x86 the day lands in the
++   * most significant byte, so every cross-month/cross-year ordering came out
++   * reversed (e.g. Jan 31 compared OVER Feb 1). Pack explicitly instead. */
++  res = (((int)ymd0.ymd.year << 16) | ((int)ymd0.ymd.month << 8) | ymd0.ymd.day) -
++        (((int)ymd1.ymd.year << 16) | ((int)ymd1.ymd.month << 8) | ymd1.ymd.day);
++#else
+   res = ymd0.raw - ymd1.raw;
++#endif
+   if (res == 0) {
+     return lbRTC_EQUAL;
+   }

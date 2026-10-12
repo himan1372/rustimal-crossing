@@ -375,8 +375,10 @@ mod tests {
     fn sunday() {
         assert_eq!(sunday_price(0.0), 70);
         assert_eq!(sunday_price(0.5), 100);
-        // just under 1.0 -> 129 (truncation, never 130)
-        assert_eq!(sunday_price(0.9999999), 129);
+        // fqrand's maximum (1 - 2^-23): 1.29999995 * 100 rounds to 130.0 in
+        // f32, so 130 IS reachable despite the source's "[70, 130)" comment.
+        assert_eq!(sunday_price(0.9999999), 130);
+        assert_eq!(sunday_price(0.999), 129);
     }
 
     #[test]
@@ -391,10 +393,15 @@ mod tests {
         // from B: < 0.6 -> A; < 0.8 -> B; else C
         assert_eq!(next_trend(trend::B, 0.59), trend::A);
         assert_eq!(next_trend(trend::B, 0.6), trend::B);
-        assert_eq!(next_trend(trend::B, 0.8), trend::C);
+        // f32: 0.8f - 0.6f = 0.19999999 < 0.2f, so roll 0.8 still picks B
+        // (Kabu_decide_trade_market subtracts the odds in f32).
+        assert_eq!(next_trend(trend::B, 0.8), trend::B);
+        assert_eq!(next_trend(trend::B, 0.81), trend::C);
         // from C: < 0.6 -> A; < 0.9 -> B; else C
         assert_eq!(next_trend(trend::C, 0.6), trend::B);
-        assert_eq!(next_trend(trend::C, 0.9), trend::C);
+        // f32 again: 0.9f - 0.6f = 0.29999995 < 0.3f, so roll 0.9 picks B.
+        assert_eq!(next_trend(trend::C, 0.9), trend::B);
+        assert_eq!(next_trend(trend::C, 0.91), trend::C);
         assert_eq!(spike_price(100), 800);
         assert_eq!(spike_price(129), 1032);
         assert_eq!(spike_day(0.0), 1); // Monday
@@ -403,11 +410,11 @@ mod tests {
 
     #[test]
     fn trend_b() {
-        // rise path: 100 * 1.05 = 105; mult -> 1.06; prob -> 0.24
+        // rise path: 100 * 1.05f = 104.99999 in f32 -> 104; mult -> 1.06; prob -> 0.24
         let mut s = TrendBState::init(100);
         let min = trend_b_min_price(100);
         assert_eq!(min, 80.0);
-        assert_eq!(trend_b_step(&mut s, min, 0.5), 105);
+        assert_eq!(trend_b_step(&mut s, min, 0.5), 104);
         assert!((s.inc_mult - 1.06).abs() < 1e-6);
         assert!((s.dec_prob - 0.24).abs() < 1e-6);
         // drop path: 105 * 0.7 = 73.5 -> 73; 73.5 > 80? no -> stays 73.5
@@ -433,10 +440,12 @@ mod tests {
 
     #[test]
     fn trend_c() {
-        // factor bounds: roll 0 -> 0.8; roll ~1 -> just under 0.95
+        // factor bounds: roll 0 -> 0.8; fqrand's max (1 - 2^-23) gives exactly
+        // 0.95f32 (0.8f + 0.14999998f * r rounds to it), so the range is
+        // [0.8, 0.95] in f32 rather than the comment's [80%, 95%).
         assert_eq!(trend_c_factor(0.0), 0.8);
-        assert!(trend_c_factor(0.9999999) < 0.95);
-        assert!(trend_c_factor(0.9999999) > 0.9499);
+        assert_eq!(trend_c_factor(0.9999999), 0.95f32);
+        assert!(trend_c_factor(0.999) < 0.95);
         let (p, stored) = trend_c_step(100.0, 0.0);
         assert_eq!(p, 80.0);
         assert_eq!(stored, 80);

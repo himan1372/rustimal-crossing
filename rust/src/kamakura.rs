@@ -358,7 +358,8 @@ mod tests {
         assert_eq!(pc_kamakura_exit_position(100.0, 200.0, 12.5, out.as_mut_ptr()), 1);
         assert_eq!(out, [100.0, 12.5, 286.0]);
         // Day interval: 06:00 inclusive -> 18:00 exclusive.
-        assert!(!pc_kamakura_light_target(21599));
+        // ac_kamakura_move.c_inc: !(now < 64800 && now >= 21600)
+        assert!(pc_kamakura_light_target(21599)); // 05:59:59 is still night
         assert!(!pc_kamakura_light_target(21600));
         assert!(!pc_kamakura_light_target(64799));
         assert!(pc_kamakura_light_target(64800));

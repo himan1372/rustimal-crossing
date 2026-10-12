@@ -5908,6 +5908,63 @@ C ABI (all `pc_`-prefixed, 9 exports):
 yet, per the usual pattern. All 5 unit
 tests pass.
 
+## New open items: date compare, Hatsumode OOB, 20 test failures (2026-10-12, claude)
+
+**lbRTC_IsEqualDate (little-endian).** The C subtracts two `int` views of
+`{u16 year; u8 month; u8 day}`. That orders year-first only on big-endian
+hardware. A mingw32 test program shows every cross-month and cross-year
+ordering reversed on x86; equality is unaffected. 9 of the 14 callers use
+the ordering:
+- the daily field-growth gate in `m_all_grow_ovl`
+- three event-window checks in `m_event`
+- fish-record recycle/sort in `m_fishrecord`
+- Tortimer and lighthouse-quest dates in `m_soncho`
+- the signed interval in `lb_rtc`
+
+Fix: `fixes/lb_rtc_IsEqualDate_little_endian.patch` packs the fields
+explicitly under `#ifdef TARGET_PC`. It is applied (uncommitted) to the
+local ACGC-PC-Port checkout and compiles with the real build flags. The
+Rust model is `go_home_npc.rs` `pc_lbrtc_is_equal_date`.
+
+**Hatsumode OOB bytes.** These were proven without the disc, from the
+byte-matching ac-decomp US symbol map:
+- `root_table[4]` reads `proc_idx_table[0]` = 4.
+- `proc_idx_table[4]` reads the top byte of the big-endian pointer
+  `proc_table[0]`, which is 0x80 (foresta.rel is head-allocated just above
+  the DOL).
+- Think index 0x80 then reads `dt_tbl[128]` at `.data:0x36CDC`. That is
+  `aHC_position_data[8].pos.z` (0.0f) plus the high byte of the
+  HOUSE_CLOCK profile id, i.e. five zero bytes: think proc NONE, init
+  `none_proc1`, no talk request.
+
+The fifth worshipper therefore idles, and the out-of-bounds read is benign.
+`pc_hatsumode_ready2` now returns (4, 0x80) for index 4.
+
+**Test suite.** Philip authorized a run. On Windows the test binary could
+not link, because the crate imports C and SDL symbols (`vi.rs`,
+`profiler.rs`, `lib.rs`). `rust/src/test_c_stubs.rs` adds inert
+`cfg(test)` definitions; run the suite with
+`cargo test --lib --target i686-pc-windows-gnu`.
+
+Results:
+- First run: 949 pass, 20 fail.
+- Final run: **970/970 pass**.
+
+16 failures were wrong test expectations. Each was checked against the
+decomp, often with gcc and f32 arithmetic. Notable ones:
+- **Stalk market:** f32 odds subtraction makes rolls 0.8 (from B) and 0.9
+  (from C) pick B. The Sunday price can reach 130, and the type-C factor
+  can equal 0.95.
+- **Lost & found:** an append with a hole overwrites the item at the count
+  index.
+
+4 were real implementation bugs, all fixed:
+- `countdown.rs` and `fireworks.rs` snap-back used swapped axes. They now
+  use `search_position_angle_y` with `sin_s`/`cos_s`.
+- `fish_actor.rs`: SALMON2 falls through to the KASEKI program.
+- `name_editor.rs`: the NG-word scan includes the C's extra
+  `input_length - len + 1` start offset.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

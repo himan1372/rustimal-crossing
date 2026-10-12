@@ -373,11 +373,17 @@ mod tests {
         assert_eq!(withdraw(&mut s, 10_000), EditOutcome::Ok);
         assert_eq!(s.now_bell, 65_000);
         assert_eq!(s.bank_bell, 85_000);
-        // capped by the bank balance itself
+        // wallet already at capacity: the cap clamps keta to 0, so it
+        // buzzes and nothing moves (m_bank_ovl.c: keta == 0 -> buzz)
         s.bank_bell = 2_000;
+        let full = s;
+        assert_eq!(withdraw(&mut s, 10_000), EditOutcome::Buzz);
+        assert_eq!(s, full);
+        // with room again, capped by the bank balance itself
+        s.player_max_bell = 99_999;
         assert_eq!(withdraw(&mut s, 10_000), EditOutcome::Ok);
         assert_eq!(s.bank_bell, 0);
-        assert_eq!(s.now_bell, 65_000); // capacity cap still binds
+        assert_eq!(s.now_bell, 67_000);
         // empty bank buzzes
         let before = s;
         assert_eq!(withdraw(&mut s, 1), EditOutcome::Buzz);

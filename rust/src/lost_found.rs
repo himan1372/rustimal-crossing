@@ -274,11 +274,14 @@ mod tests {
         assert!(keep_item(&mut items, 0x2F00, true));
         assert!(keep_item(&mut items, 0x2F01, true));
         assert_eq!(&items[0..2], &[0x2F00, 0x2F01]);
-        // append goes to the count index, not the first hole
+        // append goes to the COUNT index, not the first hole (mPB_keep_item
+        // writes keep_items[sum], sum = non-empty slots). With a hole at 0
+        // the count is 1, so retail OVERWRITES the item at index 1.
         items[0] = 0x0000;
         assert!(keep_item(&mut items, 0x2F02, true));
-        assert_eq!(items[1], 0x2F01);
-        assert_eq!(items[2], 0x2F02);
+        assert_eq!(items[0], 0x0000);
+        assert_eq!(items[1], 0x2F02);
+        assert_eq!(items[2], 0x0000);
         // full: drop first, shift left, append at 19
         let mut full = [0x1000u16; 20];
         for (i, v) in full.iter_mut().enumerate() {

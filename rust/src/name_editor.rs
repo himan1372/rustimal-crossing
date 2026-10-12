@@ -50,8 +50,15 @@ pub mod ng {
                 continue;
             }
             let pat = &pattern[..len.min(pattern.len())];
-            // Valid start offsets: 0..=(input_length - len).
-            for start in 0..=(input_length - len) {
+            // mED_ng_word_check: `for (j = (input_length - len) + 1; j >= 0; j--)`
+            // tries start offsets 0..=(input_length - len + 1), one MORE than
+            // fits: the last window reads one byte past the logical length
+            // (still inside input_str's capacity). Taken only when the slice
+            // has that byte.
+            for start in 0..=(input_length - len + 1) {
+                if start + len > input.len() {
+                    break;
+                }
                 if input[start..start + len] == *pat {
                     return Some(i);
                 }
@@ -176,7 +183,8 @@ mod tests {
             b"abcd", b"efgh", b"ijkl", b"mnop", b"qrst",
             b"uvwxy", b"z0123",
             b"4567890", b"ABCDEFG", b"HIJKLMN", b"OPQRSTU", b"VWXYZab",
-            b"cdefghijk", b"lmnopqrstu",
+            // 12/13 must not contain an earlier pattern (first match wins):
+            b"!#$%&*+-=", b"[]{}<>;:,.",
         ]
     }
 
@@ -235,6 +243,16 @@ mod tests {
         // matching both pattern 0 and pattern 5: "abcd" at 0, "uvwxy" at 4.
         let input = b"abcduvwxy           ";
         assert_eq!(ng::check(input, input.len(), test_patterns()), Some(0));
+    }
+
+    #[test]
+    fn ng_extra_offset_past_length() {
+        // input_length 6 with pattern "abcd" placed at offset 3 (needs
+        // bytes 3..7, one past the logical length): retail still matches.
+        let mut input = [b' '; 8];
+        input[3..7].copy_from_slice(b"abcd");
+        assert_eq!(ng::check(&input, 6, test_patterns()), Some(0));
+        assert_eq!(ng::check(&input[..6], 6, test_patterns()), None);
     }
 
     #[test]

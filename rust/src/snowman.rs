@@ -497,7 +497,9 @@ mod tests {
         assert_eq!(pc_snowman_melt_step(255, 0), 255);
         assert_eq!(pc_snowman_melt_step(204, 1), 163);
         assert!(pc_snowman_check_life(true, 0xA008, 1)); // (0+1) < 3
-        assert!(pc_snowman_check_life(true, 0xA00A, 1)); // (2+1) < 3
+        assert!(!pc_snowman_check_life(true, 0xA00A, 1)); // (2+1) = 3, not < 3
+        assert!(pc_snowman_check_life(true, 0xA00A, 0)); // (2+0) < 3
+        assert!(pc_snowman_check_life(true, 0xA009, 1)); // (1+1) < 3
         assert!(!pc_snowman_check_life(true, 0xA00A, 2)); // (2+2) = 4
         assert!(!pc_snowman_check_life(false, 0xA008, 1));
         assert_eq!(pc_snowman_melt_days(-5), 1);

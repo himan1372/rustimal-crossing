@@ -183,6 +183,8 @@ mod room_scoring;
 mod room_scoring_tables;
 mod view;
 mod yomise;
+#[cfg(test)]
+mod test_c_stubs;
 
 const CISO_HEADER_SIZE: usize = 0x8000;
 const CISO_MAP_OFFSET: usize = 8;

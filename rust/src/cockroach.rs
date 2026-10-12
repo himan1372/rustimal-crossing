@@ -432,7 +432,10 @@ mod tests {
         assert_eq!(pc_goki_move_target(0.0, 1.0, out.as_mut_ptr()), 1);
         assert_eq!(out, [80.0, -80.0]);
         assert_eq!(pc_goki_jump_angle_offset(), 4096);
-        assert_eq!(pc_goki_wall_cardinal(0x1234), 0x1000);
+        // `angle.y &= 0xC000` snaps to 0/90/180/270 degrees (ac_house_goki.c:241).
+        assert_eq!(pc_goki_wall_cardinal(0x1234), 0);
+        assert_eq!(pc_goki_wall_cardinal(0x5678), 0x4000);
+        assert_eq!(pc_goki_wall_cardinal(0xC123), 0xC000);
         assert!(pc_goki_should_jump(0.4, true));
         assert!(!pc_goki_should_jump(0.5, true));
         assert!(pc_goki_should_jump(0.1, false));

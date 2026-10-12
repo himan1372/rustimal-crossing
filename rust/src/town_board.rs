@@ -161,10 +161,12 @@ mod tests {
         for i in 0..14 {
             assert_eq!(board[i * 200], (i + 1) as u8);
         }
-        // Whole-record copy: a timestamp byte travels too.
-        board[199] = 0xAA;
+        // Whole-record copy: a timestamp byte travels too. Record 0 is the
+        // one discarded (mNtc_notice_write copies post+1 over post), so the
+        // marker goes in record 1's last byte and must land in record 0's.
+        board[200 + 199] = 0xAA;
         pc_board_shift_full(board.as_mut_ptr());
-        assert_eq!(board[14 * 200 + 199 - 200], 0xAA);
+        assert_eq!(board[199], 0xAA);
     }
 
     #[test]

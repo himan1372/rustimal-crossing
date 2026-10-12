@@ -133,19 +133,30 @@ Small, bounded follow-ups identified during the 2026-10-11 event-port batch.
 
 ### 🆕 New open items (added 2026-10-11/12 — do these first)
 
-- **lbRTC_IsEqualDate little-endian type-pun bug** (found by claude, 2026-10-11) —
-  the function type-puns `{u16 y; u8 m; u8 d}` through an int union, so on
-  mingw32 i686 (little-endian) it compares DAY first instead of year; retail
-  big-endian compares year first. Affects every date comparison in the PC
-  port. Needs a port-side fix, not a decomp question.
-- **Hatsumode OOB byte contents** — the index-4 out-of-bounds read is proven;
-  the two bytes' *values* still need the USA Rev 0 binary (plausibly
-  `root_table[4]` aliases `proc_idx_table[0]` = 4, unproven).
-- **20 pre-existing test-expectation failures** — bank, catalog, cockroach,
-  countdown ×2, design, event_visitors, fireworks, fish_actor, hatsumode
-  (`route_wrap`), kamakura, lost_found, name_editor, shop_interior, snowman,
-  stalk_market ×4, town_board. Each needs decomp re-verification — do NOT
-  "fix" by guessing.
+- ✅ **lbRTC_IsEqualDate little-endian type-pun bug** — RESOLVED 2026-10-12 (claude).
+  Proven with mingw32: the packed `int` compare reverses every cross-month/cross-year
+  ordering (Jan 31 compared OVER Feb 1); equality is unaffected. 9 of the 14 callers use
+  the ordering (m_all_grow_ovl growth gate, m_event ×3, m_fishrecord ×3, m_soncho ×2,
+  lbRTC's signed interval). Fix: `fixes/lb_rtc_IsEqualDate_little_endian.patch`
+  (`#ifdef TARGET_PC`, explicit `year<<16|month<<8|day`), applied to the local
+  ACGC-PC-Port checkout (uncommitted, since that repo is upstream). Compiles with the real
+  build flags. The Rust model is `go_home_npc.rs` `pc_lbrtc_is_equal_date`.
+- ✅ **Hatsumode OOB byte contents** — RESOLVED 2026-10-12 (claude), proven from the
+  byte-matching decomp's US symbol map (no disc needed): `root_table[4]` = `proc_idx_table[0]`
+  = **4**; `proc_idx_table[4]` = the top byte of `proc_table[0]`'s pointer = **0x80**
+  (foresta.rel is head-allocated above the DOL); then `dt_tbl[0x80]` reads .data
+  0x36CDC = `aHC_position_data` NEEDLEWORK `pos.z` (0.0f) + the high byte of the
+  HOUSE_CLOCK profile id = **five zero bytes**: think NONE, init `none_proc1`, no talk.
+  The fifth worshipper idles, so the OOB is benign. `hatsumode.rs` now returns these values.
+- ✅ **20 test-expectation failures** — RESOLVED 2026-10-12 (claude, authorized run):
+  **970/970 pass**. 16 were wrong test expectations (bank, catalog, cockroach, countdown
+  digit mask, design, event_visitors, hatsumode, kamakura, lost_found, name_editor
+  fixture, shop_interior ×2, snowman, stalk_market ×4 incl. f32 boundary effects,
+  town_board). 4 were REAL implementation bugs, now fixed: countdown + fireworks
+  snap-back used swapped axes (atan2(dz,dx) with sin/cos); fish_actor SALMON2 must fall
+  through to KASEKI; the NG-word scan missed the C's extra start offset. Windows test
+  linking needed test-only C/SDL stubs (`rust/src/test_c_stubs.rs`); run with
+  `cargo test --lib --target i686-pc-windows-gnu`.
 
 ### ✅ Done (all of the recent event-port leftovers)
 

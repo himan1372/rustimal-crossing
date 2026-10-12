@@ -311,7 +311,7 @@ mod tests {
         assert_eq!(pos2texel(7, 0), 3);
         assert_eq!(pos2texel(0, 1), 4);
         assert_eq!(pos2texel(8, 0), 32); // next tile over
-        assert_eq!(pos2texel(0, 8), 256); // next tile down
+        assert_eq!(pos2texel(0, 8), 128); // next tile row: 4 tiles x 64 px = 256 px = 128 bytes
         assert_eq!(pos2texel(31, 31), 511); // last byte
         // every pixel maps inside the buffer, and the mapping is a bijection
         let mut seen = [false; 512];

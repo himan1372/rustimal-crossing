@@ -214,10 +214,14 @@ pub mod npc1_move {
 
     /// Project back to the 60-unit boundary along the
     /// home→current angle (the C uses search_position_angleY +
-    /// sin_s/cos_s; atan2 is the equivalent).
+    /// sin_s/cos_s).
     pub fn project_to_radius(home: (f32, f32), pos: (f32, f32)) -> (f32, f32) {
-        let angle = (pos.1 - home.1).atan2(pos.0 - home.0);
-        (home.0 + angle.sin() * MAX_DIST, home.1 + angle.cos() * MAX_DIST)
+        // Verbatim: search_position_angleY = atans_table(dz, dx), i.e. the
+        // angle from +Z toward +X, then x = sin_s, z = cos_s. (The earlier
+        // `atan2(dz, dx)` swapped the axes and mirrored the snap point.)
+        use crate::game_math::{cos_s, search_position_angle_y, sin_s, Xyz};
+        let angle = search_position_angle_y(Xyz::new(home.0, 0.0, home.1), Xyz::new(pos.0, 0.0, pos.1));
+        (home.0 + sin_s(angle) * MAX_DIST, home.1 + cos_s(angle) * MAX_DIST)
     }
 }
 
@@ -444,7 +448,8 @@ mod tests {
         assert!(display::should_recalc(0.0));
         assert!(!display::should_recalc(4.0));
         assert!(display::should_request_anime(true, false, 2));
-        assert!(display::should_request_anime(true, false, 3));
+        // `arg0 <= 2` (ac_count02_move.c_inc:56): 3 seconds left is too early.
+        assert!(!display::should_request_anime(true, false, 3));
         assert!(!display::should_request_anime(true, true, 2));
         assert!(!display::should_request_anime(false, false, 2));
     }

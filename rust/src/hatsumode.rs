@@ -260,30 +260,50 @@ pub extern "C" fn pc_hatsumode_start_root(npc_idx: u8) -> i32 {
     START_ROOT[i] as i32
 }
 
+/// Retail out-of-bounds values for index 4 (HATUMODE_4), proven from the
+/// byte-matching ac-decomp symbol map (config/GAFE01_00/foresta/symbols.txt):
+/// `root_table$598` (.data 0x53F20, 4 bytes) is immediately followed by
+/// `proc_idx_table$599` (0x53F24, 4 bytes) and then `proc_table` (0x53F28,
+/// function pointers). So `root_table[4]` = `proc_idx_table[0]` = 4, and
+/// `proc_idx_table[4]` = the top byte of the big-endian pointer
+/// `proc_table[0]`. foresta.rel is loaded head-first (`ALLOC_DIR_TOP`) just
+/// above the DOL, so every code address in it is 0x80xxxxxx and the byte is
+/// 0x80.
+pub const READY2_OOB_ROOT: u8 = 4;
+pub const READY2_OOB_THINK: u8 = 0x80;
+
+/// What `dt_tbl[0x80]` (5-byte entries at .data 0x36A5C, 46 valid) reads in
+/// retail: .data 0x36CDC..0x36CE0 = the last 4 bytes of
+/// `aHC_position_data` (entry 8 `SCENE_NEEDLEWORK`, `pos.z = 0.0f`) and the
+/// high byte of `House_Clock_Profile.id` (`mAc_PROFILE_HOUSE_CLOCK` < 256),
+/// so all five bytes are 0: think proc NONE, init `none_proc1`, talk
+/// request NONE, talk 0, next think 0. The fifth worshipper simply idles;
+/// the OOB path is benign.
+pub const READY2_OOB_THINK_DATA: [u8; 5] = [0, 0, 0, 0, 0];
+
 /// Returns the `aHN0_ready2` route root and think index for an
 /// additional-NPC index via `out[0..2]`; returns 1 on success.
 /// The source tables (`{ 5, 4, 9, 3 }` / `{ 4, 27, 27, 20 }`) have only
-/// 4 entries while 5 NPCs spawn: index 4 is reachable in retail and the
-/// C code reads 1 byte out of bounds on each table (no guard; the
-/// ready2 save-area check retries rather than skipping). The helper
-/// reports invalid (returns 0) instead of reproducing that read — the
-/// OOB bytes' values are unknowable without the binary, and the read
-/// is UB in Rust as well. Downstream, an OOB think byte indexes the
-/// 46-entry `dt_tbl` (a second OOB if ≥ 46) and an OOB root byte
-/// indexes the 10-entry `aHN0_root`; the parallel tables in
-/// `aHTMD_clip_set_start` are correctly sized at 5.
+/// 4 entries while 5 NPCs spawn. Index 4 is reachable in retail and reads
+/// one byte past each table; this reproduces the proven retail values
+/// (root 4, think 0x80) instead of performing the read. Indices above 4
+/// are unreachable and report invalid (0).
 #[no_mangle]
 pub extern "C" fn pc_hatsumode_ready2(npc_idx: u8, out: *mut u8) -> u8 {
     if out.is_null() {
         return 0;
     }
     let i = npc_idx as usize;
-    if i >= READY2_ROOT.len() {
+    let (root, think) = if i < READY2_ROOT.len() {
+        (READY2_ROOT[i], READY2_PROC_IDX[i])
+    } else if i == READY2_ROOT.len() {
+        (READY2_OOB_ROOT, READY2_OOB_THINK)
+    } else {
         return 0;
-    }
+    };
     let out = unsafe { std::slice::from_raw_parts_mut(out, 2) };
-    out[0] = READY2_ROOT[i];
-    out[1] = READY2_PROC_IDX[i];
+    out[0] = root;
+    out[1] = think;
     1
 }
 
@@ -451,13 +471,16 @@ mod tests {
         assert_eq!(pc_hatsumode_start_offset(5, out.as_mut_ptr()), 0);
         assert_eq!(pc_hatsumode_start_root(2), 9);
         assert_eq!(pc_hatsumode_start_root(5), -1);
-        // ready2 tables have only 4 entries: index 4 is invalid.
+        // ready2 tables have only 4 entries; index 4 reads past them in retail.
         let mut b = [0u8; 2];
         assert_eq!(pc_hatsumode_ready2(0, b.as_mut_ptr()), 1);
         assert_eq!(b, [5, 4]);
         assert_eq!(pc_hatsumode_ready2(3, b.as_mut_ptr()), 1);
         assert_eq!(b, [3, 20]);
-        assert_eq!(pc_hatsumode_ready2(4, b.as_mut_ptr()), 0);
+        // Index 4: proven retail OOB values (root 4, think 0x80).
+        assert_eq!(pc_hatsumode_ready2(4, b.as_mut_ptr()), 1);
+        assert_eq!(b, [READY2_OOB_ROOT, READY2_OOB_THINK]);
+        assert_eq!(pc_hatsumode_ready2(5, b.as_mut_ptr()), 0);
     }
 
     #[test]
@@ -468,10 +491,14 @@ mod tests {
         assert_eq!(pc_hatsumode_next_root(4), 0); // 5 -> 0
         assert_eq!(pc_hatsumode_next_root(9), 5); // 10 -> 5
         assert_eq!(pc_hatsumode_next_root(10), -1);
-        // Destination: root 0 -> 1 -> ROUTE_ROOT[1] = 5 -> (100, 75) + shrine.
+        // Destination: root 0 -> 1 -> aHN0_root[1] = 5 -> (posX[5], posZ[5])
+        // = (-60, 75) + shrine (ac_hatumode_clip_move.c_inc).
         let mut out = [0i32; 2];
         assert_eq!(pc_hatsumode_next_pos(0, 1000, 2000, out.as_mut_ptr()), 1);
-        assert_eq!(out, [1100, 2075]);
+        assert_eq!(out, [940, 2075]);
+        // root 6 -> 7 -> aHN0_root[7] = 8 -> (100, 200).
+        assert_eq!(pc_hatsumode_next_pos(6, 1000, 2000, out.as_mut_ptr()), 7);
+        assert_eq!(out, [1100, 2200]);
     }
 
     #[test]

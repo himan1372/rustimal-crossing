@@ -179,20 +179,20 @@ pub extern "C" fn pc_fish_shadow_scale(size_type: i32) -> f32 {
     }
 }
 
-/// Behavior program: SALMON2 is normalized to SALMON
-/// first; the kaseki program is selected for
+/// Behavior program: the kaseki program is selected for
+/// SALMON2 (rewritten to SALMON, then falling through),
 /// coelacanth, jellyfish, sea bass, red snapper,
-/// barred knifejaw, and whale; everything else uses
-/// the test program.
+/// barred knifejaw, and whale; everything else (incl.
+/// plain SALMON) uses the test program.
 #[no_mangle]
 pub extern "C" fn pc_fish_behavior_program(fish_type: i32) -> i32 {
-    let fish_type = if fish_type == T_SALMON2 {
-        T_SALMON
-    } else {
-        fish_type
-    };
+    // ac_gyoei_clip.c_inc: `case SALMON2: gyo_type = SALMON;` then FALLS
+    // THROUGH into the KASEKI group, so the river-mouth salmon variant runs
+    // the KASEKI program while plain SALMON takes `default` (TEST). The type
+    // rewrite to SALMON is the caller's side effect; only the program is
+    // returned here.
     match fish_type {
-        T_COELACANTH | T_JELLYFISH | T_SEA_BASS | T_RED_SNAPPER | T_BARRED_KNIFEJAW | T_WHALE => {
+        T_SALMON2 | T_COELACANTH | T_JELLYFISH | T_SEA_BASS | T_RED_SNAPPER | T_BARRED_KNIFEJAW | T_WHALE => {
             B_KASEKI
         }
         _ => B_TEST,

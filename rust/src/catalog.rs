@@ -355,7 +355,10 @@ mod tests {
         assert!(money_check(500, 100, [4, 0, 0, 0]));
         assert!(!money_check(500, 100, [3, 0, 0, 0]));
         // bags accumulate across denominations
-        assert!(money_check(1_500, 100, [0, 0, 0, 0]));
+        // (100 wallet + 4 x 100 + 1 x 1000 = 1500; mSP_money_check adds
+        // each denomination's total before testing)
+        assert!(money_check(1_500, 100, [4, 1, 0, 0]));
+        assert!(!money_check(1_500, 100, [0, 0, 0, 0]));
         assert!(money_check(1_500, 100, [0, 2, 0, 0]));
     }
 

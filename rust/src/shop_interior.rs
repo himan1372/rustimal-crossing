@@ -651,13 +651,18 @@ mod tests {
         // furniture (high nibble 1 or 3)
         assert_eq!(item_to_slot(0x1234, shop_status::NORMAL), rsv::SHOP_FTR);
         assert_eq!(item_to_slot(0x3456, shop_status::NORMAL), rsv::SHOP_FTR);
-        assert_eq!(item_to_slot(0x2234, shop_status::NORMAL), rsv::SHOP_TOOL);
+        // 0x2234 is a paint (ITM_RED_PAINT 0x222D..ITM_BROWN_PAINT 0x2238, gcc).
+        assert_eq!(item_to_slot(0x2234, shop_status::NORMAL), rsv::SHOP_PAINT);
+        assert_eq!(item_to_slot(0x2240, shop_status::NORMAL), rsv::SHOP_TOOL);
+        assert_eq!(item_to_slot(0x2204, shop_status::NORMAL), rsv::SHOP_UMBRELLA);
         // paper and diaries
         assert_eq!(item_to_slot(0x2050, shop_status::NORMAL), rsv::SHOP_PAPER);
         assert_eq!(item_to_slot(0x2B05, shop_status::NORMAL), rsv::SHOP_PAPER);
         // carpet/wall (ranges end at *_END - 4)
         assert_eq!(item_to_slot(0x2630, shop_status::NORMAL), rsv::SHOP_CARPET);
-        assert_eq!(item_to_slot(0x2644, shop_status::NORMAL), rsv::SHOP_CARPET); // CARPET_END-3
+        // ac_shop_design.c: `item <= ITM_CARPET_END - 4` = 0x2643 (CARPET67).
+        assert_eq!(item_to_slot(0x2643, shop_status::NORMAL), rsv::SHOP_CARPET);
+        assert_ne!(item_to_slot(0x2644, shop_status::NORMAL), rsv::SHOP_CARPET); // CARPET68 is past the range
         assert_eq!(item_to_slot(0x2730, shop_status::NORMAL), rsv::SHOP_WALL);
         // clothing
         assert_eq!(item_to_slot(0x2450, shop_status::NORMAL), rsv::SHOP_CLOTH);
