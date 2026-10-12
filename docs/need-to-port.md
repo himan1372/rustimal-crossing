@@ -394,8 +394,8 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 - ✅ Intro demo: `ac_intro_demo.c`, `ac_present_demo.c`, `ac_ride_off_demo.c` → `demo_actors.rs` (claude)
 - ✅ Field drawing: `ac_field_draw.c`, `ac_fieldm_draw.c`, `ac_effectbg.c` → `field_effects.rs`, `engine_tables.rs` (claude)
 - ✅ Misc (→ `hud.rs`, `game_string.rs`, `engine_tables.rs`, `menu_overlays.rs`, `room_scoring.rs`, `hand_over_item.rs`, `field_effects.rs`; `m_tag_ovl` UI stays C apart from its bell-bag rule): `m_watch_my_step.c`, `m_eappli.c`, `m_prenmi.c`, `m_banti.c`, `m_hand_ovl.c`, `m_huusui_room.c`, `m_huusui_room_ovl.c`, `m_mark_room.c`, `m_mark_room_ovl.c`, `m_tag_ovl.c`, `m_timeIn_ovl.c`, `m_warning_ovl.c`, `m_cpmail_ovl.c`, `m_cpwarning_ovl.c`, `ac_handOverItem.c`, `ac_boxManager.c`, `ac_boxMove.c`, `ac_boxTrick01.c`, `ac_buggy.c`, `ac_fallS.c`, `ac_fallSESW.c`, `ac_set_manager.c` (claude)
-- **Inventory UI** — the pockets/inventory management overlay. `m_inventory_ovl.c`
-- **Submenu framework** — the generic submenu system backing many overlays. `m_submenu.c`, `m_submenu_ovl.c`
+- 🔄 **Inventory UI** (claimed by claude 2026-10-12, `port-inventory-submenu`) — the pockets/inventory management overlay. `m_inventory_ovl.c`
+- 🔄 **Submenu framework** (claimed by claude 2026-10-12, `port-inventory-submenu`) — the generic submenu system backing many overlays. `m_submenu.c`, `m_submenu_ovl.c`
 - **Save/flash system** — intentionally C-side (hardware save writes). `m_flashrom.c`
 
 ---
