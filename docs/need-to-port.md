@@ -305,14 +305,14 @@ flee predicate; test/kaseki state machines stay in C)
 helpers: eligibility, retry window, shock/status frames, force-catch; audit-fixed
 type ids, status values, s16 target frame, 8.9f speed; ghog hive visual stays in C)
 
-**Weather system** — rain/snow/leaf/sakura weather selection and the weather actors.
+🔄 **Weather system** (claimed by claude 2026-10-12, `port-nature-weather-assessment`) — rain/snow/leaf/sakura weather selection and the weather actors.
 `m_kankyo.c`, `m_kankyo_weather.c_inc`, `ac_weather.c`, `ac_weather_fine.c`,
 `ac_weather_leaf.c`, `ac_weather_rain.c`, `ac_weather_sakura.c`
 
-**Field assessment (perfect town)** — the town-beauty rating logic.
+🔄 **Field assessment (perfect town)** (claimed by claude 2026-10-12, `port-nature-weather-assessment`) — the town-beauty rating logic.
 `m_field_assessment.c`
 
-**Grass wear** — grass deterioration under the player's feet.
+🔄 **Grass wear** (claimed by claude 2026-10-12, `port-nature-weather-assessment`) — grass deterioration under the player's feet.
 `m_player_main_remove_grass.c_inc`
 
 ---
