@@ -132,7 +132,7 @@ effects, and event orchestration stay in C until differential tests pass. The ev
 
 Small, bounded follow-ups identified during the 2026-10-11 event-port batch.
 
-### 🆕 New open items (added 2026-10-11/12 — do these first)
+### 🆕 New items (added 2026-10-11/12 — all resolved)
 
 - ✅ **lbRTC_IsEqualDate little-endian type-pun bug** — RESOLVED 2026-10-12 (claude).
   Proven with mingw32: the packed `int` compare reverses every cross-month/cross-year
@@ -365,10 +365,8 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 ## Suggested port order (opinionated)
 
 Philip asked "what's next" before — if he asks again, the current state is in
-"Leftover pieces" above: 3 new open items first (lbRTC_IsEqualDate LE bug,
-Hatsumode OOB byte contents, 20 pre-existing test failures), then claude's
-in-progress gyroid→snowman batch, then the unclaimed fish/insect follow-ups.
-Beyond that:
+"Leftover pieces" above: everything is resolved except the unclaimed
+**insect follow-ups**. Beyond that:
 1. **GBA Island** — needs link-cable hardware behavior; defer
    (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
 
