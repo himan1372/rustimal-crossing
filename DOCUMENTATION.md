@@ -6058,7 +6058,7 @@ Task `port-villager-ai-schedules`. Four new pure-logic modules fill the gaps lef
 
 ## Nature: weather, wind, lighting, perfect town, weed pulling (claude, 2026-10-12)
 
-Task `port-nature-weather-assessment`. Five new pure-logic modules; the existing `weather_season.rs` (daily weather table and roll, USA sakura bug, event override, save packing, wind terms) is reused unchanged. Sources: ac-decomp `09ca8e8b` (primary) and ACGC-PC-Port (secondary). Item ranges and angle constants were verified by compiling the source macros with mingw32 gcc. Tests are written but **not yet run** (needs Philip's authorization).
+Task `port-nature-weather-assessment`. Five new pure-logic modules; the existing `weather_season.rs` (daily weather table and roll, USA sakura bug, event override, save packing, wind terms) is reused unchanged. Sources: ac-decomp `09ca8e8b` (primary) and ACGC-PC-Port (secondary). Item ranges and angle constants were verified by compiling the source macros with mingw32 gcc. Tests pass (authorized run #17, 2026-10-12: 1023/1023; the lighting cross-fade takes 601 frames because 1/600 accumulates in f32 to 0.9999991 after 600).
 
 | Module | C source | Covers |
 |---|---|---|
@@ -6089,7 +6089,7 @@ Task `port-nature-weather-assessment`. Five new pure-logic modules; the existing
 
 ## Submenu framework and inventory screen (claude, 2026-10-12)
 
-Task `port-inventory-submenu`. Two new pure-logic modules. Existing `choice.rs` (choice window), `menu_overlays.rs` (hand stacking, money bags, card-mail pages) and `inventory.rs` (pocket scans) were reused unchanged. Save/flash (`m_flashrom.c`) stays intentionally in C. Sources: ac-decomp `09ca8e8b` (primary), ACGC-PC-Port (secondary). Item ranges come from gcc over `m_name_table.h`; the copied tables (overlay flags, slide data, tag enum, per-place menus) were checked against the C by script. Tests are written but **not yet run** (needs Philip's authorization).
+Task `port-inventory-submenu`. Two new pure-logic modules. Existing `choice.rs` (choice window), `menu_overlays.rs` (hand stacking, money bags, card-mail pages) and `inventory.rs` (pocket scans) were reused unchanged. Save/flash (`m_flashrom.c`) stays intentionally in C. Sources: ac-decomp `09ca8e8b` (primary), ACGC-PC-Port (secondary). Item ranges come from gcc over `m_name_table.h`; the copied tables (overlay flags, slide data, tag enum, per-place menus) were checked against the C by script. Tests pass (authorized run #17, 2026-10-12: 1023/1023).
 
 | Module | C source | Covers |
 |---|---|---|

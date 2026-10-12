@@ -190,9 +190,13 @@ mod tests {
         assert!(f.request(0, 1));
         assert_eq!((f.now, f.next), (0, 1));
         assert!(!f.request(1, 0));
+        // f32 accumulation: 600 x (1/600) = 0.9999991, so the fade (like
+        // the C) only reaches 1.0 on frame 601.
         for _ in 0..600 {
             f.step(CHANGE_WEATHER_ENV_RATE_USA, true, 1);
         }
+        assert!(f.rate < 1.0);
+        f.step(CHANGE_WEATHER_ENV_RATE_USA, true, 1);
         assert_eq!((f.now, f.rate), (0, 1.0));
         f.step(CHANGE_WEATHER_ENV_RATE_USA, false, 1);
         assert_eq!((f.now, f.rate), (1, 0.0));
