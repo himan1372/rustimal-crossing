@@ -6056,6 +6056,37 @@ Task `port-villager-ai-schedules`. Four new pure-logic modules fill the gaps lef
 - Island villager and HP-mail parts of `m_npc.c` belong to the island and mail systems.
 - C wiring: these modules are pure kernels with no `pc_*` exports yet.
 
+## Nature: weather, wind, lighting, perfect town, weed pulling (claude, 2026-10-12)
+
+Task `port-nature-weather-assessment`. Five new pure-logic modules; the existing `weather_season.rs` (daily weather table and roll, USA sakura bug, event override, save packing, wind terms) is reused unchanged. Sources: ac-decomp `09ca8e8b` (primary) and ACGC-PC-Port (secondary). Item ranges and angle constants were verified by compiling the source macros with mingw32 gcc. Tests are written but **not yet run** (needs Philip's authorization).
+
+| Module | C source | Covers |
+|---|---|---|
+| `rust/src/field_assessment.rs` | `m_field_assessment.c` | Item classes, per-acre points, town score and rank, trash/`dust_flag` rules, dump area, shrine conditions, golden-axe streak, special-event day gap |
+| `rust/src/wind.rs` | `m_kankyo_weather.c_inc` | Wind init, 10-minute changes, gust/lull/recover state machine, clamped and windmill power, the per-frame RNG burn |
+| `rust/src/weather_actor.rs` | `ac_weather*.c`, `m_kankyo_weather.c_inc` | Start-of-day and live weather decisions, island roll, title-demo weather, 100-slot particle pool, intensity ramps and transitions, rain/snow/petal/leaf emission, thunder, rain ambience |
+| `rust/src/kankyo_env.rs` | `m_kankyo.c` | 8 light periods and blend, weather-to-colour-table mapping, lighting cross-fade, rainbow, indoor window light |
+| `rust/src/weed_pull.rs` | `m_player_main_remove_grass.c_inc` | Pulling a weed (frame 17, fly angle +110 degrees) |
+
+### Findings that differ from Philip's brief
+- **30 acres**, not 25: the rating scans all 5 x 6 town acres.
+- **Trash lock**: 5+ pieces of trash zero the score and set the saved `dust_flag`; until **every** piece outside the dump is gone, the town stays rank 0.
+- **Shrine talk resets the streak** whenever it finds any problem acre, even at rank 6. The first perfect day starts the streak at 0.
+- **Rain splashes are timed** (10 frames after spawning), not triggered near the ground.
+- **Grass wear doesn't exist on GameCube.** The listed file is the weed-pulling action. The decomp has no per-tile ground state; worn paths are a City Folk feature.
+
+### Quirks kept
+- **Bad-acre bug:** retail always points at the last dusty acre and never rolls `RANDOM(3)`.
+- **Tree threshold:** an acre with exactly 17 trees is reported as "too many trees" but still scores a point.
+- **Window light** goes dark for about 4 minutes around 05:47 and 18:12 (s16 wrap in the noon/midnight test).
+- **RNG burn:** the weather actor consumes two RNG draws every frame for a wind direction it throws away.
+- **K.K. Slider's leaves** are stored as clear weather, and use the clear-weather lighting.
+
+### Left in C
+- Colour tables and fog/point-light application.
+- Particle drawing, sound playback, effects.
+- No `pc_*` exports yet.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

@@ -189,6 +189,11 @@ mod npc_walk;
 mod npc_set_manager;
 mod quest_firstjob;
 mod npc_life;
+mod field_assessment;
+mod wind;
+mod weather_actor;
+mod kankyo_env;
+mod weed_pull;
 mod villager_ai;
 mod repay;
 

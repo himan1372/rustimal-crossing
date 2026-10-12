@@ -305,14 +305,14 @@ flee predicate; test/kaseki state machines stay in C)
 helpers: eligibility, retry window, shock/status frames, force-catch; audit-fixed
 type ids, status values, s16 target frame, 8.9f speed; ghog hive visual stays in C)
 
-🔄 **Weather system** (claimed by claude 2026-10-12, `port-nature-weather-assessment`) — rain/snow/leaf/sakura weather selection and the weather actors.
+✅ **Weather system** (claude 2026-10-12: `weather_actor.rs`, `wind.rs`, `kankyo_env.rs` + existing `weather_season.rs`; colour tables, drawing and sound stay in C) — rain/snow/leaf/sakura weather selection and the weather actors.
 `m_kankyo.c`, `m_kankyo_weather.c_inc`, `ac_weather.c`, `ac_weather_fine.c`,
 `ac_weather_leaf.c`, `ac_weather_rain.c`, `ac_weather_sakura.c`
 
-🔄 **Field assessment (perfect town)** (claimed by claude 2026-10-12, `port-nature-weather-assessment`) — the town-beauty rating logic.
+✅ **Field assessment (perfect town)** (claude 2026-10-12: `field_assessment.rs`, incl. dust lock, shrine conditions, golden-axe streak) — the town-beauty rating logic.
 `m_field_assessment.c`
 
-🔄 **Grass wear** (claimed by claude 2026-10-12, `port-nature-weather-assessment`) — grass deterioration under the player's feet.
+✅ **Grass wear** (claude 2026-10-12: `weed_pull.rs`; the file is weed pulling, GameCube has no persistent grass wear) — grass deterioration under the player's feet.
 `m_player_main_remove_grass.c_inc`
 
 ---
