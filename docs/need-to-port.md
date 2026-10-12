@@ -108,7 +108,11 @@ remail kinds + message table (`museum.rs`); catalog orders + lottery special del
 Still in C: the mailbox overlay UI, the letter-writing UI, and the ROM text resources.
 `m_mail.c`, `m_mailbox_ovl.c`, `m_mail_check.c`, `m_mail_check_ovl.c`, `m_mail_password_check.c`
 
-**Mortgage repayment** — Nook's house-debt payment UI at the post office.
+✅ **Mortgage repayment** — Nook's house-debt payment kernels: money-item scan,
+max_repay, digit adjust with clamp/reject, preview fields, and the wallet/pocket
+consumption routine (wallet-first, then denominations 100→30000). → `repay.rs`
+(muse, 2026-10-12). Submenu flow, sounds, drawing, and the give-from-submenu
+request stay in C.
 `m_repay_ovl.c`
 
 ---
