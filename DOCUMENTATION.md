@@ -6032,6 +6032,30 @@ source and ACGC-PC-Port the secondary one.
 `cargo check` is clean (host + i686, lib and tests). Clippy has 0
 errors, and no `pc_*` exports are duplicated.
 
+## Villager AI: walking, placement, first-job errands, life cycle (claude, 2026-10-12)
+
+Task `port-villager-ai-schedules`. Four new pure-logic modules fill the gaps left by `npc.rs`, `npc_ai.rs`, `quest.rs`, `quest_gen.rs`, `villager_home.rs` and `dialogue_topics.rs`; no existing files were edited apart from `lib.rs` registration. Sources: ac-decomp (primary) and ACGC-PC-Port (secondary). Tests are written but **not yet run** (needs Philip's authorization).
+
+| Module | C source | Covers |
+|---|---|---|
+| `rust/src/npc_walk.rs` | `m_npc_walk.c`, `m_npc_schedule.c` (slots) | Per-personality goal tables (script-checked against the C), walker selection and rotation (5 walkers in a full town), shrine / villager-home / empty / own-home goal acres, nearest gate, schedule-slot pool incl. the island slot (index 15) |
+| `rust/src/npc_set_manager.rs` | `ac_set_npc_manager.c` | Spawn scopes (PC borderless: 3x3 acres), regular and guest appear rules, safe standing unit (tent/car footprint, 3x3 search, random), off-screen walking every 7 s, 3-per-acre cap, 30-minute stay on arrival, go-home acre candidates, spawn suppression |
+| `rust/src/quest_firstjob.rs` | `m_quest.c` | Tom Nook's first-day errand chain (every step setter), first-job slot lookup, pocket item -> errand/delivery lookups, overdue check by pocket, snowman/soccer contest hooks |
+| `rust/src/npc_life.rs` | `m_npc.c` | Best friend (>= 80, tie-breaks), highest friendship, move-out choice, move-in eligibility and slot, has-appeared bitfield and reset, present-clothing swap |
+
+### Quirks kept (retail behaviour)
+- **Empty-acre goal** draws `RANDOM(30 - villager_count)`: it counts villagers, not occupied acres, so shared acres make the last empty acres unreachable.
+- **Nearest gate** tests `WEST || WEST` (decomp-marked bug), measures east/south as `16 - ut`, and since every gate passes the `< 16` test the **last** gate on that side always wins.
+- **Guest leaving** gets timer 10800 (3 min); the decomp suspects 108001 was intended.
+- **First-job start** leaves progress 0, which `CheckFirstJobFin` reads as finished.
+- **Move-out pass 2** ("met by some player") stops at the first player who hasn't met the villager, so it means "met by the first existing player".
+- **Move-out fallback** always reduces the count by one (`ignored >= 0 || ignored < 15`), so the last villager in slot order can't be chosen there.
+- **Best-friend tie**: a letter beats no letter; otherwise the memory spoken to *earlier* wins.
+
+### Left for later
+- Island villager and HP-mail parts of `m_npc.c` belong to the island and mail systems.
+- C wiring: these modules are pure kernels with no `pc_*` exports yet.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

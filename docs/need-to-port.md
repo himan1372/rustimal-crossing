@@ -60,7 +60,7 @@ Legend: ✅ = ported (Rust module named). Entries without ✅ still need porting
 The everyday villager behavior engine. Only the special-event visitors are ported
 (see above); the 15 regular villagers' daily life is still entirely in C.
 
-🔄 **Villager AI & schedules** (claimed by claude 2026-10-12, `port-villager-ai-schedules`) — daily routines, schedule tables, walking, favors.
+✅ **Villager AI & schedules** (claude, 2026-10-12: npc_walk.rs, npc_set_manager.rs, quest_firstjob.rs, npc_life.rs; island/HP-mail parts of m_npc.c and C wiring deferred) — daily routines, schedule tables, walking, favors.
 `m_npc.c`, `m_npc_schedule.c`, `m_npc_walk.c`, `ac_set_npc_manager.c`, `m_quest.c`
 
 ---
