@@ -55,6 +55,16 @@ Legend: ✅ = ported (Rust module named). Entries without ✅ still need porting
 
 ---
 
+## Villagers (core AI — not yet ported)
+
+The everyday villager behavior engine. Only the special-event visitors are ported
+(see above); the 15 regular villagers' daily life is still entirely in C.
+
+**Villager AI & schedules** — daily routines, schedule tables, walking, favors.
+`m_npc.c`, `m_npc_schedule.c`, `m_npc_walk.c`, `ac_set_npc_manager.c`, `m_quest.c`
+
+---
+
 ## Shops & services
 
 ✅ **Stalk market (turnips)** — Joan's Sunday turnip sales, Nook's daily prices, spoilage. → `stalk_market.rs`
@@ -86,6 +96,12 @@ Legend: ✅ = ported (Rust module named). Entries without ✅ still need porting
 ✅ **Player house interiors** — rooms, clock, furniture arranging. → `house_interior.rs`
 (the furniture placement judge, switch bitfields, and haniwa steps are in `furniture.rs`; `ac_arrange_ftr.c` is an empty stub with nothing to port)
 `ac_my_house.c`, `ac_my_indoor.c`, `ac_my_room.c`, `ac_house_clock.c`, `ac_arrange_ftr.c`, `ac_arrange_room.c`
+
+**Mail & letter system** — sending/writing letters, the mailbox UI, letter delivery checks.
+`m_mail.c`, `m_mailbox_ovl.c`, `m_mail_check.c`, `m_mail_check_ovl.c`, `m_mail_password_check.c`
+
+**Mortgage repayment** — Nook's house-debt payment UI at the post office.
+`m_repay_ovl.c`
 
 ---
 
@@ -277,6 +293,16 @@ flee predicate; test/kaseki state machines stay in C)
 helpers: eligibility, retry window, shock/status frames, force-catch; audit-fixed
 type ids, status values, s16 target frame, 8.9f speed; ghog hive visual stays in C)
 
+**Weather system** — rain/snow/leaf/sakura weather selection and the weather actors.
+`m_kankyo.c`, `m_kankyo_weather.c_inc`, `ac_weather.c`, `ac_weather_fine.c`,
+`ac_weather_leaf.c`, `ac_weather_rain.c`, `ac_weather_sakura.c`
+
+**Field assessment (perfect town)** — the town-beauty rating logic.
+`m_field_assessment.c`
+
+**Grass wear** — grass deterioration under the player's feet.
+`m_player_main_remove_grass.c_inc`
+
 ---
 
 ## Big-ticket systems
@@ -356,6 +382,9 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 - ✅ Intro demo: `ac_intro_demo.c`, `ac_present_demo.c`, `ac_ride_off_demo.c` → `demo_actors.rs` (claude)
 - ✅ Field drawing: `ac_field_draw.c`, `ac_fieldm_draw.c`, `ac_effectbg.c` → `field_effects.rs`, `engine_tables.rs` (claude)
 - ✅ Misc (→ `hud.rs`, `game_string.rs`, `engine_tables.rs`, `menu_overlays.rs`, `room_scoring.rs`, `hand_over_item.rs`, `field_effects.rs`; `m_tag_ovl` UI stays C apart from its bell-bag rule): `m_watch_my_step.c`, `m_eappli.c`, `m_prenmi.c`, `m_banti.c`, `m_hand_ovl.c`, `m_huusui_room.c`, `m_huusui_room_ovl.c`, `m_mark_room.c`, `m_mark_room_ovl.c`, `m_tag_ovl.c`, `m_timeIn_ovl.c`, `m_warning_ovl.c`, `m_cpmail_ovl.c`, `m_cpwarning_ovl.c`, `ac_handOverItem.c`, `ac_boxManager.c`, `ac_boxMove.c`, `ac_boxTrick01.c`, `ac_buggy.c`, `ac_fallS.c`, `ac_fallSESW.c`, `ac_set_manager.c` (claude)
+- **Inventory UI** — the pockets/inventory management overlay. `m_inventory_ovl.c`
+- **Submenu framework** — the generic submenu system backing many overlays. `m_submenu.c`, `m_submenu_ovl.c`
+- **Save/flash system** — intentionally C-side (hardware save writes). `m_flashrom.c`
 
 ---
 
@@ -371,8 +400,10 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 ## Suggested port order (opinionated)
 
 Philip asked "what's next" before — if he asks again, the current state is in
-"Leftover pieces" above: everything is resolved except the unclaimed
-**insect follow-ups**. Beyond that:
+"Leftover pieces" above (all resolved) plus the newly listed open systems:
+villager core AI, the mail/letter system, mortgage repayment, weather,
+field assessment, grass wear, the inventory UI, and the submenu framework.
+Beyond that:
 1. **GBA Island** — needs link-cable hardware behavior; defer
    (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
 
