@@ -6087,6 +6087,33 @@ Task `port-nature-weather-assessment`. Five new pure-logic modules; the existing
 - Particle drawing, sound playback, effects.
 - No `pc_*` exports yet.
 
+## Submenu framework and inventory screen (claude, 2026-10-12)
+
+Task `port-inventory-submenu`. Two new pure-logic modules. Existing `choice.rs` (choice window), `menu_overlays.rs` (hand stacking, money bags, card-mail pages) and `inventory.rs` (pocket scans) were reused unchanged. Save/flash (`m_flashrom.c`) stays intentionally in C. Sources: ac-decomp `09ca8e8b` (primary), ACGC-PC-Port (secondary). Item ranges come from gcc over `m_name_table.h`; the copied tables (overlay flags, slide data, tag enum, per-place menus) were checked against the C by script. Tests are written but **not yet run** (needs Philip's authorization).
+
+| Module | C source | Covers |
+|---|---|---|
+| `rust/src/submenu.rs` | `m_submenu.c`, `m_submenu_ovl.c` | When a menu may open, the WAIT→PREWAIT→LINKWAIT→PLAY→END process, sub-overlay flags, slide-in data and motion, the menu return chain, held-input repeat, per-open-mode pocket eligibility, collection bit indices |
+| `rust/src/inventory_ui.rs` | `m_inventory_ovl.c`, `m_tag_ovl.c` | Selectable item/letter masks per open mode, companion menus, initial cursor, 3-page turn, the action menu for items, letters and money, mark rules and bit operations |
+
+### Findings beyond the brief
+- **Board shortcut:** pressing A at a message or map board opens it even during the first-intro sequence; menus requested by NPCs skip all the button checks.
+- **Gyroid storage** lets you pick empty pocket slots; the card-mail letter mask is the inverse of the send-mail one.
+- **Selling:** money can never be marked, and turnips can't be marked on Sundays.
+- **Input repeat:** a held direction fires once, then after 26 frames, then every 4 frames.
+
+### Quirks kept
+- **Harmless `@BUG`:** the basement carpet/wallpaper check uses `|` for `||`; with 0/1 operands the result is identical.
+- **"All zero" check:** `mTG_bit_chk_all0` returns true when *any* byte is zero; no caller uses it.
+- **Unused timer:** `wait_timer` counts down but nothing in `m_submenu.c` reads it.
+
+### Left in C
+- Overlay linking, prerender and audio.
+- Hand transfer and inventory/mail writes.
+- Tag window layout, animation and drawing.
+- Save/flash.
+- No `pc_*` exports yet.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)

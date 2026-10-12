@@ -194,6 +194,8 @@ mod wind;
 mod weather_actor;
 mod kankyo_env;
 mod weed_pull;
+mod submenu;
+mod inventory_ui;
 mod villager_ai;
 mod repay;
 
