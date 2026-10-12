@@ -190,6 +190,7 @@ mod npc_set_manager;
 mod quest_firstjob;
 mod npc_life;
 mod villager_ai;
+mod repay;
 
 const CISO_HEADER_SIZE: usize = 0x8000;
 const CISO_MAP_OFFSET: usize = 8;
