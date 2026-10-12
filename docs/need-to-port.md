@@ -228,7 +228,7 @@ Small, bounded follow-ups identified during the 2026-10-11 event-port batch.
 
 ### ⏳ Open (unclaimed)
 
-- ⏳ **Insect follow-ups** — per-family transition tables for the 14 behavior programs;
+- 🔄 **Insect follow-ups** (claimed by claude 2026-10-12, `port-insect-followups`) — per-family transition tables for the 14 behavior programs;
   exact net-hit/inventory handoff; per-family work-slot and flag semantics;
   how the Rust spawn tables pass type/position/release metadata into the C controller;
   `aINS_overlay_entry_c` (0x1C08) model tables; chou flower-search offset tables
