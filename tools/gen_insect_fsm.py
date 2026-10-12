@@ -13,6 +13,19 @@ import glob, json, os, re, sys
 d = sys.argv[1]
 out = {}
 
+# Map aINS_INSECT_TYPE_* ordinals: retail sometimes passes a TYPE constant
+# where an ACTION is expected (e.g. chou's pansy rest passes PURPLE_BUTTERFLY=3
+# = ACTION_LANDING). Parse the header enum so those calls resolve by value.
+_type_ord = {}
+try:
+    hdr = open(os.path.join(d, "include/ac_insect_h.h"), encoding="utf-8").read()
+    em = re.search(r"enum insect_type\s*\{([^}]*)\}", hdr, re.S)
+    if em:
+        _type_ord = {n.strip(): i for i, n in enumerate(
+            [x.split("=")[0].strip() for x in em.group(1).split(",") if x.strip()])}
+except OSError:
+    pass
+
 
 def strip_comments(s):
     s = re.sub(r"/\*.*?\*/", "", s, flags=re.S)
@@ -56,9 +69,15 @@ for f in sorted(glob.glob(os.path.join(d, "src/actor/ac_ins_*.c"))):
     init_tab = next((v for k, v in procs.items() if "init" in k.lower()), [])
     call_re = re.compile(re.escape(setup_name) + r"\s*\(\s*\w+\s*,\s*(" + re.escape(prefix + sep) + r"\w+)") if setup_name else None
 
+    type_call_re = re.compile(re.escape(setup_name) + r"\s*\(\s*\w+\s*,\s*(aINS_INSECT_TYPE_\w+)") if setup_name else None
+
     def targets(fn_name, depth=0):
         body = fns.get(fn_name, "")
         t = set(call_re.findall(body)) if call_re else set()
+        if type_call_re and _type_ord:
+            for tc in type_call_re.findall(body):
+                if tc in _type_ord and _type_ord[tc] < len(actions):
+                    t.add(actions[_type_ord[tc]])
         if setup_name:
             for var in re.findall(re.escape(setup_name) + r"\s*\(\s*\w+\s*,\s*([a-z]\w*)\s*,", body):
                 t |= set(re.findall(r"\b" + var + r"\s*=\s*(" + re.escape(prefix + sep) + r"\w+)", body))

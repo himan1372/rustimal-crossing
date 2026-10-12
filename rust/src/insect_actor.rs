@@ -307,6 +307,9 @@ pub const OVERLAY_ENTRY_DATA: usize = 0x1C00;
 pub const OVERLAY_ENTRIES: usize = 3;
 pub const OVERLAY_BSS_SIZE: usize = OVERLAY_ENTRIES * OVERLAY_ENTRY_SIZE;
 
+/// `aINS_Init_c` spawn-parameter block size (header).
+pub const INIT_STRUCT_SIZE: usize = 0x18;
+
 /// `aINS_INSECT_ACTOR` / controller sizes (header).
 pub const INSECT_ACTOR_SIZE: usize = 0x288;
 pub const INSECT_CTRL_SIZE: usize = 0x183C;
@@ -538,8 +541,16 @@ pub fn chou_search_rng_draws(searched: bool, near_walkable_but_too_high: bool) -
 /// computed `setupAction` arguments), the actions `actor_init` can start
 /// in, and those `actor_move` forces (net catch / lifetime escape).
 pub const PROGRAM_FSM: [ProgramFsm; 14] = [
+    // QUIRK (muse, 2026-10-12): FLY -> LANDING is missing from the generated
+    // table's regex view but real: `aICH_fly` calls `aICH_rest_check`, which on
+    // pansies (FLOWER_PANSIES0) calls setupAction(insect,
+    // aINS_INSECT_TYPE_PURPLE_BUTTERFLY) — the TYPE id 3 numerically equals
+    // aICH_ACTION_LANDING. tools/gen_insect_fsm.py now resolves type-constant
+    // action arguments by ordinal, so this edge is generated, not hand-kept.
+    // (Purple butterflies never run rest_check, so they never flower-search;
+    // tiger butterflies only run it while patience <= 90.)
     ProgramFsm { family: "chou", actions: &["AVOID", "LET_ESCAPE", "FLY", "LANDING", "HOVER", "REST"],
-        transitions: &[&[2], &[], &[0], &[0, 4], &[0, 2, 5], &[0, 2, 5]],
+        transitions: &[&[2], &[], &[0, 3], &[0, 4], &[0, 2, 5], &[0, 2, 5]],
         initial: &[2, 1], forced: &[1] },
     ProgramFsm { family: "batta", actions: &["AVOID", "LET_ESCAPE", "CHANGE_DIRECTION", "WAIT", "JUMP", "DROWN"],
         transitions: &[&[2, 5], &[5], &[3], &[0, 2, 5, 4], &[2], &[]],
@@ -742,6 +753,31 @@ mod followup_tests {
         assert!(batta.can_go("WAIT", "JUMP") && batta.can_go("JUMP", "CHANGE_DIRECTION"));
         let kera = &PROGRAM_FSM[P_KERA as usize];
         assert!(kera.can_go("AVOID", "DUG"));
+    }
+
+    #[test]
+    fn abi_sizes() {
+        // Header sizes (include/ac_insect_h.h): the init block passed to the
+        // controller, the pooled actor, the controller, and one overlay entry.
+        assert_eq!(INIT_STRUCT_SIZE, 0x18);
+        assert_eq!(INSECT_ACTOR_SIZE, 0x288);
+        assert_eq!(INSECT_CTRL_SIZE, 0x183C);
+        assert_eq!(OVERLAY_ENTRY_SIZE, 0x1C08);
+        assert_eq!(OVERLAY_ENTRY_DATA, 0x1C00);
+        assert_eq!(OVERLAY_BSS_SIZE, 3 * 0x1C08);
+        // Controller BSS holds the 9 pooled actors past the ACTOR header.
+        assert!(INSECT_CTRL_SIZE > 9 * INSECT_ACTOR_SIZE);
+    }
+
+    #[test]
+    fn chou_pansy_quirk() {
+        // FLY -> LANDING via the pansy rest_check (type id 3 = action id 3).
+        let chou = &PROGRAM_FSM[P_CHOU as usize];
+        assert!(chou.can_go("FLY", "LANDING"));
+        assert!(chou.can_go("LANDING", "HOVER"));
+        assert!(!chou.can_go("FLY", "REST"));
+        // Purple butterflies never flower-search (chou_should_search gate).
+        assert!(!chou_should_search(0.9, false, true));
     }
 
     #[test]
