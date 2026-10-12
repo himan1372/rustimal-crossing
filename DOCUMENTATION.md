@@ -5965,6 +5965,73 @@ decomp, often with gcc and f32 arithmetic. Notable ones:
 - `name_editor.rs`: the NG-word scan includes the C's extra
   `input_length - len + 1` start offset.
 
+## Insect follow-ups (2026-10-12, claude)
+
+`insect_actor.rs` gains a "Follow-ups resolved" section and a
+`followup_tests` module (written, not run). ac-decomp was the primary
+source and ACGC-PC-Port the secondary one.
+
+- **State machines:** `PROGRAM_FSM` holds all 14 behaviour programs,
+  generated from `ac_ins_*.c` by `tools/gen_insect_fsm.py`. For each
+  action it lists the targets reachable from its act proc, its init proc
+  and one level of helpers. It also lists the actions `actor_init` can
+  start in and the LET_ESCAPE that `actor_move` forces. Computed
+  `setupAction(insect, action)` arguments are resolved from the constant
+  assignments in the same function.
+- **Catch handoff:**
+  - Every frame each catchable insect (no `bit_1`) registers itself as a
+    net-catch label.
+  - The player picks the label, and the matching program switches to its
+    escape/held action; every despawn path skips the labelled actor.
+  - The pocket item is `insect->item`: `ITM_INSECT_START + type`, or
+    `ITM_SPIRIT0` for the spirit. Bee-swarm and ant catches use INSECT08
+    and INSECT38.
+  - Spirits stack onto an existing pocket in
+    `[SPIRIT0, SPIRIT0 + 5 - count)`.
+  - The collection bit is set for everything except the spirit; ants and
+    mosquitoes show the arrow effect; the fanfare is 0x4B if already
+    collected, else 0x28.
+- **Flags:**
+
+  | Flag | Meaning |
+  |---|---|
+  | `destruct` | Delete at the next cull |
+  | `bit_1` | Not catchable |
+  | `bit_2` | Fleeing (no wall check, no lifetime auto-escape) |
+  | `bit_3` | Lifetime of 216000 frames expired |
+  | `bit_4` | Wall check enabled |
+
+  Goki `flag == 4` means catchable. Each family's work slots are listed in
+  `WORK_SLOTS` (decomp macro names where they exist).
+- **Spawn metadata:** `aINS_Init_c` carries {type, unit centre,
+  extra_data}, and the spawner calls `make_insect_proc` with
+  `MAKE_NEW` (slots 0-7). Released insects use `MAKE_EXIST` (slot 8)
+  with extra_data 1. Cockroaches get 4 on a tree and 6 on a spoiled
+  turnip. Ants are deferred through `make_ant_proc`.
+- **`aINS_overlay_entry_c` (0x1C08):** `aINS_overlay` is 3 entries,
+  0x5418 bytes of `.bss`. It is only initialised (`_1C00 = PROGRAM_NUM`)
+  and never read: vestigial N64 code-overlay slots, not model tables.
+- **Butterfly flower search:**
+  - Orbits four corners at ±10 around the target; the steering step is
+    0x800 within 15 units, else 0x400.
+  - After a full loop it calls the search. It always draws one `fqrand`
+    first: on a flower, a roll below 0.5 stays put. Purple butterflies
+    never search.
+  - The search draws RANDOM(3) for x, then RANDOM(3) for z, from
+    {-1, 0, 1}, keeping units in 1..14. The target must be walkable. If
+    its ground is 20 or more units above the butterfly, it retries once
+    with {-2, 0, 2} (two more draws).
+- **Quirks:**
+  - dango's `case SPIDER: break` would leave an empty item, but it is
+    unreachable (spiders run the MINO program).
+  - kabuto and semi only accept plain `CEDAR_TREE`, not decorated cedars
+    (@BUG in the decomp).
+  - The spirit relocation's hard-coded 5 equals
+    `mEv_GHOST_HITODAMA_NUM`.
+
+`cargo check` is clean (host + i686, lib and tests). Clippy has 0
+errors, and no `pc_*` exports are duplicated.
+
 ## File Reference
 
 ### PC Port Layer (what we wrote)
