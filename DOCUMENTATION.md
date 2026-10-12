@@ -6034,7 +6034,7 @@ errors, and no `pc_*` exports are duplicated.
 
 ## Villager AI: walking, placement, first-job errands, life cycle (claude, 2026-10-12)
 
-Task `port-villager-ai-schedules`. Four new pure-logic modules fill the gaps left by `npc.rs`, `npc_ai.rs`, `quest.rs`, `quest_gen.rs`, `villager_home.rs` and `dialogue_topics.rs`; no existing files were edited apart from `lib.rs` registration. Sources: ac-decomp (primary) and ACGC-PC-Port (secondary). Tests are written but **not yet run** (needs Philip's authorization).
+Task `port-villager-ai-schedules`. Four new pure-logic modules fill the gaps left by `npc.rs`, `npc_ai.rs`, `quest.rs`, `quest_gen.rs`, `villager_home.rs` and `dialogue_topics.rs`; no existing files were edited apart from `lib.rs` registration. Sources: ac-decomp (primary) and ACGC-PC-Port (secondary). Tests pass (authorized run #16, 2026-10-12: 990/990).
 
 | Module | C source | Covers |
 |---|---|---|
