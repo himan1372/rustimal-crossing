@@ -55,13 +55,16 @@ Legend: ✅ = ported (Rust module named). Entries without ✅ still need porting
 
 ---
 
-## Villagers (core AI — not yet ported)
+## Villagers (core AI — partly ported)
 
 The everyday villager behavior engine. Only the special-event visitors are ported
-(see above); the 15 regular villagers' daily life is still entirely in C.
+(see above); the 15 regular villagers' daily life is still largely in C.
 
 ✅ **Villager AI & schedules** (claude, 2026-10-12: npc_walk.rs, npc_set_manager.rs, quest_firstjob.rs, npc_life.rs; island/HP-mail parts of m_npc.c and C wiring deferred) — daily routines, schedule tables, walking, favors.
+✅ **Schedule tables & talk cooldown** (muse, 2026-10-12) — the six personality schedule tables (verbatim, strict `end_time > now_sec` first-match lookup), the saved/current/forced-timer manager step, and the talk-cooldown temper table (verbatim, looks-indexed quirk preserved). → `villager_ai.rs`
 `m_npc.c`, `m_npc_schedule.c`, `m_npc_walk.c`, `ac_set_npc_manager.c`, `m_quest.c`
+
+Still in C: per-villager schedule/walk records, the Common schedule-slot bookkeeping flows, RNG call order in dialogue selection, favor acceptance/completion/reward flows.
 
 ---
 
