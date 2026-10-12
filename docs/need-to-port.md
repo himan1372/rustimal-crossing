@@ -129,149 +129,40 @@ effects, and event orchestration stay in C until differential tests pass. The ev
 
 ## Leftover pieces from the recent event ports (still in C)
 
-Small, bounded follow-ups identified during the 2026-10-11 event-port batch. Each is a
-candidate for a future pure-kernel port once its boundary is verified.
+Small, bounded follow-ups identified during the 2026-10-11 event-port batch.
 
-- **Summer festival stalls (actual)** — vendor purchase kernels now in `yomise.rs`
-  (price/message table, 8-entry stock init from injected RNG kind, nonempty counting,
-  choice→stock resolution with the choice-3 sentinel, page scan with fallback literals,
-  next-talk-action selection; exact purchase side-effect order documented). Still in C:
-  talk scripts/message resources, inventory/Bells mutation, the mDemo_* handoff protocol,
-  NPC lifecycle, event scheduling/placement/manager callbacks, and the stall prop's
-  bg-offset/collision pieces.
-- **Ball-toss scoring** — RESOLVED: no numeric team score exists anywhere in the decomp
-  (exhaustive trace — no save area, no counters, no dialogue/flag changes on a made basket;
-  aTMN1_flag is a turn flag, max 3). The `ef_tamaire.c` effect kernels are now in `tamaire.rs`
-  (launch velocity, ground-outcome classifier, DUMMY_TURI attraction expiry, `powf(0.5f,dt)`
-  bounce damping, 0x155 loud-bounce gate, basket variant). Sounds, RNG, trig tables,
-  ground queries, and the effect lifecycle stay in C.
-- **Fishing record database** — RESOLVED: pure record kernels are in `fishrecord.rs`
-  (formulas, class selection, strict winner compare, discarded-draw passthrough,
-  sim loop continue/step-count/hour, sort-swap decision, oldest-date recycle,
-  first-fit free slot, same-date search, mail-template index, save-validation
-  predicate, NPC land-name bytes). Still in C: 5-slot insert/cleanup/recycle
-  against save storage, `mEv_fishRecord_local` orchestration, holder1/2
-  (slot-zero behavior), `last_holder`, `mFR_fishmail`, mail construction/delivery
-  with delete-on-success, the notice-scheduler call site. Verified 12/13; one
-  DIFFERS correction: the sort is OLDEST-first (not newest-first), which explains
-  the slot-zero winner anomaly. Future: `mEv_fishday` contest-date arithmetic.
-- **Fishing tourney host & save areas** — RESOLVED: Chip's host kernels are now in
-  `fishing_tourney.rs` (talk-init tree, initial messages, entry check/set with the
-  foreigner-vs-local split, float→int→s16 position conversion, June-vs-fall event
-  selection, 10 talk-action constants). Still in C: area allocation/zeroing/lifetime,
-  NPC lifecycle, demo/talk framework, inventory/Bells mutation, RNG, message resources.
-  Open: the `flag` field's purpose (zero references); the area-clearing lifecycle
-  (generic 5-slot recycling only).
-- **Tug-of-war rope actor & orchestration** — RESOLVED: rope kernels are in
-  `tunahiki.rs` (there is no `props.rs` anywhere in the repo): three-unit
-  collision-offset X positions, vertex fact + 60-entry flag table + deformed
-  vertex X, `fdtug_start`/`stop`/`in` return trees, event/area/place/state
-  constants. Still in C: rope actor lifecycle + draw + display lists, controller
-  save-area access, NPC schedules + clip + creation/deletion, fdtug
-  placement/fades/status, all animation RNG + effects/audio. Corrections: the
-  rope's attr 100 IS `mCoBG_ATTRIBUTE_NONE` (never writes the attribute); the
-  talk-freeze is ANY-single-flag (`(flag & TALK_ALL) == 0`); the tug sound is
-  member-gated, not team-gated.
-- **Morning aerobics radio & group systems** — RESOLVED: pure kernels are in
-  `taisou.rs` (radio availability predicate, raw-counter → measure/progress
-  conversion, tempo/48, leader-cull predicate, regist drain/reset, failure-type
-  index, radio-time check, season-limit conjunction, card-ID derivations, the
-  full Tortimer card-progression decision tree + messages + talk-proc selection).
-  Still in C: audio group lookup, the four group globals, NPC clip, per-NPC
-  `Radio_c`, ratio tables/state machine, RNG + arbitration, animation/effects,
-  Tortimer's inventory mutations, `radiocard` save data, calendar storage,
-  demo/talk/handover. Corrections: `Radio_c` is padded (0x000/0x004/0x008, not
-  the brief's 0x000/0x001/0x005); `FTR_START(FTR_RADIO_TEST)` is 0x1FCC
-  (radio.rs's 1011 is the furniture table index).
-- **Footrace controller** — RESOLVED: controller kernels are in `tokyoso.rs`
-  (action enum, `_00==3`→WAIT2 override, set-start predicate, `_01` set/clear
-  with the `(2+idx)&3`/`idx&3` asymmetry, kansen leave predicates, dash/stumble
-  rolls, kokeru-done, late-race predicate, goal-think mapping, NPC0 birth reset,
-  NPC1 birth/self-delete phases, timer/event/slot/mask constants). `aTKC_FLAG_15`
-  is PROVEN unused (declaration only, zero `0x8000` literals). Still in C:
-  controller lifecycle + setupAction, save-area writes, NPC clip, animation
-  init, effect creation, all RNG calls, the BUGFIXES branch, the double
-  setupAction call order. Corrections: event constant is 15 (0xF), not 0xE;
-  `_00=2` exists (NPC0 birth sets it, NPC1 birth requires it); NPC0's destructor
-  ASSIGNS flags (wipes bits); NPC1's `_00==3` self-delete is in its move callback.
-- **Hatsumode open question** — RESOLVED 2026-10-11: `root_table`/`proc_idx_table`
-  really do have only 4 entries (`{ 5, 4, 9, 3 }` / `{ 4, 27, 27, 20 }`), index 4 really is
-  reachable (HATUMODE_4 = 0xD05C − 0xD058 = 4, signed arithmetic), and retail PROVABLY
-  performs a 1-byte out-of-bounds read on each table in `aHN0_ready2` on every normal
-  run — the sole read site guards only the save area (and retries), never the index.
-  `pc_hatsumode_ready2` keeps its "reports invalid" behavior (OOB values unknowable
-  without the binary; UB in Rust too). Only the OOB bytes' *contents* remain unconfirmed
-  (no retail binary here).
-- **Groundhog Day** — RESOLVED: pure controller/NPC kernels are in `groundhog.rs`
-  (time-term buckets, TIME_CHECK predicate, initial-action selection, message-index
-  computation with the term-decrement order, discrete frame-speed values, event-idx
-  tables, Tortimer's think tree, `groundhog_start`/`stop`/`in` return trees).
-  Still in C: controller lifecycle + scene/fade, common-area allocation, NPC clip,
-  the MAJIN actor + retire handshake, Tortimer's speech machine, BGM/camera, all
-  spawning, event-manager callbacks. Corrections: `RANDOM(3.0f)` ∈ {0,1,2} so the
-  frame speed takes only {0.4, 0.65, 0.9}; Tortimer's think DEFAULT is 4, not 0;
-  the NPC reads the term from the controller clip; `groundhog_in` re-creates the
-  controller when the common word == 1. The brief's `props.rs`/goza-mat premise
-  was unfounded — no such file exists in the repo.
-- ✅ **Birthdays** — `m_birthday_ovl.c`, `ac_birth_control.c` → `birthday_ovl.rs`, `birth_control.rs` (claude; April Fools control kernels are in `aprilfool.rs`).
-- ✅ **Event NPC placement** — `m_event_map_npc.c`, `ac_go_home_npc.c` → `event_map_npc.rs`, `go_home_npc.rs` (claude).
-- **Bulletin-board follow-ups** — RESOLVED 2026-10-11: batch trigger gates on
-  title-demo-none + foreground field, then the nonzero auto_nwrite_year guard; the
-  cursor/checkpoint update runs AFTER the write decision EVEN WHEN NO POSTS WERE
-  WRITTEN (do not move it inside the write branch). `mNtc_TO_MONTHDAY` proven
-  verbatim; handbill formulas proven (standard `0x1A4 + id`, fishing-day
-  `0x242 + ((candidate.day / 7) & 3)`); post timestamp sec/min=0, hour=6 proven;
-  `mNtc_notice_write_num` uses field-wise `lbRTC_IsEqualTime(..., CHECK_ALL)`,
-  not a raw byte compare; `mNtc_notice_write` shifts posts down one when full;
-  `mNtc_ClearPage` assigns the clear-code struct and fills the message with
-  CHAR_SPACE; `sChk_board_save_check` rejects message bytes 127/128
-  (control code / message tag). House message: NO save-time validator or
-  normalizer exists anywhere in the tree (settled NOT FOUND) — editor
-  constrains new input only; do not add a Rust sanitizer. All pure kernels
-  ported into `notice_overlay.rs` (+8 exports).
-- **NES follow-ups** — RESOLVED 2026-10-11: tag-stream format proven
-  (NESTAG_CMD_SIZE=3, NESTAG_SIZE=4 — the brief conflated them; traversal
-  formula unaffected); VEQ/VNE skip the next tag; HSC default len =
-  tag_len-2; update_highscore HSC offset word packs a flag bit
-  (ofs=&0x7FF, bit=>>15&1); Baseball `GNM_TAG(6)` for 8-byte "BASEBALL"
-  and Mahjong `GNM_TAG(6)` for 7-byte "MAHJONG" are source-marked @BUG —
-  do NOT correct. `special_zelda()` proven verbatim (markers + 3-slot
-  checksum, conditional writeback only, no wholesale slot clear); it runs
-  only in process1's load path (mode 1, SPE=1, first_play==FALSE).
-  Acquisition pools proven with NO differences (00/01/04/06 shop-A,
-  02/03/05/13 lottery, 07/09/10/11/12 homepage, 08/14 island, 15-18
-  special-present). 20th table entry proven: `FTR_KOB_DISKSYSTEM8` →
-  Excitebike texture/palette, game 14, AGB 0xFF; reference table @unused.
-  scene.rs `FamicomEmu` `cleanup_fn: None` gap CONFIRMED and FIXED to
-  `Some("famicom_emu_cleanup")`. 8 new pure exports in `famicom.rs`.
-- **Bee follow-ups** — RESOLVED 2026-10-11: HEADLINE CORRECTION —
-  `add_calc_short_angle2` does NOT wrap angles in this tree (plain s16
-  diff; the wrapping variant is `angle3`, unused by bee/ant); the brief's
-  wraparound premise was wrong. `CALC_EASE`/`add_calc`/`angle2`/`chase_f`
-  ported verbatim into `bee_ant.rs` (dt_fraction is a caller input).
-  Move-callback order proven (sound → AND-sentinel → conditional
-  integrate → action → anime → Y-ease; draw uses OR sentinel).
-  APPEAR proven with dt nuances (rot.z += (s16)(4096*dt), alpha += 3*dt,
-  >=255 → FLY without scale that frame; init also sets
-  player_bee_chase_flag). Catch requests proven: 60-frame delay gates;
-  label check first; force (no position/radius args) vs plain-else table
-  (&world.position, 24.0f); bee TRUE == ANT type == 1 and ant's unit-size
-  == bee's 40.0f are symbol-level coincidences. CAUGHT fallback proven:
-  timer += dt, `> 1.0f` (not >=) → DISAPPEAR; creation and label
-  transfer are independent. Ant scale proven (`chase_f` + X→Y/Z copy;
-  disappear uses `alpha <= 0.0f`, effective step `0.05*dt`). Honeycomb→bee
-  activation RESOLVED: `bIT_actor_drop_wait_bee` writes only
-  world.position; the bee is built dormant at (-1,-1,-1) and deleted on
-  drop failure. 13 new pure exports; 12/12 module tests pass.
-- **Fish follow-ups** — the full test/kaseki state machines and their complete transition
-  tables; exact UKI_ACTOR status synchronization around the catch animation
-  (`aGTT_comeback`/`aGKK_comeback`); the species-indexed `aGYO_hosei_y[]` and
-  animation-pattern tables; `aGYO_overlay_entry_c` (0x1C08) model tables.
-- **Insect follow-ups** — per-family transition tables for the 14 behavior programs;
-  exact net-hit/inventory handoff; per-family work-slot and flag semantics;
-  how the Rust spawn tables pass type/position/release metadata into the C controller;
-  `aINS_overlay_entry_c` (0x1C08) model tables; chou flower-search offset tables
-  and exact RNG call order.
+### 🆕 New open items (added 2026-10-11/12 — do these first)
+
+- **lbRTC_IsEqualDate little-endian type-pun bug** (found by claude, 2026-10-11) —
+  the function type-puns `{u16 y; u8 m; u8 d}` through an int union, so on
+  mingw32 i686 (little-endian) it compares DAY first instead of year; retail
+  big-endian compares year first. Affects every date comparison in the PC
+  port. Needs a port-side fix, not a decomp question.
+- **Hatsumode OOB byte contents** — the index-4 out-of-bounds read is proven;
+  the two bytes' *values* still need the USA Rev 0 binary (plausibly
+  `root_table[4]` aliases `proc_idx_table[0]` = 4, unproven).
+- **20 pre-existing test-expectation failures** — bank, catalog, cockroach,
+  countdown ×2, design, event_visitors, fireworks, fish_actor, hatsumode
+  (`route_wrap`), kamakura, lost_found, name_editor, shop_interior, snowman,
+  stalk_market ×4, town_board. Each needs decomp re-verification — do NOT
+  "fix" by guessing.
+
+### ✅ Done (all of the recent event-port leftovers)
+
+- ✅ **Summer festival stalls (actual)** — vendor purchase kernels in `yomise.rs` (price/message table, 8-entry stock init, choice→stock resolution, page scan, next-talk-action). Still in C: talk scripts, inventory/Bells mutation, mDemo handoff, NPC lifecycle, scheduling/placement, stall prop bg-offset/collision.
+- ✅ **Ball-toss scoring** — no numeric team score exists anywhere in the decomp (aTMN1_flag is a turn flag); effect kernels in `tamaire.rs`.
+- ✅ **Fishing record database** — pure record kernels in `fishrecord.rs` (sort is oldest-first, not newest-first).
+- ✅ **Fishing tourney host & save areas** — Chip's host kernels in `fishing_tourney.rs` (entry records-and-ENDS, foreigner split).
+- ✅ **Tug-of-war rope actor & orchestration** — rope kernels in `tunahiki.rs` (collision offsets, vertex deformation, fdtug trees).
+- ✅ **Morning aerobics radio & group systems** — pure kernels in `taisou.rs` (radio availability, group drain, card checks, Tortimer decision tree).
+- ✅ **Footrace controller** — controller kernels in `tokyoso.rs` (event constant 15/0xF; double setupAction preserved).
+- ✅ **Hatsumode open question** — retail OOB read at index 4 proven; `pc_hatsumode_ready2` reports invalid (OOB byte values still need the binary — see new items).
+- ✅ **Groundhog Day** — pure controller/NPC kernels in `groundhog.rs` (module count 168→169).
+- ✅ **Birthdays** — `birthday_ovl.rs`, `birth_control.rs` (claude).
+- ✅ **Event NPC placement** — `event_map_npc.rs`, `go_home_npc.rs` (claude).
+- ✅ **Bulletin-board follow-ups** — batch trigger, board-write, save-check, and house-message kernels in `notice_overlay.rs` (8 new exports).
+- ✅ **NES follow-ups** — nesinfo parser kernels, `special_zelda()` repair, acquisition pools in `famicom.rs` (8 new exports); `scene.rs` FamicomEmu `cleanup_fn` gap fixed.
+- ✅ **Bee follow-ups** — easing/APPEAR/catch-request/CAUGHT/ant-scale kernels in `bee_ant.rs` (13 new exports; `angle2` does NOT wrap — brief corrected).
 - ✅ **Gyroid follow-ups** — RESOLVED 2026-10-12 (claude) → `haniwa.rs`. HANIWA_START/END
   verified with gcc (0x15B0/0x17AB; name-table HANIWA_NUM is 127, the Rust `HANIWA_NUM` = 3
   is `mAGrw_HANIWA_NUM`). `FTR_NO_2_IDX(f) = f << 2`, so the random select only yields
@@ -322,8 +213,17 @@ candidate for a future pure-kernel port once its boundary is verified.
   `(8t − t²/7.5)·25` (peak 3000 at t=30), 5 dust puffs −90°..90°. `snowman_start` blocks on
   SNOWMAN0/3/6 + born check; new balls appear from 06:00.
 
----
+### ⏳ Open (unclaimed)
 
+- ⏳ **Fish follow-ups** — the full test/kaseki state machines and their complete transition
+  tables; exact UKI_ACTOR status synchronization around the catch animation
+  (`aGTT_comeback`/`aGKK_comeback`); the species-indexed `aGYO_hosei_y[]` and
+  animation-pattern tables; `aGYO_overlay_entry_c` (0x1C08) model tables.
+- ⏳ **Insect follow-ups** — per-family transition tables for the 14 behavior programs;
+  exact net-hit/inventory handoff; per-family work-slot and flag semantics;
+  how the Rust spawn tables pass type/position/release metadata into the C controller;
+  `aINS_overlay_entry_c` (0x1C08) model tables; chou flower-search offset tables
+  and exact RNG call order.
 ## Nature & seasonal
 
 ✅ **Snowman building** — snowballs, snowman moods and rewards. → `snowman.rs`
@@ -452,11 +352,12 @@ below was ported by claude (2026-10-11); display-list emission and the per-mode 
 
 ## Suggested port order (opinionated)
 
-Philip asked "what's next" before — if he asks again, the high-value gameplay systems still in C are:
-1. **Bulletin-board follow-ups** — RESOLVED 2026-10-11 (batch trigger, board
-   writes, save-check, house-message validation all proven; pure kernels ported)
-2. **Hatsumode open question** — RESOLVED 2026-10-11 (retail OOB read at index 4 proven)
-3. **GBA Island** — needs link-cable hardware behavior; defer
+Philip asked "what's next" before — if he asks again, the current state is in
+"Leftover pieces" above: 3 new open items first (lbRTC_IsEqualDate LE bug,
+Hatsumode OOB byte contents, 20 pre-existing test failures), then claude's
+in-progress gyroid→snowman batch, then the unclaimed fish/insect follow-ups.
+Beyond that:
+1. **GBA Island** — needs link-cable hardware behavior; defer
    (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
 
 Already done from the old list: Snowman ✅, April Fools ✅, Birthdays ✅, Passwords ✅, NES games ✅, Summer festival stalls ✅.
