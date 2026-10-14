@@ -333,7 +333,7 @@ fbdemo transition math; the 6502 core and wrapper stay in C)
 (127.0.0.1:54970/49420; works with mGBA "Connect to Dolphin" / VBA-M Joybus). GBAGetStatus/Read/Write/Reset
 over TCP with SDK response validation; GBAJoyBootAsync does virtual multiboot (dumps the program .bin,
 peer runs it pre-loaded — the real Nintendo handshake needs the DSP key schedule, documented in-file).
-Game-side data kernels (`m_island.c` etc.) still unported; Windows playtest still needed.
+Game-side data kernels partly ported: `rust/src/island.rs` ✅ (endian swaps, checksums, islander NPC lookup, fg2 item substitution, player-action counters, pitfall->hole; 13/13 tests). Still C-side: Island_c/Island_agb_c struct conversions, `mISL_init`, ARAM/JW texture fetches. Windows playtest still needed.
 
 ✅ **Bulletin boards** — town board and house board posts. → `town_board.rs`
 (15-slot record kernels: first-empty scan, full-board shift, page clear, init
@@ -425,7 +425,7 @@ Philip asked "what's next" before — if he asks again, the current state is in
 villager core AI, the mail/letter system, mortgage repayment, weather,
 field assessment, grass wear, the inventory UI, and the submenu framework.
 Beyond that:
-1. **GBA Island** — virtual link DONE (`src/pc_gba_joybus.c`, needs Windows playtest with mGBA); remaining: `m_island.c` data kernels, real multiboot handshake (DSP key schedule), optional `mGcgba_IsIsland` TARGET_PC un-fail-fast
+1. **GBA Island** — virtual link DONE (`src/pc_gba_joybus.c`, needs Windows playtest with mGBA); remaining: `m_island.c` struct conversions, real multiboot handshake (DSP key schedule), optional `mGcgba_IsIsland` TARGET_PC un-fail-fast
    (`m_island.c`, `m_gba_ovl.c`, `ac_airplane.c`)
 
 Already done from the old list: Snowman ✅, April Fools ✅, Birthdays ✅, Passwords ✅, NES games ✅, Summer festival stalls ✅.
