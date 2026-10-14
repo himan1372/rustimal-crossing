@@ -198,6 +198,7 @@ mod submenu;
 mod inventory_ui;
 mod villager_ai;
 mod repay;
+mod villager_favor;
 
 const CISO_HEADER_SIZE: usize = 0x8000;
 const CISO_MAP_OFFSET: usize = 8;
