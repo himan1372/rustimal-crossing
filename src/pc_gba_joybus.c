@@ -353,15 +353,11 @@ s32 GBAGetProcessStatus(s32 chan, u8 *percentp) {
     return GBA_READY;
 }
 
-/* Seam for a future faithful multiboot handshake. Returns 0 when the session
- * keys have been derived, nonzero otherwise. The real Nintendo handshake
- * derives these in DSP microcode (Jac_DSPagbDecodeAsync) with no PC
- * equivalent, so this is intentionally unimplemented for now. */
-static int gba_derive_session_keys(const u8 *challenge, u8 *key_out) {
-    (void)challenge;
-    (void)key_out;
-    return -1;
-}
+/* NOTE on the multiboot handshake: a faithful reimplementation of Nintendo's
+ * multiboot master is not possible here — the session key schedule runs as
+ * DSP microcode (Jac_DSPagbDecodeAsync in the SDK) with no PC equivalent.
+ * The virtual-multiboot path below is the pragmatic substitute; if the key
+ * schedule is ever reproduced, it slots in right here. */
 
 static void gba_dump_program(const u8 *prog, s32 len, char *path_out, size_t path_sz) {
 #ifdef _WIN32
@@ -415,9 +411,6 @@ s32 GBAJoyBootAsync(s32 chan, s32 palette_color, s32 palette_speed, u8 *programp
     if (programp[0xAC] == 0 || programp[0xAD] == 0 ||
         programp[0xAE] == 0 || programp[0xAF] == 0)
         return GBA_JOYBOOT_ERR_INVALID;
-    if (gba_derive_session_keys(0, 0) != 0) {
-        /* Documented: virtual multiboot path (see file header). */
-    }
 
     /* Virtual multiboot: hand the program to the user/peer out-of-band. */
     gba_dump_program(programp, length, path, sizeof(path));
