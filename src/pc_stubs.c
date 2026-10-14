@@ -22,18 +22,9 @@ BOOL DVDOpenDir(char* dirName, void* dir) { (void)dirName; (void)dir; return 0; 
 BOOL DVDReadDir(void* dir, void* dirEntry) { (void)dir; (void)dirEntry; return 0; }
 BOOL DVDCloseDir(void* dir) { (void)dir; return 0; }
 
-/* GBA link */
-void GBAInit(void) {}
-s32 GBAGetStatus(s32 chan, u8* status) { (void)chan; (void)status; return -1; }
-s32 GBAGetProcessStatus(s32 chan, u8* percentp) { (void)chan; (void)percentp; return -1; }
-s32 GBARead(s32 chan, u8* dst, u8* status) { (void)chan; (void)dst; (void)status; return -1; }
-s32 GBAWrite(s32 chan, u8* src, u8* status) { (void)chan; (void)src; (void)status; return -1; }
-s32 GBAReset(s32 chan, u8* status) { (void)chan; (void)status; return -1; }
-s32 GBAJoyBootAsync(s32 chan, s32 palette_color, s32 palette_speed, u8* programp,
-                    s32 length, u8* status, void* callback) {
-    (void)chan; (void)palette_color; (void)palette_speed; (void)programp;
-    (void)length; (void)status; (void)callback; return -1;
-}
+/* GBA link: real implementation in src/pc_gba_joybus.c (virtual JOYBUS
+   master over TCP, Dolphin-compatible). The dead stubs that lived here
+   are gone; do not re-add them. */
 
 /* OS threads */
 BOOL OSCreateThread(void* thread, void* (*func)(void*), void* param,
