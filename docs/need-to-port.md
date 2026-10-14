@@ -1,6 +1,8 @@
 # Need to Port — Animal Crossing GameCube Rust Rewrite
 
-**Status as of 2026-10-11 (evening)**
+**Status as of 2026-10-14**
+
+- 2026-10-14 (muse): villager favor flows ported (`villager_favor.rs`); 13/13 tests pass.
 
 - **Ported to Rust:** 169 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** everything below — grouped into game systems with plain-English names.
@@ -64,7 +66,9 @@ The everyday villager behavior engine. Only the special-event visitors are porte
 ✅ **Schedule tables & talk cooldown** (muse, 2026-10-12) — the six personality schedule tables (verbatim, strict `end_time > now_sec` first-match lookup), the saved/current/forced-timer manager step, and the talk-cooldown temper table (verbatim, looks-indexed quirk preserved). → `villager_ai.rs`
 `m_npc.c`, `m_npc_schedule.c`, `m_npc_walk.c`, `ac_set_npc_manager.c`, `m_quest.c`
 
-Still in C: per-villager schedule/walk records, the Common schedule-slot bookkeeping flows, RNG call order in dialogue selection, favor acceptance/completion/reward flows.
+✅ **Favor acceptance/completion/reward flows** (muse, 2026-10-14) → `villager_favor.rs`: quest-slot acceptance, errand chain next-kind, time-limit tables + decision, errand item matching, letter-rank arithmetic, present-category picks, errand reward tables, reward-kind roll, bell-pay rate/amount. Quirks preserved: u8 wrap on reward row select, fall-through on stored next > 2, verbatim limit-over branches, grab-index overwrite, zeroed reward-table tail.
+
+Still in C: per-villager schedule/walk records, the Common schedule-slot bookkeeping flows, RNG call order in dialogue selection, RNG draws, RTC reads, save mutation, shop-item selection, worn-cloth fallbacks, and the actual bells/item grants.
 
 ---
 
