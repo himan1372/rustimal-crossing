@@ -6,13 +6,13 @@
 - 2026-10-14 (muse): virtual GBA link done in C (`src/pc_gba_joybus.c` — Dolphin-compatible TCP JOYBUS master).
 - 2026-10-14 (muse): villager favor flows ported (`villager_favor.rs`); 13/13 tests pass.
 - 2026-10-14 (muse): **full-coverage audit** — all 140 `src/game/` + 264 `src/actor/` + 280 `src/static/`
-  decomp files compared against the 193 Rust modules. **No new unported gameplay systems found.**
+  decomp files compared against the 194 Rust modules. **No new unported gameplay systems found.**
   Uncertain items verified as intentionally C-side: `m_demo.c` (talk-demo getters/setters only),
   minor event-visitor lifecycles (`ac_ev_castaway/dokutu/dozaemon/ghost/majin`), the 26 `ac_t_*`
   tool visual actors, and special-NPC master actor lifecycles (Nook/shop masters/guides/etc.) —
   none contain portable pure kernels.
 
-- **Ported to Rust:** 193 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 194 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** the 🔶 entry below, plus — by design — actor lifecycles, save mutation,
   RNG call order, RTC reads, drawing/display lists, and ARAM/JW resource fetches.
 - 2026-10-11 (claude): marked birthdays, event NPC placement, holiday scenery, buildings & scenery,
@@ -79,9 +79,10 @@ The everyday villager behavior engine. Only the special-event visitors are porte
 ✅ **Schedule tables & talk cooldown** (muse, 2026-10-12) — the six personality schedule tables (verbatim, strict `end_time > now_sec` first-match lookup), the saved/current/forced-timer manager step, and the talk-cooldown temper table (verbatim, looks-indexed quirk preserved). → `villager_ai.rs`
 `m_npc.c`, `m_npc_schedule.c`, `m_npc_walk.c`, `ac_set_npc_manager.c`, `m_quest.c`
 
-✅ **Favor acceptance/completion/reward flows** (muse, 2026-10-14) → `villager_favor.rs`: quest-slot acceptance, errand chain next-kind, time-limit tables + decision, errand item matching, letter-rank arithmetic, present-category picks, errand reward tables, reward-kind roll, bell-pay rate/amount. Quirks preserved: u8 wrap on reward row select, fall-through on stored next > 2, verbatim limit-over branches, grab-index overwrite, zeroed reward-table tail.
+✅ **Favor acceptance/completion/reward flows** (muse, 2026-10-14) → `villager_favor.rs`
+✅ **Villager memory & identity bookkeeping** (muse, 2026-10-14) → `villager_memory.rs`: `Anmmem_c` slot selection (first-free, by-PID, oldest, deleted-player), the full eviction policy (free → foreign: no-letter > lower friendship > oldest → deleted-player → slot 0), friendship clamp, PersonalID/land-name null-checks and comparisons, `lbRTC_IsOverTime`. Quirks: `mNpc_AddFriendship` NULL-deref @BUG (kernel is by-value, safe), `IsOverTime` doc-comment inversion (LESS iff t1 < t0), blank names never compare equal.: quest-slot acceptance, errand chain next-kind, time-limit tables + decision, errand item matching, letter-rank arithmetic, present-category picks, errand reward tables, reward-kind roll, bell-pay rate/amount. Quirks preserved: u8 wrap on reward row select, fall-through on stored next > 2, verbatim limit-over branches, grab-index overwrite, zeroed reward-table tail.
 
-Still in C: per-villager schedule/walk records, the Common schedule-slot bookkeeping flows, RNG call order in dialogue selection, RNG draws, RTC reads, save mutation, shop-item selection, worn-cloth fallbacks, and the actual bells/item grants.
+Still in C (by design — effects, not logic): RNG draws, RTC reads, save mutation (memory-slot clears, bells/item grants, letter writes), the shop-item RNG selection loop (`mSP_SelectRandomItem_New`), worn-cloth actor fallbacks, and the dialogue RNG call order (branch structure is in `villager_favor.rs`; the draw sequence itself is C-owned). Per-villager memory-slot *selection* and the eviction policy are now in `villager_memory.rs` ✅.
 
 ---
 

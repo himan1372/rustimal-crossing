@@ -200,6 +200,7 @@ mod villager_ai;
 mod repay;
 mod villager_favor;
 mod island;
+mod villager_memory;
 
 const CISO_HEADER_SIZE: usize = 0x8000;
 const CISO_MAP_OFFSET: usize = 8;

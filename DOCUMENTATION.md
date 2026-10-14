@@ -6759,3 +6759,45 @@ Stays in C: `Island_c`/`Island_agb_c` struct copies and conversions
 `mISL_init` (needs `mLd_ClearLandName`, `mNpc_DecideIslandNpc`).
 
 Tests: 13/13 pass (`rustc --test --edition 2021`).
+
+## Villager memory & identity bookkeeping (muse, 2026-10-14)
+
+`rust/src/villager_memory.rs` — pure kernels from `src/game/m_npc.c`
+(animal memory records), `src/game/m_private.c` (PersonalID), `src/game/m_land.c`
+(land names), and `src/lb_rtc.c` (time comparison), GAFE01_00 Rev 0 USA.
+
+Ported:
+- `rtc_is_over_time` — `lbRTC_IsOverTime`: LESS (-1) iff `t1` is strictly
+  earlier than `t0` (lexicographic); otherwise OVER (1).
+- `null_check_player_name` / `null_check_land_name` — all-`CHAR_SPACE` (32).
+- `null_check_personal_id` — `land_id == 0xFFFF` and blank player name.
+- `check_cmp_player_name` / `check_cmp_land_name` / `check_cmp_land` /
+  `check_cmp_personal_id` — full identity equality.
+- `add_friendship` — `friendship + amount` clamped to `[0, 127]`.
+- `check_free_animal_memory` — free slot == null PID.
+- `get_free_animal_memory_idx` / `get_animal_memory_idx` — first-free and
+  by-PID slot search (`None` == retail `-1`).
+- `get_old_animal_memory_idx` — oldest `last_speak_time` (clear-code seeded).
+- `get_old_player_animal_memory_idx` — this-town slot of a deleted player.
+- `force_get_free_animal_memory_idx` — full eviction policy: free slot →
+  foreign memory (no-letter beats has-letter, then lower friendship, then
+  oldest) → deleted-player slot → slot 0.
+
+Quirks preserved:
+- `mNpc_AddFriendship` dereferences `memory` *before* its NULL check
+  (documented `@BUG` — retail crashes on NULL). The kernel takes the value
+  by value, so it is inherently NULL-safe; arithmetic is identical.
+- `lbRTC_IsOverTime`'s doc comment claims LESS for `t0 <= t1`, but the code
+  returns LESS iff `t1 < t0` (equal times give OVER). Ported from the code.
+- `mPr_CheckCmpPlayerName` / `mLd_CheckCmpLandName` return FALSE when either
+  name is blank — two blank names do NOT compare equal.
+- `mNpc_GetOldAnimalMemoryIdx` seeds from the clear code (all `0xFF` = max
+  time), so never-spoken slots never win unless all are clear.
+
+Stays in C: `mNpc_ClearAnimalMemory` / `mNpc_ClearIslandAnimalMemory` (save
+writes), `mNpc_SetAnimalMemory` (RTC read + save), `mNpc_RenewalAnimalMemory`
+iteration is expressible via `get_old_player_animal_memory_idx` but the
+save walk stays C-side, RNG draws, `mSP_SelectRandomItem_New` (RNG-core
+shop loop), worn-cloth actor fallbacks, bells/item grants.
+
+Tests: 12/12 pass (`rustc --test --edition 2021`).
