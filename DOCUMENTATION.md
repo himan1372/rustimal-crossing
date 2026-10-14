@@ -6699,3 +6699,63 @@ Deliberately untouched: `pc_platform.c` (SDL/GX/audio stay C — Rust
 `pc_audio_get_buffer_fill`); the profiler's C-owned emu64 counters;
 the already-wired `letter_score.rs` (`mMck_check_key_hit`,
 `mMck_check_key_hit_nes`).
+
+## GBA Island data kernels (2026-10-14)
+
+`rust/src/island.rs` — pure kernels verified against `m_island.c`
+(GAFE01_00 Rev 0 USA). The virtual link transport lives in C
+(`src/pc_gba_joybus.c`, Dolphin-compatible TCP JOYBUS master); this module
+covers the island *data* side.
+
+Ported kernels (`pc_` prefixed):
+
+- `pc_misl_bswap32_slice` / `pc_misl_bswap16_slice` / `pc_misl_bswap64_slice`
+  — the `mISL_int` / `mISL_short` / `mISL_u64` endian swaps used by every
+  GC<->AGB conversion. `mISL_u64` splits each u64 into hi/lo u32, byte-swaps
+  each half, and reassembles with the halves exchanged — a full 8-byte
+  reversal, bit-identical to `u64::swap_bytes`.
+- `pc_misl_return_checksum` — byte-sum checksum (`mISL_ReturnCheckSum`).
+- `pc_misl_get_flat_checksum` — `mISL_GetFlatCheckSum`: the value that
+  flattens the running checksum while ignoring one section (the landinfo,
+  which "can change" per the `mISL_gc_to_agb` call-site comment). C:
+  `diff = (u8)(sum - now) - ignored; diff = ~diff; diff += 1;`
+  i.e. two's-complement negation of the low byte.
+- `pc_misl_get_npc_idx` — islander NPC table lookup. Table
+  (verified values): BLISS 0xE0DA, DOBIE 0xE0E0, OHARE 0xE0D9, DRIFT 0xE0DB,
+  JUNE 0xE0E7, FAITH 0xE0E4, FLOSSIE 0xE0E1, FLASH 0xE0DF, MAELLE 0xE0D8,
+  ANNALISE 0xE0E2, BUD 0xE0DC, ELINA 0xE0DE, BOOMER 0xE0DD, PIGLEG 0xE0E9,
+  YODEL 0xE0E5, PLUCKY 0xE0E3, ROWAN 0xE0E6, ANKHA 0xE0EA. Gated on
+  `ITEM_NAME_GET_TYPE(n) == NAME_TYPE_NPC` (`((n) & 0xF000) >> 12 == 14`).
+- `pc_misl_fg2_item` — per-item `mISL_gc_to_agb_fg2` substitution, verbatim
+  order: 0xF123->COTTAGE_MY (0x5850), 0xF124->COTTAGE_NPC (0x5851),
+  0xF122->FLAG (0x584E), 0xF128->BOAT (0x584F), HOLE_START..HOLE_END
+  (0x0011..0x0029)->EMPTY_NO, 0xF11F->villager signboard (0xA012),
+  else pass-through.
+- `pc_misl_player_action_step` — the 32-iteration `mISL_SetPlayerAction`
+  loop: per-bit counters increment on set bits; any counter reaching its
+  `ACTION_COUNT_MAX_TABLE` threshold sets the check bit and clamps.
+  Thresholds: {10,4,1,10,1,5,3,10,5, then all 1}. The threshold arm runs
+  every call even for clear bits (verbatim).
+- `pc_misl_to_hole` — `mISL_toHole`: buried pitfalls revert to hole items
+  after AGB->GC transfer. The hole number comes from
+  `mCoBG_BnumUnum2HoleNumber` (stays in C); out-of-range (< 0 or >= 25)
+  clamps to 0, and the deposit bit clears only on conversion.
+
+Quirks preserved (documented; the struct conversions stay in C):
+
+- `mISL_agb_to_gc_fllot_bit`: retail (non-`BUGFIXES`) restore is
+  `gc->wall_original = (u32)gc->wall_original;` — a no-op. The wall/floor
+  "original" bits are never restored from AGB data.
+- `mISL_gc_to_agb_memory`: `saved_town_tune` is NOT written AGB-side (the
+  `mISL_u64` is `#ifdef BUGFIXES`'d out) but IS restored by
+  `mISL_agb_to_gc_memory`.
+- `mISL_get_npc_idx` returns 0 for both "not an islander" and Bliss
+  (table index 0) — indistinguishable to callers.
+
+Stays in C: `Island_c`/`Island_agb_c` struct copies and conversions
+(`mISL_KeepIsland`, `mISL_RestoreIsland`, `mISL_ChangeBG`,
+`mISL_gc_to_agb`, `mISL_agb_to_gc` — need exact C layouts, save pointer,
+`zelda_malloc`, weather state), ARAM texture fetches, island-block lookups,
+`mISL_init` (needs `mLd_ClearLandName`, `mNpc_DecideIslandNpc`).
+
+Tests: 13/13 pass (`rustc --test --edition 2021`).
