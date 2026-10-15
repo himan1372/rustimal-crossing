@@ -371,3 +371,35 @@ pub extern "C" fn DVDPrepareStreamAsync(
 pub extern "C" fn DVDCancelStream(_block: *mut c_void) -> i32 {
     0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn dvd_path_registry_is_idempotent() {
+        DVDInit();
+        DVDSetAutoFatalMessaging(1);
+        assert_eq!(DVDGetDriveStatus(), 0);
+        assert_eq!(DVDGetFileInfoStatus(std::ptr::null_mut()), 0);
+        assert_eq!(DVDGetTransferredSize(std::ptr::null_mut()), 0);
+        let null_entry = unsafe { DVDConvertPathToEntrynum(std::ptr::null()) };
+        assert_eq!(null_entry, -1);
+        let path = CString::new("/some/file").unwrap();
+        let e1 = unsafe { DVDConvertPathToEntrynum(path.as_ptr()) };
+        let e2 = unsafe { DVDConvertPathToEntrynum(path.as_ptr()) };
+        assert!(e1 >= 0 && e1 == e2);
+        let other = CString::new("/other/file").unwrap();
+        let e3 = unsafe { DVDConvertPathToEntrynum(other.as_ptr()) };
+        assert!(e3 >= 0 && e3 != e1);
+    }
+
+    #[test]
+    fn dvd_disk_id_is_stable() {
+        let a = DVDGetCurrentDiskID();
+        let b = DVDGetCurrentDiskID();
+        assert_eq!(a, b);
+        assert!(!a.is_null());
+    }
+}

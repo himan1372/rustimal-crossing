@@ -414,3 +414,34 @@ pub extern "C" fn pc_profiler_end_frame(frame_ms: f64, audio_fill: i32) {
     }
     state.frame_marked = true;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profiler_frame_lifecycle() {
+        unsafe { g_pc_profile_enabled = 1 };
+        pc_profiler_begin_frame();
+        pc_profiler_add_count_draw_slow(100, 200);
+        pc_profiler_add_count_flush_slow();
+        pc_profiler_add_count_shader_switch_slow();
+        pc_profiler_end_frame(16.6, 512);
+        pc_profiler_begin_frame();
+        pc_profiler_end_frame(16.7, 512);
+        unsafe { g_pc_profile_enabled = 0 };
+        pc_profiler_begin_frame();
+        pc_profiler_end_frame(16.6, 0);
+    }
+
+    #[test]
+    fn profiler_guards_bad_input() {
+        unsafe { g_pc_profile_enabled = 1 };
+        pc_profiler_begin_frame();
+        pc_profiler_add_time_slow(0, 0);
+        pc_profiler_add_time_slow(-1, 1234);
+        pc_profiler_add_time_slow(9999, 1234);
+        pc_profiler_end_frame(16.6, 0);
+        unsafe { g_pc_profile_enabled = 0 };
+    }
+}

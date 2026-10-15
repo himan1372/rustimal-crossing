@@ -241,3 +241,22 @@ pub extern "C" fn VIGetCurrentLine() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn VISetNextXFB(_frame_buffer: *mut c_void) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vi_init_and_queries() {
+        VIInit();
+        VIConfigure(std::ptr::null());
+        VISetNextFrameBuffer(std::ptr::null_mut());
+        VIFlush();
+        let _ = VIGetTvFormat();
+        let _ = VIGetDTVStatus();
+        assert_eq!(VIGetRetraceCount(), 0);
+        assert_eq!(VIGetCurrentLine(), 0);
+        VISetBlack(1);
+        VISetBlack(0);
+    }
+}

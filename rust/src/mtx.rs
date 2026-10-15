@@ -966,3 +966,248 @@ pub unsafe extern "C" fn guNormalize(x: *mut f32, y: *mut f32, z: *mut f32) {
         };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-5
+    }
+
+    fn assert_mtx_eq(got: &[f32; 12], want: &[f32; 12]) {
+        for (i, (g, w)) in got.iter().zip(want.iter()).enumerate() {
+            assert!(approx(*g, *w), "mtx[{i}]: got {g}, want {w}");
+        }
+    }
+
+    fn ident3() -> [f32; 12] {
+        [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    }
+
+    #[test]
+    fn identity_matrices() {
+        let mut m3 = [0.0f32; 12];
+        let mut m4 = [0.0f32; 16];
+        unsafe {
+            PSMTXIdentity(m3.as_mut_ptr() as *mut [f32; 4]);
+            C_MTXIdentity(m3.as_mut_ptr() as *mut [f32; 4]);
+            guMtxIdentF(m4.as_mut_ptr() as *mut [f32; 4]);
+        }
+        assert_mtx_eq(&m3, &ident3());
+        for r in 0..4 {
+            for c in 0..4 {
+                let want = if r == c { 1.0 } else { 0.0 };
+                assert!(approx(m4[r * 4 + c], want), "m4[{r},{c}]");
+            }
+        }
+    }
+
+    #[test]
+    fn copy_matrix() {
+        let src = ident3();
+        let mut dst = [0.0f32; 12];
+        unsafe {
+            PSMTXCopy(
+                src.as_ptr() as *const [f32; 4],
+                dst.as_mut_ptr() as *mut [f32; 4],
+            )
+        };
+        assert_mtx_eq(&dst, &src);
+    }
+
+    #[test]
+    fn concat_multiplies() {
+        let mut s = [0.0f32; 12];
+        let mut t = [0.0f32; 12];
+        let mut r = [0.0f32; 12];
+        unsafe {
+            PSMTXScale(s.as_mut_ptr() as *mut [f32; 4], 2.0, 3.0, 4.0);
+            PSMTXTrans(t.as_mut_ptr() as *mut [f32; 4], 5.0, 6.0, 7.0);
+            PSMTXConcat(
+                t.as_ptr() as *const [f32; 4],
+                s.as_ptr() as *const [f32; 4],
+                r.as_mut_ptr() as *mut [f32; 4],
+            );
+        }
+        let v = PCVec { x: 1.0, y: 1.0, z: 1.0 };
+        let mut out = PCVec { x: 0.0, y: 0.0, z: 0.0 };
+        unsafe {
+            PSMTXMultVec(
+                r.as_ptr() as *const [f32; 4],
+                &v as *const PCVec,
+                &mut out as *mut PCVec,
+            )
+        };
+        assert!(approx(out.x, 7.0) && approx(out.y, 9.0) && approx(out.z, 11.0));
+    }
+
+    #[test]
+    fn inverse_roundtrip() {
+        let mut s = [0.0f32; 12];
+        let mut t = [0.0f32; 12];
+        let mut m = [0.0f32; 12];
+        let mut inv = [0.0f32; 12];
+        let mut back = [0.0f32; 12];
+        unsafe {
+            PSMTXScale(s.as_mut_ptr() as *mut [f32; 4], 2.0, 2.0, 2.0);
+            PSMTXTrans(t.as_mut_ptr() as *mut [f32; 4], 3.0, -2.0, 5.0);
+            PSMTXConcat(
+                t.as_ptr() as *const [f32; 4],
+                s.as_ptr() as *const [f32; 4],
+                m.as_mut_ptr() as *mut [f32; 4],
+            );
+            PSMTXInverse(
+                m.as_ptr() as *const [f32; 4],
+                inv.as_mut_ptr() as *mut [f32; 4],
+            );
+            PSMTXConcat(
+                m.as_ptr() as *const [f32; 4],
+                inv.as_ptr() as *const [f32; 4],
+                back.as_mut_ptr() as *mut [f32; 4],
+            );
+        }
+        assert_mtx_eq(&back, &ident3());
+    }
+
+    #[test]
+    fn inverse_of_singular_is_identity() {
+        let zero = [0.0f32; 12];
+        let mut inv = [1.0f32; 12];
+        unsafe {
+            PSMTXInverse(
+                zero.as_ptr() as *const [f32; 4],
+                inv.as_mut_ptr() as *mut [f32; 4],
+            )
+        };
+        assert_mtx_eq(&inv, &ident3());
+    }
+
+    #[test]
+    fn multvec_applies_translation() {
+        let mut t = [0.0f32; 12];
+        unsafe { PSMTXTrans(t.as_mut_ptr() as *mut [f32; 4], 10.0, 20.0, 30.0) };
+        let v = PCVec { x: 1.0, y: 2.0, z: 3.0 };
+        let mut out = PCVec { x: 0.0, y: 0.0, z: 0.0 };
+        unsafe {
+            PSMTXMultVec(
+                t.as_ptr() as *const [f32; 4],
+                &v as *const PCVec,
+                &mut out as *mut PCVec,
+            )
+        };
+        assert!(approx(out.x, 11.0) && approx(out.y, 22.0) && approx(out.z, 33.0));
+        let mut out2 = PCVec { x: 0.0, y: 0.0, z: 0.0 };
+        unsafe {
+            PSMTXMultVecSR(
+                t.as_ptr() as *const [f32; 4],
+                &v as *const PCVec,
+                &mut out2 as *mut PCVec,
+            )
+        };
+        assert!(approx(out2.x, 1.0) && approx(out2.y, 2.0) && approx(out2.z, 3.0));
+    }
+
+    #[test]
+    fn scale_and_trans_builders() {
+        let mut s = [0.0f32; 12];
+        let mut t = [0.0f32; 12];
+        unsafe {
+            PSMTXScale(s.as_mut_ptr() as *mut [f32; 4], 2.0, 3.0, 4.0);
+            PSMTXTrans(t.as_mut_ptr() as *mut [f32; 4], 5.0, 6.0, 7.0);
+        }
+        assert_mtx_eq(
+            &s,
+            &[2.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0],
+        );
+        assert_mtx_eq(
+            &t,
+            &[1.0, 0.0, 0.0, 5.0, 0.0, 1.0, 0.0, 6.0, 0.0, 0.0, 1.0, 7.0],
+        );
+    }
+
+    #[test]
+    fn trans_apply_adds_in_place() {
+        let mut m = ident3();
+        unsafe {
+            PSMTXTransApply(
+                m.as_ptr() as *const [f32; 4],
+                m.as_mut_ptr() as *mut [f32; 4],
+                1.0,
+                2.0,
+                3.0,
+            )
+        };
+        assert_mtx_eq(
+            &m,
+            &[1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 2.0, 0.0, 0.0, 1.0, 3.0],
+        );
+    }
+
+    #[test]
+    fn scale_apply_scales_rows() {
+        let m = ident3();
+        let mut out = [0.0f32; 12];
+        unsafe {
+            PSMTXScaleApply(
+                m.as_ptr() as *const [f32; 4],
+                out.as_mut_ptr() as *mut [f32; 4],
+                2.0,
+                3.0,
+                4.0,
+            )
+        };
+        assert_mtx_eq(
+            &out,
+            &[2.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0],
+        );
+    }
+
+    #[test]
+    fn vec_ops() {
+        let a = PCVec { x: 1.0, y: 0.0, z: 0.0 };
+        let b = PCVec { x: 0.0, y: 1.0, z: 0.0 };
+        let mut cross = PCVec { x: 0.0, y: 0.0, z: 0.0 };
+        let mut norm = PCVec { x: 0.0, y: 0.0, z: 0.0 };
+        let (dot, mag);
+        unsafe {
+            PSVECCrossProduct(
+                &a as *const PCVec,
+                &b as *const PCVec,
+                &mut cross as *mut PCVec,
+            );
+            dot = PSVECDotProduct(&a as *const PCVec, &b as *const PCVec);
+            mag = PSVECMag(&a as *const PCVec);
+            let v = PCVec { x: 3.0, y: 0.0, z: 4.0 };
+            PSVECNormalize(&v as *const PCVec, &mut norm as *mut PCVec);
+        }
+        assert!(approx(cross.x, 0.0) && approx(cross.y, 0.0) && approx(cross.z, 1.0));
+        assert!(approx(dot, 0.0));
+        assert!(approx(mag, 1.0));
+        assert!(approx(norm.x, 0.6) && approx(norm.y, 0.0) && approx(norm.z, 0.8));
+    }
+
+    #[test]
+    fn gu_f2l_roundtrip_identity() {
+        let m4 = [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0f32,
+        ];
+        let mut packed = [0u32; 16];
+        unsafe {
+            guMtxF2L(
+                m4.as_ptr() as *const [f32; 4],
+                packed.as_mut_ptr() as *mut std::ffi::c_void,
+            )
+        };
+        assert_eq!(packed[0] & 0xffff_0000, 0x0001_0000);
+        assert_eq!(packed[8], 0);
+        let mut packed2 = [0u32; 16];
+        unsafe {
+            guMtxIdent(packed2.as_mut_ptr() as *mut std::ffi::c_void);
+        }
+        assert_eq!(packed, packed2);
+    }
+}

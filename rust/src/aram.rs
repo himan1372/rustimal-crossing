@@ -157,3 +157,28 @@ pub unsafe extern "C" fn ARQPostRequest(
 
 #[no_mangle]
 pub extern "C" fn ARQFlushQueue() {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aram_lifecycle() {
+        unsafe { ARInit(std::ptr::null_mut(), 0) };
+        assert_eq!(ARGetSize(), 16 * 1024 * 1024);
+        assert_eq!(ARGetInternalSize(), 16 * 1024 * 1024);
+        assert_eq!(ARGetBaseAddress(), 0);
+        assert_ne!(pc_aram_get_base(), std::ptr::null_mut());
+        let base1 = pc_aram_get_base();
+        unsafe { ARInit(std::ptr::null_mut(), 0) };
+        assert_eq!(pc_aram_get_base(), base1);
+
+        let a = ARAlloc(100);
+        let b = ARAlloc(100);
+        assert_eq!(a % 32, 0);
+        assert_eq!(b % 32, 0);
+        assert!(b >= a + 128);
+        ARFree(std::ptr::null_mut());
+        assert_eq!(ARAlloc(u32::MAX), 0);
+    }
+}

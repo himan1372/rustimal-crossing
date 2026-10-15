@@ -181,3 +181,33 @@ pub const ATNTABLE: [u16; 1025] = [
     0x1FAE, 0x1FB3, 0x1FB8, 0x1FBD, 0x1FC3, 0x1FC8, 0x1FCD, 0x1FD2, 0x1FD7, 0x1FDC, 0x1FE1, 0x1FE6,
     0x1FEC, 0x1FF1, 0x1FF6, 0x1FFB, 0x2000,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sintable_endpoints_and_shape() {
+        assert_eq!(SINTABLE[0], 0);
+        assert_eq!(SINTABLE[1023], 32767);
+        for w in SINTABLE.windows(2) {
+            assert!(w[1] >= w[0], "decreasing at {}", w[0]);
+        }
+    }
+
+    #[test]
+    fn sintable_spot_values() {
+        assert_eq!(SINTABLE[1], 50);
+        assert_eq!(SINTABLE[512], 23187);
+        assert_eq!(SINTABLE[1023], 32767);
+    }
+
+    #[test]
+    fn atntable_endpoints_and_shape() {
+        assert_eq!(ATNTABLE[0], 0);
+        assert!((ATNTABLE[1024] as i32 - 8192).abs() <= 1);
+        for w in ATNTABLE.windows(2) {
+            assert!(w[1] >= w[0]);
+        }
+    }
+}
