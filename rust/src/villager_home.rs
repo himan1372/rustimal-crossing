@@ -124,7 +124,10 @@ pub fn assign_homes(
     let mut n = 0usize;
     for _ in 0..homeless_count {
         // Skip consumed/out-of-range indices like the source.
-        while n < lot_order.len() && lot_order[n] >= lots.len() {
+        // C (`mNpc_SetNpcHome`): `while ((fake_table_p[n] >= reserved_num) && n < reserved_num) n++;`
+        // `n` indexes the order table; bound it by lots.len() (reserved_num)
+        // per the source, plus lot_order.len() for safety.
+        while n < lot_order.len() && n < lots.len() && lot_order[n] >= lots.len() {
             n += 1;
         }
         if n >= lot_order.len() || n >= lots.len() {
