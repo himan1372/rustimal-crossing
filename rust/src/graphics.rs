@@ -126,3 +126,42 @@ pub extern "C" fn pc_gbi_cmds_processed(emu: *const interpreter::Emu64) -> u64 {
     // SAFETY: handle came from pc_gbi_emu64_create.
     unsafe { (*emu).cmds_processed }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emu64_create_destroy_null_safe() {
+        let emu = pc_gbi_emu64_create();
+        assert!(!emu.is_null());
+        // cmds_processed on null returns 0.
+        assert_eq!(pc_gbi_cmds_processed(std::ptr::null()), 0);
+        assert_eq!(pc_gbi_cmds_processed(emu as *const _), 0);
+        // set_segment on null is a no-op.
+        pc_gbi_set_segment(std::ptr::null_mut(), 0, 0);
+        pc_gbi_set_segment(emu, 8, 0x1234_5678);
+        pc_gbi_emu64_destroy(emu);
+        pc_gbi_emu64_destroy(std::ptr::null_mut());
+    }
+
+    #[test]
+    fn format_helpers() {
+        // rgba5551 -> rgb5a3: white stays white-ish.
+        let w = pc_gbi_rgba5551_to_rgb5a3(0xFFFF);
+        assert_ne!(w, 0);
+        // block dims packs w | h << 16.
+        let dims = pc_gbi_block_dims(2); // 16B
+        assert_ne!(dims & 0xFFFF, 0);
+        // tmem swizzle is deterministic.
+        let a = pc_gbi_tmem_swizzle(0x100, 4);
+        let b = pc_gbi_tmem_swizzle(0x100, 4);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn gx_dl_valid_rejects_bad() {
+        // Zero size is invalid; aligned addr + nonzero size is valid.
+        assert_eq!(pc_gbi_gx_dl_valid(0x1000, 0), 0);
+        assert_eq!(pc_gbi_gx_dl_valid(0x1000, 32), 1);
+    }
+}

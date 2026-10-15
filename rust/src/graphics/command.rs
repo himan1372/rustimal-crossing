@@ -182,3 +182,103 @@ pub mod anime_seg {
     pub const ANIME_1_TXT_SEG: u8 = 0x08;
     pub const ANIME_6_TXT_SEG: u8 = 0x0D;
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::op::*;
+    use super::dl_param::*;
+    use super::img_fmt::*;
+    use super::img_siz::*;
+    use super::geo::*;
+    use super::mtx_param::*;
+
+    #[test]
+    fn gfx_field_extraction() {
+        // w0 = 0xDE123456: opcode 0xDE, param 0x12, len 0x3456. w1 = addr.
+        let g = Gfx::new(0xDE12_3456, 0xAABB_CCDD);
+        assert_eq!(g.opcode(), 0xDE);
+        assert_eq!(g.param(), 0x12);
+        assert_eq!(g.len(), 0x3456);
+        assert_eq!(g.addr(), 0xAABB_CCDD);
+    }
+
+    #[test]
+    fn gfx_zero_word() {
+        let g = Gfx::new(0, 0);
+        assert_eq!(g.opcode(), G_NOOP);
+        assert_eq!(g.param(), 0);
+        assert_eq!(g.len(), 0);
+        assert_eq!(g.addr(), 0);
+    }
+
+    #[test]
+    fn opcode_constants_match_gbi() {
+        // Spot-check retail F3DEX_GBI numbering (include/PR/gbi.h).
+        assert_eq!(G_NOOP, 0x00);
+        assert_eq!(G_VTX, 0x01);
+        assert_eq!(G_TRI1, 0x05);
+        assert_eq!(G_TRI2, 0x06);
+        assert_eq!(G_DL, 0xDE);
+        assert_eq!(G_ENDDL, 0xDF);
+        assert_eq!(G_TEXTURE, 0xD7);
+        assert_eq!(G_POPMTX, 0xD8);
+        assert_eq!(G_MTX, 0xDA);
+        assert_eq!(G_SETCOMBINE, 0xFC);
+        assert_eq!(G_SETTIMG, 0xFD);
+        // AC custom commands.
+        assert_eq!(G_TRIN, 0x09);
+        assert_eq!(G_SETTEXEDGEALPHA, 0xCE);
+        assert_eq!(G_FIRST_CMD, G_SETTEXEDGEALPHA);
+    }
+
+    #[test]
+    fn dispatch_range() {
+        // dl_func_tbl covers [G_FIRST_CMD, G_FIRST_CMD + NUM_COMMANDS).
+        assert_eq!(NUM_COMMANDS, 64);
+        assert!(G_DL >= G_FIRST_CMD);
+        assert!((G_DL - G_FIRST_CMD) < NUM_COMMANDS as u8);
+        assert!((G_ENDDL - G_FIRST_CMD) < NUM_COMMANDS as u8);
+    }
+
+    #[test]
+    fn dl_params() {
+        assert_eq!(G_DL_PUSH, 0);
+        assert_eq!(G_DL_NOPUSH, 1);
+        assert_eq!(G_DL_GXDL, 2);
+    }
+
+    #[test]
+    fn image_format_constants() {
+        assert_eq!(G_IM_FMT_RGBA, 0);
+        assert_eq!(G_IM_FMT_YUV, 1);
+        assert_eq!(G_IM_FMT_CI, 2);
+        assert_eq!(G_IM_FMT_IA, 3);
+        assert_eq!(G_IM_FMT_I, 4);
+        assert_eq!(G_IM_SIZ_4B, 0);
+        assert_eq!(G_IM_SIZ_8B, 1);
+        assert_eq!(G_IM_SIZ_16B, 2);
+        assert_eq!(G_IM_SIZ_32B, 3);
+    }
+
+    #[test]
+    fn geometry_mode_bits() {
+        assert_eq!(G_ZBUFFER, 0x0000_0001);
+        assert_eq!(G_FOG, 0x0001_0000);
+        assert_eq!(G_LIGHTING, 0x0002_0000);
+        // Decal modes are distinct 2-bit fields.
+        assert_eq!(G_DECAL_LEQUAL, 0x00);
+        assert_eq!(G_DECAL_GEQUAL, 0x10);
+        assert_eq!(G_DECAL_EQUAL, 0x20);
+        assert_eq!(G_DECAL_ALWAYS, 0x30);
+        assert_eq!(G_DECAL_ALL, 0x70);
+    }
+
+    #[test]
+    fn mtx_param_inverted_push() {
+        // Retail's inverted naming: PUSH bit CLEAR means push.
+        assert_eq!(G_MTX_PUSH, 0x01);
+        assert_eq!(G_MTX_NOPUSH, 0x00);
+        assert_eq!(G_MTX_LOAD, 0x02);
+        assert_eq!(G_MTX_PROJECTION, 0x04);
+    }
+}

@@ -207,3 +207,70 @@ impl Default for GbiState {
         Self::new()
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::command::geo;
+
+    #[test]
+    fn dirty_set_mark_clear() {
+        let mut d = DirtySet::default();
+        assert!(!d.is_dirty(Dirty::Combine));
+        d.mark(Dirty::Combine);
+        assert!(d.is_dirty(Dirty::Combine));
+        // No duplicates.
+        d.mark(Dirty::Combine);
+        assert_eq!(d.all().len(), 1);
+        d.mark(Dirty::Texture);
+        assert_eq!(d.all().len(), 2);
+        d.clear();
+        assert!(!d.is_dirty(Dirty::Combine));
+        assert_eq!(d.all().len(), 0);
+    }
+
+    #[test]
+    fn othermode_2cycle() {
+        let two = Othermode { hi: 0x0030_0000, lo: 0 };
+        assert!(two.is_2cycle());
+        let one = Othermode { hi: 0x0010_0000, lo: 0 };
+        assert!(!one.is_2cycle());
+        let none = Othermode::default();
+        assert!(!none.is_2cycle());
+    }
+
+    #[test]
+    fn gbi_state_defaults() {
+        let s = GbiState::new();
+        assert_eq!(s.geometry_mode, 0);
+        assert_eq!(s.scissor, (0, 0, 640, 480));
+        assert_eq!(s.tiles.len(), 8);
+        assert_eq!(s.tluts.len(), NUM_TLUTS);
+        assert!(!s.tex_gen);
+        assert!(!s.dirty.is_dirty(Dirty::GeometryMode));
+    }
+
+    #[test]
+    fn set_geometry_updates_flags_and_texgen() {
+        let mut s = GbiState::new();
+        s.set_geometry(0, geo::G_ZBUFFER | geo::G_TEXTURE_GEN);
+        assert_eq!(s.geometry_mode & geo::G_ZBUFFER, geo::G_ZBUFFER);
+        assert!(s.tex_gen);
+        assert!(!s.tex_gen_linear);
+        assert!(s.dirty.is_dirty(Dirty::GeometryMode));
+
+        s.set_geometry(
+            geo::G_TEXTURE_GEN,
+            geo::G_TEXTURE_GEN_LINEAR,
+        );
+        assert_eq!(s.geometry_mode & geo::G_TEXTURE_GEN, 0);
+        assert!(!s.tex_gen);
+        assert!(s.tex_gen_linear);
+    }
+
+    #[test]
+    fn tile_default_is_rgba() {
+        let t = TileState::default();
+        assert_eq!(t.fmt, super::super::command::img_fmt::G_IM_FMT_RGBA);
+        assert!(!t.is_dolphin);
+    }
+}
