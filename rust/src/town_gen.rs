@@ -555,7 +555,7 @@ pub enum GrassPattern {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TownAcre {
     /// Facility role, or `Feature::None` for an ordinary acre.
     pub feature: u8,
@@ -595,7 +595,7 @@ impl Default for TownAcre {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TownPlan {
     pub seed: u32,
     pub acre_count: u32,
@@ -1696,5 +1696,26 @@ mod tests {
         assert_eq!(dusty.score, 0);
         assert_eq!(dusty.field_rank, 0);
         assert_eq!(dusty.bad_acres, 5);
+    }
+}
+#[cfg(test)]
+mod wave5_tests {
+    use super::*;
+
+    #[test]
+    fn struct_derives_consistent() {
+        // TownAcre and TownPlan now have Debug/PartialEq/Eq like VillagerCandidate.
+        let a = TownAcre::default();
+        let b = TownAcre::default();
+        assert_eq!(a, b);
+        let _ = format!("{:?}", a);
+    }
+
+    #[test]
+    fn town_plan_layout() {
+        // C ABI layout: seed first, then counts.
+        assert_eq!(std::mem::size_of::<TownPlan>() % 4, 0);
+        assert_eq!(MAX_TOWN_VILLAGERS, 15);
+        assert_eq!(ACRE_COUNT, 30);
     }
 }

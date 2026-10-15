@@ -886,6 +886,7 @@ pub fn handover_item(
 ///
 /// Retail quirk, preserved: for delivery, `index` is the **pocket** index;
 /// for errands, `index` is the **errand record** index.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct QuestGrab {
     pub is_errand: bool,
     pub index: usize,
@@ -1579,5 +1580,51 @@ mod tests {
         assert_eq!(pc_letter_carpet_or_wallpaper(2), 1);
         assert_eq!(pc_letter_carpet_or_wallpaper(3), 0);
         assert_eq!(pc_letter_handbill(11, 5), 0x75 + 66 + 5);
+    }
+}
+#[cfg(test)]
+mod wave5_tests {
+    use super::*;
+
+    #[test]
+    fn quest_grab_derives() {
+        let g = QuestGrab::default();
+        assert!(!g.is_errand);
+        assert_eq!(g.index, 0);
+        assert_eq!(g.item, 0);
+        let h = QuestGrab { is_errand: true, index: 3, item: 0x1234 };
+        assert_ne!(g, h);
+        let _ = format!("{:?}", h);
+        let c = h;
+        assert_eq!(c, h);
+    }
+
+    #[test]
+    fn quest_grab_check_grab_roundtrip() {
+        // check_grab records the association from delivery/errand slots.
+        let mut deliveries = [DeliveryRecord::default(); DELIVERY_SLOT_COUNT];
+        deliveries[2].occupied = true;
+        deliveries[2].item = 0x2201;
+        let errands = [ErrandRecord::default(); ERRAND_SLOT_COUNT];
+        let g = check_grab(0x2201, 2, &deliveries, &errands).expect("should find delivery");
+        assert!(!g.is_errand);
+        assert_eq!(g.index, 2);
+        assert_eq!(g.item, 0x2201);
+        // Empty slot -> None.
+        assert!(check_grab(0x2201, 3, &deliveries, &errands).is_none());
+    }
+
+    #[test]
+    fn letter_contest_defaults() {
+        let c = LetterContest::default();
+        let _ = format!("{:?}", c);
+    }
+
+    #[test]
+    fn first_job_letter_kind() {
+        // FirstJobLetterKind has two variants.
+        let k = FirstJobLetterKind::SendLetter;
+        let _ = format!("{:?}", k);
+        assert!(matches!(k, FirstJobLetterKind::SendLetter));
     }
 }

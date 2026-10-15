@@ -1626,3 +1626,37 @@ mod tests {
         assert_eq!(bee_player_status::ENTER_BUILDING, 2);
     }
 }
+#[cfg(test)]
+mod wave5_tests {
+    use super::*;
+
+    #[test]
+    fn xyz_defaults() {
+        let p = Xyz::default();
+        assert_eq!((p.x, p.y, p.z), (0.0, 0.0, 0.0));
+        let _ = format!("{:?}", p);
+    }
+
+    #[test]
+    fn insect_controller_exhaustion() {
+        // Fill all 8 MAKE_NEW slots; MAKE_NEW then returns None.
+        let mut c = InsectController::default();
+        for i in 0..8 {
+            assert_eq!(c.search_regist_space(make::NEW), Some(i));
+            c.occupied[i] = true;
+        }
+        assert_eq!(c.search_regist_space(make::NEW), None);
+        // MAKE_EXIST still uses slot 8.
+        assert_eq!(c.search_regist_space(make::EXIST), Some(8));
+    }
+
+    #[test]
+    fn spawn_candidate_weights() {
+        // SpawnCandidate is Copy.
+        let s = SpawnCandidate { insect: 1, area: 2, weight: 10.0 };
+        let t = s;
+        assert_eq!((t.insect, t.area, t.weight), (1, 2, 10.0));
+        // Ant overlay table has 3 entries.
+        assert_eq!(ANT_OVERLAY.len(), 3);
+    }
+}
