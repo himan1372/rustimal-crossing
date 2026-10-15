@@ -405,3 +405,27 @@ pub const ALBUMIN_COLLISION: [[ColUnit; 256]; 17] = [
         (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,2), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0), (0,4,4,4,4,4,0),
     ],
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn albumin_dimensions() {
+        assert_eq!(ALBUMIN_COLLISION.len(), 17);
+        for asset in ALBUMIN_COLLISION.iter() {
+            assert_eq!(asset.len(), 256);
+        }
+        assert_eq!(ATTR_NAMES.len(), 64);
+    }
+
+    #[test]
+    fn albumin_attr_in_range() {
+        // Attribute byte (index 6) must be a valid ATTR_NAMES index.
+        for asset in ALBUMIN_COLLISION.iter() {
+            for unit in asset.iter() {
+                assert!((unit.6 as usize) < ATTR_NAMES.len());
+            }
+        }
+    }
+}

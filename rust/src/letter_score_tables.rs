@@ -1565,3 +1565,28 @@ pub(crate) const TRIGRAM_RAM_EXTRA: &[[u8; 2]] = &[
     [208, 135],
     [208, 152],
 ];
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trigram_starts_sorted_and_bounded() {
+        assert_eq!(TRIGRAM_TABLE_STARTS.len(), 27);
+        for w in TRIGRAM_TABLE_STARTS.windows(2) {
+            assert!(w[1] >= w[0], "starts not sorted");
+        }
+        // Last entry is the end sentinel: equals the pair count.
+        assert_eq!(*TRIGRAM_TABLE_STARTS.last().unwrap(), TRIGRAM_PAIRS.len());
+        // All real starts are within bounds.
+        for &s in &TRIGRAM_TABLE_STARTS[..26] {
+            assert!(s < TRIGRAM_PAIRS.len());
+        }
+    }
+
+    #[test]
+    fn trigram_pairs_wellformed() {
+        assert!(!TRIGRAM_PAIRS.is_empty());
+        // First table starts at 0.
+        assert_eq!(TRIGRAM_TABLE_STARTS[0], 0);
+    }
+}

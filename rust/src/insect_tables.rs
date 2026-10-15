@@ -858,3 +858,24 @@ pub static INSECT_BIRTH_SUM: [(u8, u8); 42] = [
     (1, 0),
     (0, 0),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insect_table_spot_check() {
+        // First entries are verbatim from ac_set_ovl_insect.c.
+        assert!(!INSECT_TBL_L_INSECT_M_OTHER_T.is_empty());
+        for e in INSECT_TBL_L_INSECT_M_OTHER_T {
+            assert!(e.weight > 0);
+        }
+    }
+
+    #[test]
+    fn insect_tables_nonempty() {
+        // A sample of tables across months must be non-empty.
+        assert!(!INSECT_TBL_L_INSECT_M3_T1.is_empty());
+        assert!(!INSECT_TBL_L_INSECT_M3_T2.is_empty());
+    }
+}

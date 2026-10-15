@@ -283,3 +283,22 @@ pub const MKRM_FLOOR_FROM: [u8; 67] = [
     3, 3, 2, 0, 3, 3, 1, 1, 3, 3, 0, 0, 3, 0, 1, 2,
     34, 3, 35,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn room_table_lengths() {
+        assert_eq!(HUUSUI_FTR_INFO.len(), 1266);
+        assert_eq!(MKRM_SERIES_INFO.len(), 60);
+        assert_eq!(MKRM_FTR_INFO.len(), 1266);
+        assert_eq!(MKRM_WALL_FROM.len(), 67);
+    }
+
+    #[test]
+    fn room_table_ranges() {
+        assert!(FLOOR_MY_ORIG_START <= FLOOR_MY_ORIG_END);
+        assert!(WALL_MY_ORIG_START <= WALL_MY_ORIG_END);
+    }
+}

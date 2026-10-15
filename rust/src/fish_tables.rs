@@ -2750,3 +2750,45 @@ pub static FISH_ISLAND_T3: &[FishSpawnEntry] = &[
     FishSpawnEntry { fish: FishType::BarredKnifejaw, area: FishArea::Sea, weight: 3 },
 ];
 pub static FISH_ISLAND: [&[FishSpawnEntry]; 4] = [FISH_ISLAND_T0, FISH_ISLAND_T1, FISH_ISLAND_T2, FISH_ISLAND_T3];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::species::{FishArea, FishType};
+
+    #[test]
+    fn fish_table_lookup_bounds() {
+        // Valid lookup returns the January midnight river table.
+        let t = fish_table(0, 0, 0).expect("river T00 TM0 must exist");
+        assert!(!t.is_empty());
+        // Out-of-range term/time return None.
+        assert!(fish_table(0, 24, 0).is_none());
+        assert!(fish_table(0, 0, 4).is_none());
+        assert!(fish_table(0, 255, 255).is_none());
+    }
+
+    #[test]
+    fn fish_table_spot_check() {
+        // First entry of the January midnight river table (verbatim).
+        let t = fish_table(0, 0, 0).unwrap();
+        assert_eq!(t[0].fish, FishType::CrucianCarp);
+        assert_eq!(t[0].area, FishArea::River);
+        assert_eq!(t[0].weight, 5);
+    }
+
+    #[test]
+    fn fish_weights_positive() {
+        // Every entry in every reachable table must have a positive weight.
+        for env in 0..3u8 {
+            for term in 0..24u8 {
+                for time in 0..4u8 {
+                    if let Some(t) = fish_table(env, term, time) {
+                        for e in t {
+                            assert!(e.weight > 0, "zero weight in table");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
