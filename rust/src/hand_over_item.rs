@@ -206,3 +206,48 @@ mod tests {
         assert_eq!(sanitize_after_mode(3), 7);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn max_anm_covers_keyframes() {
+        // Data consistency: the animation counter max must reach (or
+        // pass) the last keyframe of both the trans and scale tables,
+        // so the segment search always lands on a valid key pair.
+        // (Wait modes legitimately run the counter past a 1-frame hold.)
+        for kind in 0..3usize {
+            for mode in 0..REQ_NUM {
+                let tkeys = TRANS_TABLES[kind][mode];
+                let skeys = SCALE_TABLES[kind][mode];
+                let max = MAX_ANM[kind][mode];
+                assert!(max >= tkeys[tkeys.len() - 1].0,
+                    "MAX_ANM below trans keys kind={} mode={}", kind, mode);
+                assert!(max >= skeys[skeys.len() - 1].0,
+                    "MAX_ANM below scale keys kind={} mode={}", kind, mode);
+            }
+        }
+        // The transfer modes do end exactly on their last keyframe.
+        assert_eq!(MAX_ANM[0][REQ_TRANSFER], 39.0);
+        assert_eq!(MAX_ANM[2][REQ_TRANSFER], 38.0);
+    }
+
+    #[test]
+    fn clamp_and_scale_tables() {
+        // Beyond the end, translation clamps to the last keyframe value.
+        assert_eq!(calc_trans(0, REQ_TRANSFER, 100.0), [14.0, -9.5, 6.0]);
+        // Fish variant holds the item lower.
+        let fish = calc_trans(1, REQ_TRANSFER, 39.0);
+        let item = calc_trans(0, REQ_TRANSFER, 39.0);
+        assert!(fish[1] > item[1]);
+        // Scale tables: item and fish share the same table.
+        for mode in 0..REQ_NUM {
+            assert_eq!(SCALE_TABLES[0][mode].len(), SCALE_TABLES[1][mode].len());
+        }
+        // Request constants are a dense 0..12 range.
+        assert_eq!(REQ_NUM, 12);
+        assert_eq!(REQ_NO_REQUEST, 0);
+        assert_eq!(REQ_ESTIMATE, 11);
+    }
+}

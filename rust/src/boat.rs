@@ -259,3 +259,48 @@ mod tests {
         assert_eq!(second_part_msg(3, 9), 0x3181 + 9);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn timer_and_gba_sizes() {
+        assert_eq!(timer::TRAVEL_SPEED, 0.625);
+        assert_eq!(timer::APPROACH_STEP, 0.0017);
+        assert_eq!(timer::SONG_TIMER, 930.0);
+        assert_eq!(timer::WHARF_TIMER, 190.0);
+        // Australian program is exactly 4 bytes larger.
+        assert_eq!(gba::PROGRAM_SIZE_AUS - gba::PROGRAM_SIZE, 4);
+        assert!(gba::LOADER_SIZE < gba::PROGRAM_SIZE);
+    }
+
+    #[test]
+    fn route_geometry_and_msg_wrap() {
+        // Checkpoints run monotonically in z (the route heads "south").
+        let mut prev = f32::NEG_INFINITY;
+        for &(_, z) in CHK_POINTS.iter() {
+            assert!(z > prev, "checkpoint z not increasing");
+            prev = z;
+        }
+        // All checkpoints sit in the F/G/H-5 acre band.
+        for &(x, z) in CHK_POINTS.iter() {
+            assert!((3300.0..=3800.0).contains(&x), "x={x}");
+            assert!((4200.0..=5400.0).contains(&z), "z={z}");
+        }
+        // Message helpers wrap their indices.
+        assert_eq!(first_part_msg(0, 5), first_part_msg(0, 0));
+        assert_eq!(second_part_bgm(10), second_part_bgm(0));
+        assert_eq!(dialogue_msg(1, 10), dialogue_msg(1, 0));
+        // second-part bases are paired: pattern 0 == 2, 1 == 3.
+        assert_eq!(song::SECOND_PART_MSG_BASE[0], song::SECOND_PART_MSG_BASE[2]);
+        assert_eq!(song::SECOND_PART_MSG_BASE[1], song::SECOND_PART_MSG_BASE[3]);
+        // player_pattern masks gender to one bit.
+        assert_eq!(player_pattern(true, 7), player_pattern(true, 1));
+        // C ABI spot checks.
+        assert_eq!(pc_boat_to_island(6), 1);
+        assert_eq!(pc_boat_to_island(0), 0);
+        assert_eq!(pc_boat_should_advance_checkpoint(1, 0.0), 0); // dz == 0: no advance
+        assert_eq!(pc_boat_first_part_msg(0, 5), pc_boat_first_part_msg(0, 0));
+    }
+}

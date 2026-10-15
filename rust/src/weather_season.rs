@@ -308,3 +308,44 @@ mod tests {
         assert_eq!(pc_wind_term(9, 30), 3);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn calendar_terms_monotonic_and_island() {
+        // End dates are sorted (end-date walk semantics need this).
+        let mut prev = (1u8, 1u8);
+        for &(m, d, _, _, _) in &CALENDAR_TERMS {
+            assert!(m > prev.0 || (m == prev.0 && d >= prev.1), "terms not sorted");
+            prev = (m, d);
+        }
+        // Island term is summer with the standard profile.
+        assert_eq!(CALENDAR_TERMS[ISLAND_TERM], (8, 31, season::SUMMER, 0x0001, 0x0004));
+        // Every valid date resolves to a term.
+        for m in 1..=12u8 {
+            for d in [1u8, 15, 28] {
+                assert!(term_idx(m, d, false).is_some());
+            }
+        }
+        assert_eq!(term_idx(12, 31, false), Some(17));
+    }
+
+    #[test]
+    fn event_weather_c_abi() {
+        let mut out = [0u8; 2];
+        assert_eq!(pc_event_weather(1, 0, 0, out.as_mut_ptr()), 1);
+        assert_eq!(out, [weather::CLEAR, intensity::HEAVY]);
+        assert_eq!(pc_event_weather(0, 1, 1, out.as_mut_ptr()), 1);
+        assert_eq!(out, [weather::SNOW, intensity::HEAVY]);
+        assert_eq!(pc_event_weather(0, 0, 0, out.as_mut_ptr()), 0);
+        // Null out pointer: safe, returns 0.
+        assert_eq!(pc_event_weather(1, 1, 1, core::ptr::null_mut()), 0);
+        // Save packing round-trips.
+        let packed = pack_weather_save(weather::SAKURA, intensity::NORMAL);
+        assert_eq!(packed, 0x32);
+        assert_eq!(unpack_weather_type(packed), weather::SAKURA);
+        assert_eq!(unpack_weather_intensity(packed), intensity::NORMAL);
+    }
+}

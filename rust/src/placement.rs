@@ -430,3 +430,53 @@ mod tests {
         assert_eq!(PASS_ORDER.len(), 12);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn classify_river_row_edges() {
+        // No river: everything LEFT.
+        assert_eq!(classify_river_row(&[false; 5]), [side::LEFT; 5]);
+        // River at the first cell: everything RIGHT.
+        assert_eq!(
+            classify_river_row(&[true, false, false, false, false]),
+            [side::RIGHT; 5]
+        );
+        // All river: all RIGHT.
+        assert_eq!(classify_river_row(&[true; 5]), [side::RIGHT; 5]);
+    }
+
+    #[test]
+    fn judge_flat_block_rejects_bad_requests() {
+        // Out-of-range request axes.
+        assert!(!judge_flat_block(true, 3, cheight::BELOW, side::LEFT, cheight::BELOW));
+        assert!(!judge_flat_block(true, side::LEFT, 3, side::LEFT, cheight::BELOW));
+        assert!(!judge_flat_block(true, -1, cheight::BELOW, side::LEFT, cheight::BELOW));
+        // Height mismatch.
+        assert!(!judge_flat_block(true, side::LEFT, cheight::ABOVE, side::LEFT, cheight::BELOW));
+        assert!(!judge_flat_block(true, side::BOTH, cheight::ABOVE, side::BOTH, cheight::BELOW));
+    }
+
+    #[test]
+    fn marin_cell_corner_precedence() {
+        // x==0 / x==6 win over the cell type.
+        assert_eq!(marin_cell(bt::RIVER_SOUTH, 0), Some(bt::BORDER_CLIFF_OCEAN_LEFT));
+        assert_eq!(marin_cell(bt::RIVER_SOUTH, 6), Some(bt::BORDER_CLIFF_OCEAN_RIGHT));
+        // Already-beach cells are untouched mid-row.
+        assert_eq!(marin_cell(bt::BEACH, 3), None);
+    }
+
+    #[test]
+    fn index_corners_and_base_height() {
+        assert_eq!(d2_to_d1(0, 0), 0);
+        assert_eq!(d2_to_d1(6, 9), 69);
+        assert_eq!(d2_to_d1(0, 9), 63);
+        // Two cliff bits: the height steps twice, bottom-up.
+        let col = base_height_column(&[true, false, false, true, false, false, false, false, false, false]);
+        assert_eq!(col, [0, 1, 1, 1, 2, 2, 2, 2, 2, 2]);
+        // No cliffs: every block at FIELD_STEP1.
+        assert_eq!(base_height_column(&[false; 10]), [0; 10]);
+    }
+}

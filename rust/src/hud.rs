@@ -293,3 +293,48 @@ mod tests {
         assert_eq!(v.addressable, ADDRESSABLE_TRUE);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn bubble_scale_and_place() {
+        // (20*0.875 - 17.5) = 0 -> scale 0.
+        assert_eq!(bubble_scale(20.0), 0.0);
+        assert!((bubble_scale(40.0) - 17.5 / 122.5).abs() < 1e-6);
+        let mut b = ItemBubble::default();
+        // x < 120 with rot_y < 0 -> trans_x = +1; y > 68 -> trans_y = +1.
+        b.place(100.0, 100.0, -1);
+        assert_eq!((b.trans_x, b.trans_y), (1.0, 1.0));
+        assert_eq!((b.pos_x, b.pos_y), (-20.0, -62.0));
+        // x in (120, 200] but facing +X -> flipped left.
+        b.place(150.0, 100.0, 5);
+        assert_eq!(b.trans_x, -1.0);
+        // High on screen -> flipped down.
+        b.place(100.0, 50.0, -1);
+        assert_eq!(b.trans_y, -1.0);
+    }
+
+    #[test]
+    fn clock_side_and_bell_edges() {
+        let mut c = ClockSide::default();
+        // Bottom-right for 10+ frames with a faded-out clock -> moves left.
+        for _ in 0..12 {
+            c.step(200.0, 160.0, 0.0);
+        }
+        assert!(c.disp_left && !c.disabled);
+        // A visible clock refuses the swap and marks disabled.
+        let mut c2 = ClockSide::default();
+        for _ in 0..12 {
+            c2.step(200.0, 160.0, 1.0);
+        }
+        assert!(c2.disabled && !c2.disp_left);
+        // Bell counter: first job always wins.
+        assert!(!bell_counter_enabled(9, true, false));
+        assert!(!bell_counter_enabled(46, true, false));
+        assert_eq!(bell_bag_amount(0x9999), 0);
+        // Easing an already-correct value is a no-op.
+        assert_eq!(ease_money(500, 500), 500);
+    }
+}

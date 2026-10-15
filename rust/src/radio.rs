@@ -341,3 +341,61 @@ mod tests {
         assert_eq!(clock_ticks(135), (false, true, false));
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn minidisk_move_reserves() {
+        // A stereo that was on when the room loaded reserves its song.
+        let mut sw = FtrSwitch { switch_bit: true, switch_changed: false, haniwa_state: 1 };
+        let mut bgm = BgmInfo::default();
+        minidisk_move(&mut sw, &mut bgm, 2, ITM_MINIDISK_START + 7);
+        assert_eq!(sw.haniwa_state, 0);
+        assert!(bgm.reserve_flag);
+        assert_eq!(bgm.md_no, BGM_MD0 + 7);
+        // haniwa_state 0 -> no-op.
+        let mut bgm2 = BgmInfo::default();
+        minidisk_move(&mut sw, &mut bgm2, 2, ITM_MINIDISK_START + 7);
+        assert!(!bgm2.reserve_flag);
+    }
+
+    #[test]
+    fn stereo_removed_quirk() {
+        // aMR_MiniDiskCommonDt deletes md_no (the *reserved* song), not
+        // last_md_no, and always deletes the position voice for non-aerobics.
+        let mut b = BgmInfo { active_flag: true, md_no: 131, last_md_no: 130,
+            active_ftr: Some(0), ..Default::default() };
+        let mut ops = Vec::new();
+        b.stereo_removed(&mut ops);
+        assert_eq!(ops, [BgmOp::DeleteRoom(131), BgmOp::PlayerPosDelete]);
+        assert!(!b.active_flag);
+        // Aerobics track: no position voice to delete.
+        let mut b2 = BgmInfo { md_no: BGM_SPORTSFAIR_AEROBICS, ..Default::default() };
+        let mut ops2 = Vec::new();
+        b2.stereo_removed(&mut ops2);
+        assert_eq!(ops2, [BgmOp::DeleteRoom(BGM_SPORTSFAIR_AEROBICS)]);
+    }
+
+    #[test]
+    fn frame_deferred_apply() {
+        // Timer counts down; the reserved BGM applies at 0 only when not
+        // a shop and no message window is up.
+        let mut b = BgmInfo::default();
+        let mut ops = Vec::new();
+        b.reserve(BGM_MD0 + 1, 0, 2);
+        b.frame(false, true, &mut ops);
+        assert_eq!(b.timer, 1);
+        assert!(b.reserve_flag); // not yet applied
+        b.frame(false, true, &mut ops);
+        assert_eq!(ops, [BgmOp::MakeRoom(129), BgmOp::PlayerPosMake]);
+        // In a shop the timer still ticks but nothing applies.
+        let mut b2 = BgmInfo::default();
+        let mut ops2 = Vec::new();
+        b2.reserve(BGM_MD0 + 1, 0, 1);
+        b2.frame(true, true, &mut ops2);
+        assert!(ops2.is_empty());
+        assert!(b2.reserve_flag);
+    }
+}

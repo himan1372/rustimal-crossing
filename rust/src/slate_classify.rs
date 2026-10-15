@@ -244,3 +244,49 @@ mod tests {
         assert_eq!((a, b, c), (20.0, 20.0, 20.0));
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn attr_set_shape_and_sound() {
+        assert_eq!(SLATE_COL_ATTRS.len(), 14);
+        // Sorted, no duplicates.
+        let mut s = SLATE_COL_ATTRS;
+        s.sort_unstable();
+        assert_eq!(s, SLATE_COL_ATTRS);
+        // check_cliff_attr boundaries.
+        assert!(!check_cliff_attr(46) && check_cliff_attr(47) && check_cliff_attr(58) && !check_cliff_attr(59));
+        // Wood sound covers 27 (slate-col does too, with check_attr).
+        assert!(wood_sound_effect(27) && !wpos2check_slate_col(false, 27, false));
+        assert!(wpos2check_slate_col(false, 27, true));
+        // Flat-terrain normal is the same straight-up vector.
+        assert_eq!(slate_ground_normal(false), (0.0, 100.0, 0.0));
+    }
+
+    #[test]
+    fn polygon_default_and_equal_cases() {
+        // area 7 -> the default (E) branch; equal -> untouched triple.
+        assert_eq!(slate_area_polygon_y(7, 1.0, 2.0, 3.0, 3.0, 9.0), (9.0, 3.0, 3.0));
+        // W equal -> untouched.
+        assert_eq!(slate_area_polygon_y(1, 5.0, 5.0, 0.0, 0.0, 9.0), (5.0, 5.0, 9.0));
+        // S equal -> (center, leftDown, rightDown).
+        assert_eq!(slate_area_polygon_y(2, 0.0, 5.0, 5.0, 0.0, 9.0), (9.0, 5.0, 5.0));
+        // N equal -> untouched.
+        assert_eq!(slate_area_polygon_y(0, 5.0, 0.0, 0.0, 5.0, 9.0), (5.0, 9.0, 5.0));
+    }
+
+    #[test]
+    fn c_abi_polygon_null_safe() {
+        // Null outputs: computes and returns without writing.
+        unsafe {
+            pc_slate_area_polygon_y(
+                0, 1.0, 2.0, 3.0, 4.0, 5.0,
+                core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(),
+            )
+        };
+        assert_eq!(pc_check_cliff_attr(58), 1);
+        assert_eq!(pc_wood_sound_effect(23), 1);
+    }
+}

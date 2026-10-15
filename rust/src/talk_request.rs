@@ -292,3 +292,68 @@ mod tests {
         assert_eq!(countdown_norm_msg_no(7528, 90, 1, 90, 91), 7528 + 1 + 17);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn countdown_msg_edges() {
+        // AFTER_10_SEC term also gets the +17 branch.
+        assert_eq!(countdown_norm_msg_no(7528, 91, 2, 90, 91), 7528 + 2 + 17);
+        // Ordinary term 0 adds nothing beyond the random part.
+        assert_eq!(countdown_norm_msg_no(7528, 0, 0, 90, 91), 7528);
+        assert_eq!(countdown_norm_msg_no(7528, 5, 2, 90, 91), 7528 + 2 + 20);
+        // random3 saturates the documented RANDOM(3) range 0..=2.
+        for r in 0..3 {
+            let m = countdown_norm_msg_no(0, 1, r, 90, 91);
+            assert_eq!(m, r + 4);
+        }
+    }
+
+    #[test]
+    fn constants_and_abi_edges() {
+        assert_eq!(talk_condition::NONE, 0);
+        assert_eq!(talk_condition::START, 1);
+        assert_eq!(talk_condition::CONTINUE, 2);
+        assert_eq!(talk_turn::NORMAL, 0);
+        assert_eq!(talk_turn::HEAD, 1);
+        assert_eq!(talk_turn::NONE, 2);
+        assert_eq!(demo_type::TALK, 0);
+        assert_eq!(demo_type::SPEAK, 1);
+        assert_eq!(demo_type::SPEECH, 2);
+        // SPEECH demo active and non-listenable -> SetupTalkStart.
+        let i = TalkRequestInputs {
+            demo_speak_active: false,
+            demo_speech_active: true,
+            demo_talk_active: false,
+            demo_listenable: false,
+            submenu_wait: true,
+            submenu_wait_timer_zero: true,
+            has_talk_request_proc: true,
+        };
+        assert_eq!(talk_request_dispatch(&i), TalkRequestAction::SetupTalkStart);
+        // Nothing active and submenu not waiting -> Wait.
+        let i = TalkRequestInputs {
+            demo_speak_active: false,
+            demo_speech_active: false,
+            demo_talk_active: false,
+            demo_listenable: true,
+            submenu_wait: false,
+            submenu_wait_timer_zero: false,
+            has_talk_request_proc: false,
+        };
+        assert_eq!(talk_request_dispatch(&i), TalkRequestAction::Wait);
+        // Session begin with HEAD/NONE turn never faces the player.
+        assert!(!TalkSession::begin(talk_turn::NONE).face_player);
+        assert!(TalkSession::begin(talk_turn::NORMAL).face_player);
+        // End timer: 0 counts as >= 0 and becomes 600.
+        assert_eq!(TalkSession::end(0).ignore_timer, 600);
+        assert_eq!(TalkSession::end(-5).ignore_timer, -5);
+        // C ABI discriminants across all four actions.
+        assert_eq!(pc_talk_request_dispatch(1, 0, 0, 0, 0, 0, 0), 1); // speak, non-listenable
+        assert_eq!(pc_talk_request_dispatch(0, 0, 0, 0, 1, 1, 1), 2); // idle + hook
+        assert_eq!(pc_talk_request_dispatch(0, 0, 0, 0, 1, 1, 0), 3); // idle, no hook
+        assert_eq!(pc_talk_request_dispatch(0, 0, 0, 1, 0, 0, 0), 0); // listenable, busy
+    }
+}

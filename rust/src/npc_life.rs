@@ -314,4 +314,44 @@ mod tests {
         assert_eq!(present_cloth_memory_rnd(&ms, |_| 0), Some(1));
         assert!(!change_present_cloth(&mut ms, false));
     }
+
+    #[test]
+    fn best_friend_tiebreaks() {
+        // Same friendship, no letters: the EARLIER speaker wins.
+        let ms = [mem(0, 90, false, 3), mem(1, 90, false, 5)];
+        assert_eq!(best_friend(&ms), Some(0));
+        // A letter beats no letter even when spoken to later.
+        let ms = [mem(0, 90, false, 1), mem(1, 90, true, 99)];
+        assert_eq!(best_friend(&ms), Some(1));
+        // Below the 80 minimum: no best friend.
+        assert_eq!(best_friend(&[mem(0, 79, true, 0)]), None);
+        // Free slots are skipped entirely.
+        let mut ms = [Memory::default(), mem(0, 95, false, 0)];
+        assert_eq!(best_friend(&ms), Some(1));
+        // Highest friendship uses <= : the LAST among equals wins.
+        let ms = [mem(0, 42, false, 0), mem(1, 42, false, 0), mem(2, 42, false, 0)];
+        assert_eq!(highest_friendship(&ms), Some(2));
+    }
+
+    #[test]
+    fn move_out_gates() {
+        // Constants.
+        assert_eq!(ANIMAL_NUM_MAX, 15);
+        assert_eq!(ANIMAL_NUM_MIN, 5);
+        assert_eq!(ANIMAL_MEMORY_NUM, 7);
+        assert_eq!(BEST_FRIEND_MIN, 80);
+        assert_eq!(NO_REMOVE, 0xFF);
+        // No players -> no candidate (avoids div-by-zero in the pick).
+        let a = [Resident::default(); ANIMAL_NUM_MAX];
+        assert_eq!(choose_move_out(NO_REMOVE, &a, -1, &[], 6, &mut |_| 0), NO_REMOVE);
+        // Move-in rejections.
+        assert!(!may_move_in(false, false, 0xE010, &[], 0, None)); // uninitialised
+        assert!(!may_move_in(true, true, 0xE010, &[], 0, None)); // itself moving
+        assert!(!may_move_in(true, false, 0xE010, &[0xE010], 0, None)); // already here
+        assert!(may_move_in(true, false, 0xE010, &[0xE001], 0xE002, Some(0xE011)));
+        // Move-in slot prefers a free slot over replacing.
+        assert_eq!(move_in_slot(Some(7), Some(3)), MoveInSlot::Free(7));
+        assert_eq!(move_in_slot(None, Some(3)), MoveInSlot::Replace(3));
+    }
+
 }

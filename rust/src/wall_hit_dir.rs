@@ -171,3 +171,34 @@ mod tests {
         assert!(!walls_close_angle(12288));
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn angle_constants_and_flags() {
+        assert_eq!(ANGLE_45_TICKS, 8192);
+        assert_eq!(ANGLE_WRAP_TICKS, 57343);
+        assert_eq!(ANGLE_180_M1_TICKS, 32767);
+        assert_eq!(ANGLE_90_TICKS, 16384);
+        assert_eq!(hit_flag::DIDNT_HIT, 0);
+        assert_eq!(hit_flag::HIT_WALL, 1);
+        assert_eq!(hit_flag::FRONT | hit_flag::RIGHT | hit_flag::LEFT | hit_flag::BACK, 0b11110);
+        assert_eq!(pc_check_45_angle(0, 8192), 1);
+        assert_eq!(pc_check_45_angle(0, 8193), 0);
+    }
+
+    #[test]
+    fn rotated_wall_classification() {
+        // Wall normal east (16384): the probes rotate with it.
+        assert_eq!(search_col_own_part(16384, -16385), Some(HitDir::Front));
+        assert_eq!(search_col_own_part(16384, 16384), Some(HitDir::Back));
+        assert_eq!(search_col_own_part(16384, 0), Some(HitDir::Right));
+        assert_eq!(search_col_own_part(16384, -32768), Some(HitDir::Left));
+        assert_eq!(pc_hit_wall_dir(16384, -16385), 1);
+        assert_eq!(pc_hit_wall_dir(16384, 16384), 4);
+        assert_eq!(pc_hit_wall_dir(16384, 0), 2);
+        assert_eq!(pc_hit_wall_dir(16384, -32768), 3);
+    }
+}

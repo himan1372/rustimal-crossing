@@ -294,3 +294,45 @@ mod tests {
         assert_eq!((p.items[0], p.conds[0]), (ITM_MONEY_1000, 1));
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn repay_ovl_layout() {
+        // Retail mRP_Ovl_c is 24 bytes: money, loan, repay_amount,
+        // max_money, max_repay, cursor_idx.
+        assert_eq!(std::mem::size_of::<RepayOvl>(), 24);
+    }
+
+    #[test]
+    fn null_safety() {
+        // Null pocket pointers: wallet only, no crash.
+        assert_eq!(
+            pc_repay_init_money(500, std::ptr::null(), std::ptr::null(), POCKETS_SLOT_COUNT),
+            500
+        );
+        assert_eq!(
+            pc_repay_commit(50, 900, std::ptr::null_mut(), std::ptr::null_mut(), POCKETS_SLOT_COUNT),
+            0
+        );
+        // Wallet covering the amount never touches null pockets.
+        assert_eq!(
+            pc_repay_commit(900, 900, std::ptr::null_mut(), std::ptr::null_mut(), POCKETS_SLOT_COUNT),
+            0
+        );
+    }
+
+    #[test]
+    fn money_item_ids() {
+        // m_name_table.h ids.
+        assert_eq!(ITM_MONEY_100, 0x2103);
+        assert_eq!(ITM_MONEY_1000, 0x2100);
+        assert_eq!(ITM_MONEY_10000, 0x2101);
+        assert_eq!(ITM_MONEY_30000, 0x2102);
+        // Scan order is ascending denomination.
+        let vals: Vec<u32> = MONEY_ORDER.iter().map(|&(_, v)| v).collect();
+        assert_eq!(vals, [100, 1000, 10000, 30000]);
+    }
+}

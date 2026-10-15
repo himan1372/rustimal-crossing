@@ -169,4 +169,39 @@ mod tests {
         assert_eq!(travel_cloth_no(0x2500), 0x0000); // out of range
         assert_eq!(travel_cloth_no(0x2300), 0x0000);
     }
+    use super::*;
+
+    #[test]
+    fn identity_bits_and_flags() {
+        // First-talk bit and the weekly scheduled-travel flag.
+        assert_eq!(id::FIRST_TALK_BIT, 2);
+        assert_eq!(FLAG_MASK_CAT_SCHEDULED, 1 << 0);
+        // Weekday constants are a full 0-6 week.
+        assert_eq!(weekday::SUNDAY, 0);
+        assert_eq!(weekday::SATURDAY, 6);
+        // Clothing range is the 0x2400 page, end exclusive.
+        assert_eq!(cloth::START, 0x2400);
+        assert_eq!(cloth::END, 0x24FF);
+        assert_eq!(cloth::EMPTY_NO, 0x0000);
+    }
+
+    #[test]
+    fn talk_message_math() {
+        // First talk: linear in the pre-increment index.
+        assert_eq!(first_talk_msg(9), 0x31E4 + 36);
+        assert_eq!(first_talk_msg(10), 0x31E4 + 40);
+        // Repeat roll is mod 3: rolls 3,4,5 fold onto 0,1,2.
+        assert_eq!(repeat_talk_msg(2, 3), repeat_talk_msg(2, 0));
+        assert_eq!(repeat_talk_msg(2, 5), repeat_talk_msg(2, 2));
+        // Clamp: idx 0 behaves like idx 1.
+        assert_eq!(repeat_talk_msg(0, 0), msg::REPEAT_BASE);
+        assert_eq!(repeat_talk_msg(1, 0), msg::REPEAT_BASE);
+        // Travel cloth: exact END is rejected (strict range).
+        assert_eq!(travel_cloth_no(0x24FE), 0xFE);
+        assert_eq!(travel_cloth_no(0x24FF), cloth::EMPTY_NO);
+        assert_eq!(travel_cloth_no(0x23FF), cloth::EMPTY_NO);
+        // Round trip: cloth_item undoes travel_cloth_no.
+        assert_eq!(cloth_item(travel_cloth_no(0x2410)), 0x2410);
+    }
+
 }

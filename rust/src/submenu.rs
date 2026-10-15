@@ -578,3 +578,36 @@ mod tests {
         assert!(is_last_collect(39, false) && !is_last_collect(39, true));
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn return_chain_splice() {
+        let mut links = [Link::default(); ovl::NUM];
+        // INVENTORY -> BOARD -> MAP chain; closing BOARD splices INVENTORY -> MAP.
+        links[ovl::INVENTORY as usize] = Link { pre: ovl::NONE, next: ovl::BOARD };
+        links[ovl::BOARD as usize] = Link { pre: ovl::INVENTORY, next: ovl::MAP };
+        links[ovl::MAP as usize] = Link { pre: ovl::BOARD, next: ovl::NONE };
+        assert_eq!(return_func(&mut links, ovl::BOARD), Return::Spliced);
+        assert_eq!(links[ovl::MAP as usize].pre, ovl::INVENTORY);
+        assert_eq!(links[ovl::INVENTORY as usize].next, ovl::MAP);
+        // Closing the last menu returns to its predecessor and unlinks it.
+        assert_eq!(return_func(&mut links, ovl::MAP), Return::Back(ovl::INVENTORY));
+        assert_eq!(links[ovl::INVENTORY as usize].next, ovl::NONE);
+        assert_eq!(return_func(&mut links, ovl::INVENTORY), Return::EndSubmenu);
+    }
+
+    #[test]
+    fn facing_and_collect_edges() {
+        assert!(facing_north(i16::MIN));
+        assert!(!facing_north(100));
+        assert!(!facing_north(-100));
+        // Catch completion: 39 collected + this one = 40th.
+        assert!(is_last_collect(39, false));
+        assert!(!is_last_collect(38, false));
+        assert!(!is_last_collect(40, false));
+        assert_eq!((insect_collect_bit(39), fish_collect_bit(0)), (0x2F2 + 39, 0x31A));
+    }
+}

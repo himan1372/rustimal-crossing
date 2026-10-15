@@ -320,3 +320,71 @@ mod tests {
         assert_eq!(follow_rate(2.0, 50.0), 1.2);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn train_stall_cases() {
+        // RideTrain waits for the exact stopped action.
+        let mut i = TrainInputs::default();
+        i.train_action = 4;
+        assert_eq!(ride_off_step(RideOff::RideTrain, &i), RideOff::RideTrain);
+        i.train_action = 6;
+        assert_eq!(ride_off_step(RideOff::RideTrain, &i), RideOff::RideTrain);
+        // WalkOneUnit needs z >= 840 AND the master stopped.
+        let i = TrainInputs { player_z: 839.9, master_speed: 0.0, ..Default::default() };
+        assert_eq!(ride_off_step(RideOff::WalkOneUnit, &i), RideOff::WalkOneUnit);
+        let i = TrainInputs { player_z: 840.0, master_speed: 1.0, ..Default::default() };
+        assert_eq!(ride_off_step(RideOff::WalkOneUnit, &i), RideOff::WalkOneUnit);
+        let i = TrainInputs { player_z: 900.0, master_speed: 0.007, ..Default::default() };
+        assert_eq!(ride_off_step(RideOff::WalkOneUnit, &i), RideOff::Done); // |0.007| < 0.008
+        // FirstSet advances unconditionally; TrainBirthWait stalls without the train.
+        assert_eq!(ride_off_step(RideOff::FirstSet, &TrainInputs::default()), RideOff::TrainBirthWait);
+        assert_eq!(ride_off_step(RideOff::TrainBirthWait, &TrainInputs::default()), RideOff::TrainBirthWait);
+        // Heard flag latches: speaking again after heard stays latched.
+        let heard = RideOff::RideOffPlayer { heard: true };
+        let i = TrainInputs { master_speaking: true, ..Default::default() };
+        assert_eq!(ride_off_step(heard, &i), heard);
+    }
+
+    #[test]
+    fn present_lighthouse_and_guide() {
+        let base = PresentInputs {
+            is_birthday: false,
+            birthday_npc_set: false,
+            lighthouse: LighthouseEvent::None,
+            lighthouse_present: 0x1DB1,
+            all_fish: true,
+            has_golden_rod: false,
+            all_insects: true,
+            has_golden_net: false,
+        };
+        // Lighthouse states outrank the golden tools.
+        let p = PresentInputs { lighthouse: LighthouseEvent::JanContributed, ..base };
+        assert_eq!(choose_present(&p), (PresentType::SonchoVacation0Contributed, 0x1DB1));
+        let p = PresentInputs { lighthouse: LighthouseEvent::FebContributed, ..base };
+        assert_eq!(choose_present(&p), (PresentType::SonchoVacation1Contributed, 0x1DB1));
+        let p = PresentInputs { lighthouse: LighthouseEvent::JanStarted, ..base };
+        assert_eq!(choose_present(&p), (PresentType::SonchoVacation0Started, 0));
+        let p = PresentInputs { lighthouse: LighthouseEvent::FebStarted, ..base };
+        assert_eq!(choose_present(&p), (PresentType::SonchoVacation1Started, 0));
+        // Birthday without an assigned villager falls through.
+        let p = PresentInputs { is_birthday: true, birthday_npc_set: false, ..base };
+        assert_eq!(choose_present(&p).0, PresentType::GoldenRod);
+        // Default guide spawn (station): kind 1, data 3, initial state.
+        let g = guide_spawn(None);
+        assert_eq!((g.ux, g.uz, g.ofs_x, g.ofs_z), (8, 15, 0.0, 0.0));
+        assert_eq!((g.param, g.data, g.kind), (ID_STATE_INITIAL, 3, 1));
+        // House-restart wrap: index masked to 4 houses, owned house -> FREE_HOUSE.
+        let g = guide_spawn(Some((9, false)));
+        assert_eq!((g.ux, g.uz, g.ofs_x, g.param), (9, 5, -10.0, ID_STATE_FREE_HOUSE));
+        // Follow rate boundary: exactly 80 units is the far rate.
+        assert_eq!(follow_rate(2.0, 80.0), 2.0);
+        assert_eq!(follow_rate(2.0, 79.9), 1.2);
+        assert_eq!(RCN_GUIDE_NAMES.len(), 4);
+        assert_eq!(TRAIN_CAMERA_POS, (2180.0, 820.0));
+        assert_eq!(TRAIN_STOPPED_ACTION, 5);
+    }
+}

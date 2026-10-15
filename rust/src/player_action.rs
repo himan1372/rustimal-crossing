@@ -480,3 +480,78 @@ mod tests {
         assert_eq!(pc_player_request_priority_delta(21, 20), 1);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn frame_event_mod_variants() {
+        // FILL_SCOOP with anim_mod = 10: every event shifts by 10.
+        assert_eq!(fill_scoop_frame_event(28.0, 10.0), Some(FillEffect::RemoveHole));
+        assert_eq!(fill_scoop_frame_event(23.0, 10.0), Some(FillEffect::Impact(3)));
+        assert_eq!(fill_scoop_frame_event(29.0, 10.0), Some(FillEffect::Impact(4)));
+        assert_eq!(fill_scoop_frame_event(35.0, 10.0), Some(FillEffect::Impact(5)));
+        assert_eq!(fill_scoop_frame_event(50.0, 10.0), Some(FillEffect::Final));
+        assert_eq!(fill_scoop_frame_event(18.0, 10.0), None); // unshifted frame misses
+        // Stump variant honors the GET_SCOOP arg.
+        assert_eq!(dig_kabu_frame_event(42.0, true), Some(DigEffect::DigScoop(3)));
+        assert_eq!(dig_kabu_frame_event(42.0, false), Some(DigEffect::DigScoop(0)));
+        // Hole registration shifts too.
+        assert!(dig_hole_register_frame(30.0, 10.0));
+        assert!(!dig_hole_register_frame(20.0, 10.0));
+        // GET_SCOOP scale edges.
+        assert_eq!(get_scoop_scale(0.0), 0.0);
+        assert_eq!(get_scoop_scale(21.0001).round(), 0.0); // tiny but nonzero
+        assert!(get_scoop_scale(21.0001) > 0.0);
+        assert_eq!(get_scoop_scale(100.0), 0.01);
+        // Continuation rejects near-miss control codes.
+        assert_eq!(get_scoop_continuation(0x3E), None);
+        assert_eq!(get_scoop_continuation(0), None);
+        assert_eq!(get_scoop_continuation(-1), None);
+        // DIG_SCOOP arg-3 variant only at frame 22.
+        assert_eq!(dig_scoop_frame_event(22.0, true), Some(DigEffect::DigScoop(3)));
+        assert_eq!(dig_scoop_frame_event(14.0, true), Some(DigEffect::DigHole(0)));
+    }
+
+    #[test]
+    fn c_abi_null_safety_and_index_ranges() {
+        // Null out-params must not crash; return codes still correct.
+        assert_eq!(pc_dig_scoop_frame_event(14.0, 0, std::ptr::null_mut()), 1);
+        assert_eq!(pc_dig_scoop_frame_event(21.0, 0, std::ptr::null_mut()), 0);
+        assert_eq!(pc_fill_scoop_frame_event(13.0, 0.0, std::ptr::null_mut()), 2);
+        assert_eq!(pc_fill_scoop_frame_event(20.0, 0.0, std::ptr::null_mut()), 0);
+        // Axe family is a contiguous run 37..=40.
+        for (i, idx) in [index::SWING_AXE, index::AIR_AXE, index::REFLECT_AXE, index::BROKEN_AXE]
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(*idx, 37 + i as i32);
+        }
+        // Scoop family is a contiguous run 58..=64.
+        for (i, idx) in [
+            index::DIG_SCOOP,
+            index::FILL_SCOOP,
+            index::REFLECT_SCOOP,
+            index::AIR_SCOOP,
+            index::GET_SCOOP,
+            index::PUTAWAY_SCOOP,
+            index::PUTIN_SCOOP,
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(*idx, 58 + i as i32);
+        }
+        // Boat demo states are a contiguous run 112..=117.
+        assert_eq!(index::DEMO_GETON_BOAT, 112);
+        assert_eq!(index::DEMO_GETOFF_BOAT, 117);
+        // check_dig_scoop rejects the neighbor just below the family.
+        assert!(!check_dig_scoop(index::NOTICE_ROD)); // 56
+        assert!(!check_dig_scoop(index::TALK)); // 65
+        assert_eq!(WADE_CAMERA_ARG, 9);
+        assert_eq!(priority::DIG_SCOOP, 21);
+        assert!(!request_admissible(-5));
+        assert_eq!(pc_wade_finished(36.0), 0);
+    }
+}

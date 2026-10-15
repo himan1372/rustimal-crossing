@@ -520,4 +520,73 @@ mod tests {
         assert_eq!(pc_talk_patience(0, 15), 2);
         assert_eq!(pc_talk_patience(0, 5), 0);
     }
+
+    #[test]
+    fn wander_borders_verbatim() {
+        // Border table values from the decomp comments.
+        assert_eq!(WANDER_BORDERS[0], [3, 6]); // girl
+        assert_eq!(WANDER_BORDERS[1], [6, 8]); // ko-girl
+        assert_eq!(WANDER_BORDERS[3], [2, 4]); // sport-man
+        assert_eq!(WANDER_BORDERS[6], [4, 8]); // special NPCs
+        // Special NPCs use the special row regardless of looks:
+        // [4,8]: rng 9 -> Run when the schedule is not forced...
+        assert_eq!(
+            wander_decide_next(0, 9, false, false, false, true, sched::IN_HOUSE, sched::IN_HOUSE),
+            WanderAct::Run
+        );
+        // ...but a forced FIELD (current != saved) downgrades Run to Walk.
+        assert_eq!(
+            wander_decide_next(0, 9, false, false, false, true, sched::FIELD, sched::IN_HOUSE),
+            WanderAct::Walk
+        );
+        // Interrupt order lengths: 13 moving, 8 still.
+        assert_eq!(interrupt_order(true).len(), 13);
+        assert_eq!(interrupt_order(false).len(), 8);
+        // Friendship is last in both chains.
+        assert_eq!(*interrupt_order(false).last().unwrap(), Interrupt::Friendship);
+    }
+
+    #[test]
+    fn temper_table_looks_indexed() {
+        // The table is keyed by looks (personality), not mood.
+        assert_eq!(TALK_TEMPER[0], (4000, 12, 15));
+        assert_eq!(TALK_TEMPER[1], (3000, 10, 13));
+        assert_eq!(TALK_TEMPER[4], (5000, 9, 12));
+        // Grim-man (looks 4): impatient at 9, annoyed at 12.
+        let mut t = TalkThrottle::new();
+        for _ in 0..8 {
+            t.talk_end(4);
+        }
+        assert_eq!(t.patience(4), Patience::Normal);
+        t.talk_end(4);
+        assert_eq!(t.patience(4), Patience::MildlyAnnoyed);
+        assert_eq!(t.unlock_timer, 5000);
+        assert_eq!(t.reset_timer, 5000);
+        for _ in 0..3 {
+            t.talk_end(4);
+        }
+        assert_eq!(t.patience(4), Patience::Annoyed);
+        // Timer always (re)set to 1000 on talk end.
+        assert_eq!(t.timer, 1000);
+        // Greeting bumps both relations by 8.
+        assert_eq!(GREETING_RELATION_BUMP, 8);
+    }
+
+    #[test]
+    fn schedule_edge_cases() {
+        // Looks beyond the table clamp to the last row.
+        let (saved, _, _) = schedule_manager_sub(99, 12 * 3600, 0, 0, 1);
+        let (saved5, _, _) = schedule_manager_sub(5, 12 * 3600, 0, 0, 1);
+        assert_eq!(saved, saved5);
+        // Midnight boundary: girl at 00:00 is asleep.
+        let (saved, _, _) = schedule_manager_sub(0, 0, 0, 0, 1);
+        assert_eq!(saved, sched::SLEEP);
+        // Forced timer of exactly 0 means no override.
+        let (saved, current, timer) = schedule_manager_sub(0, 10 * 3600, sched::STAND, 0, 1);
+        assert_eq!(current, saved);
+        assert_eq!(timer, 0);
+        // Sleep force constants.
+        assert_eq!(SLEEP_FORCE_SCHEDULE_FRAMES, 7200);
+    }
+
 }

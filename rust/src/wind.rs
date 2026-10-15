@@ -288,3 +288,78 @@ mod tests {
         assert_eq!(z.calls.len(), 2);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    struct Seq2 {
+        f: Vec<f32>,
+        i: usize,
+    }
+    impl WindRng for Seq2 {
+        fn random_f(&mut self, max: f32) -> f32 {
+            let v = self.f[self.i % self.f.len()] * max;
+            self.i += 1;
+            v
+        }
+        fn fqrand(&mut self) -> f32 {
+            let v = self.f[self.i % self.f.len()];
+            self.i += 1;
+            v
+        }
+    }
+
+    #[test]
+    fn change_timer_path() {
+        // Steady with gust_timer > 0 and change_timer <= 0: change() runs,
+        // the 10-minute timer resets (then ticks down one frame).
+        let mut r = Seq2 { f: vec![0.5], i: 0 };
+        let mut w = Wind::init((0.4, 0.6), false, &mut r);
+        w.gust_timer = 100.0;
+        w.change_timer = 0.0;
+        w.step(false, 1.0, &mut r);
+        assert_eq!(w.change_timer, WIND_CHANGE_RATE - 1.0);
+        assert_eq!(w.gust_timer, 99.0);
+        // New targets stay inside today's range and the 30-degree window.
+        assert!((0.4..=0.6).contains(&w.target_power));
+        assert!((w.target_angle - w.angle).abs() <= THIRTY_DEG / 2.0 + 1.0);
+    }
+
+    #[test]
+    fn gust_lifecycle_fast() {
+        // FAST gust: power_timer expiry -> Reducing -> converged -> Steady.
+        let mut r = Seq2 { f: vec![0.0], i: 0 };
+        let mut w = Wind::init((0.0, 0.4), false, &mut r);
+        w.step(false, 1.0, &mut r);
+        assert_eq!(w.state, WindState::Fast);
+        assert!((w.power_timer - 200.0).abs() < 1e-6);
+        w.power_timer = 0.0;
+        w.step(false, 1.0, &mut r);
+        assert_eq!(w.state, WindState::Reducing);
+        w.power = w.last_power;
+        w.step(false, 1.0, &mut Seq2 { f: vec![0.0], i: 0 });
+        assert_eq!(w.state, WindState::Steady);
+        assert!((w.gust_timer - 150.0).abs() < 1e-6); // fqrand=0 -> 0*450+150
+    }
+
+    #[test]
+    fn today_range_and_angle_edges() {
+        // Class boundaries: roll == calm -> normal; roll == calm+normal -> gusty.
+        assert_eq!(today_range(10, (10, 80, 10)), (0.4, 0.6));
+        assert_eq!(today_range(90, (10, 80, 10)), (0.6, 1.0));
+        assert_eq!(today_range(0, (0, 70, 30)), (0.4, 0.6));
+        assert_eq!(today_range(99, (0, 70, 30)), (0.6, 1.0));
+        // angle_s truncates toward zero like the C cast.
+        let mut r = Seq2 { f: vec![], i: 0 };
+        let mut w = Wind::init((0.0, 0.4), true, &mut r);
+        w.angle = -100.7;
+        assert_eq!(w.angle_s(), -100);
+        // power() clamps; the windmill read does not.
+        w.power = 1.4;
+        assert_eq!(w.power(), 1.0);
+        assert_eq!(w.power_windmill(), 1.4);
+        assert_eq!(KOINOBORI_ANGLE, 24576.0);
+        assert_eq!(THIRTY_DEG, 5461.0);
+    }
+}

@@ -464,3 +464,57 @@ mod tests {
         assert_eq!(pc_scaled_pay(200, 0, 1.0, 0), p);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn pay_scaling_edges() {
+        // Negative direction: scale = 100 - 10*frac.
+        let p = scaled_pay(1000, 1, 1.0, 0);
+        assert_eq!(p, (1000.0f32 * (90.0 * 100.0) / 10000.0) as u32);
+        assert_eq!(p, 900);
+        // frac = 0 -> no scale swing, pay == base (no money power).
+        assert_eq!(scaled_pay(500, 0, 0.0, 0), 500);
+        assert_eq!(scaled_pay(500, 1, 0.0, 0), 500);
+        // money_power rate clamps at 700 (70000 bells power == 80000).
+        let a = scaled_pay(1000, 0, 1.0, 70_000);
+        let b = scaled_pay(1000, 0, 1.0, 80_000);
+        assert_eq!(a, b);
+        assert_eq!(a, (1000.0f32 * (110.0 * 800.0) / 10000.0) as u32);
+        assert_eq!(a, 8800);
+        // Sub-bucket rate: money_power 150 -> rate 1 -> pay_f 101.
+        assert_eq!(scaled_pay(1000, 0, 0.0, 150), (1000.0f32 * (100.0 * 101.0) / 10000.0) as u32);
+        // C ABI matches.
+        assert_eq!(pc_scaled_pay(1000, 1, 1.0, 0), 900);
+    }
+
+    #[test]
+    fn table_integrity() {
+        // Every reward row is a 100% distribution.
+        for row in DELIVERY_REWARDS.iter().chain(CONTEST_REWARDS.iter()).chain(ERRAND_REWARDS.iter()) {
+            let sum: u16 = row.iter().map(|&p| p as u16).sum();
+            assert_eq!(sum, 100, "row {row:?} does not sum to 100");
+        }
+        // errand_tier(0) saturates to tier 0 (used_num-1 underflow guard).
+        assert_eq!(errand_tier(0), 0);
+        assert_eq!(errand_tier(255), 3);
+        // Contest finished (progress 0) gets the FIN bonus days.
+        assert_eq!(limit_days(qtype::CONTEST, ckind::LETTER, 0), Some(2 + 2));
+        assert_eq!(limit_days(qtype::CONTEST, ckind::SNOWMAN, 0), Some(1 + 3));
+        // Out-of-range kinds -> None.
+        assert_eq!(limit_days(qtype::ERRAND, 15, 2), None);
+        assert_eq!(limit_days(qtype::CONTEST, 7, 1), None);
+        assert_eq!(limit_days(9, 0, 0), None);
+        // Timeout tables have the documented shapes.
+        assert!(ERRAND_LIMIT_DAYS.iter().take(3).all(|&d| d == 2));
+        assert!(ERRAND_LIMIT_DAYS.iter().skip(3).all(|&d| d == 0));
+        assert_eq!(DELIVERY_MAX_PAY[dkind::LOST as usize], 0);
+        // prob_table_select: partial weights leave kind-0 in the tail.
+        assert_eq!(prob_table_select(&[50, 0, 0, 0, 0, 0, 0, 0], 99), 0);
+        assert_eq!(prob_table_select(&[50, 0, 0, 0, 0, 0, 0, 0], 49), 0);
+        assert_eq!(prob_table_select(&[0, 75, 25, 0, 0, 0, 0, 0], 74), reward::STATIONERY);
+        assert_eq!(prob_table_select(&[0, 75, 25, 0, 0, 0, 0, 0], 75), reward::CLOTH);
+    }
+}

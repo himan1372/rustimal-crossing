@@ -190,3 +190,43 @@ mod tests {
         assert_eq!(pc_board_fishing_handbill_id(28), 0x242); // (28/7)&3 = 0
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn shift_full_null_safe_and_order() {
+        // Null is a no-op (no crash).
+        pc_board_shift_full(core::ptr::null_mut());
+        // Slot 0 is dropped; slot 14's marker lands in slot 13.
+        let mut board = [0u8; 15 * 200];
+        for i in 0..15 {
+            board[i * 200 + 199] = i as u8 + 1;
+        }
+        pc_board_shift_full(board.as_mut_ptr());
+        assert_eq!(board[13 * 200 + 199], 15);
+        assert_eq!(board[0 * 200 + 199], 2);
+    }
+
+    #[test]
+    fn handbill_formulas() {
+        assert_eq!(pc_board_standard_handbill_id(0), 0x1A4);
+        assert_eq!(pc_board_fishing_handbill_id(14), 0x244); // (14/7)&3 = 2
+        assert_eq!(pc_board_fishing_handbill_id(21), 0x245); // 3
+        assert_eq!(pc_board_fishing_handbill_id(6), 0x242);   // 0
+        for s in 0..4 {
+            assert_eq!(pc_board_init_handbill(s), INIT_HANDBILLS[s as usize]);
+        }
+    }
+
+    #[test]
+    fn record_layout_constants() {
+        assert_eq!(BOARD_RECORD_SIZE, BOARD_MSG_LEN + BOARD_TIME_SIZE);
+        assert_eq!(BOARD_TIME_OFS, BOARD_MSG_LEN);
+        assert_eq!(BOARD_POST_COUNT as usize * BOARD_RECORD_SIZE, 3000);
+        assert_eq!(CHAR_SPACE, b' ');
+        assert_eq!(AUTO_HANDBILL_BASE, 0x1A4);
+        assert_eq!(FISHING_HANDBILL_BASE, 0x242);
+    }
+}

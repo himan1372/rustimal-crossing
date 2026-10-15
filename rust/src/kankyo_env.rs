@@ -221,3 +221,42 @@ mod tests {
         assert!((window_light_target(10 * H, Some(0.5)) - 0.61).abs() < 1e-6);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn get_percent_edges() {
+        assert_eq!(get_percent(10, 0, -1), 0.0);
+        assert_eq!(get_percent(10, 0, 0), 0.0);
+        assert_eq!(get_percent(10, 0, 5), 0.5);
+        assert_eq!(get_percent(10, 0, 10), 1.0);
+        assert_eq!(get_percent(10, 0, 99), 1.0);
+        assert_eq!(get_percent(5, 5, 5), 1.0); // degenerate max==min
+        // Blend halfway between the 4h and 6h period starts.
+        assert_eq!(light_blend(5 * H), (1, 2, 0.5));
+        // 24:00 belongs to the last period.
+        assert_eq!(light_term(24 * H), 7);
+    }
+
+    #[test]
+    fn env_fade_same_table_and_rainbow_fade() {
+        // Same light table: request keeps now/next, rate untouched, true.
+        let mut f = EnvFade { now: 0, next: 0, rate: 0.5 };
+        assert!(f.request(0, 3)); // CLEAR&3=0 Fine, SAKURA&3=3 Fine
+        assert_eq!((f.now, f.next, f.rate), (0, 0, 0.5));
+        // After 15:00 the rainbow only fades out; the held flag echoes reserved.
+        let day = RainbowDay { reserved: true, is_reserved_date: true, now_sec: 16 * H, summer: true, outdoors: true };
+        let (o, held) = rainbow_step(0.5, day, 1.0);
+        assert_eq!(o, 0.5 - RAINBOW_FADE_OUT);
+        assert!(held);
+        // Indoors: same fade path, reservation echoed.
+        let indoor = RainbowDay { outdoors: false, ..day };
+        let (o2, held2) = rainbow_step(0.5, indoor, 1.0);
+        assert_eq!((o2, held2), (o, true));
+        // Fade-out never goes negative.
+        assert_eq!(rainbow_step(0.0, day, 1.0).0, 0.0);
+        assert_eq!((RAINBOW_START, RAINBOW_END, RAINBOW_BYE), (9 * H, 15 * H, 15 * H + 1800));
+    }
+}

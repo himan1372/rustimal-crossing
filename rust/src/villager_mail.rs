@@ -94,7 +94,9 @@ pub unsafe extern "C" fn mNpc_CheckNormalMail_sub(char_num: *mut i32, body: *con
 
 #[cfg(test)]
 mod tests {
-    use super::{check_normal_mail, CHAR_SPACE, MAIL_BODY_LEN};
+    use super::{
+        check_normal_mail, is_mail_symbol, mNpc_CheckNormalMail_sub, CHAR_SPACE, MAIL_BODY_LEN,
+    };
 
     fn body_with(prefix: &[u8]) -> [u8; MAIL_BODY_LEN] {
         let mut body = [CHAR_SPACE; MAIL_BODY_LEN];
@@ -126,4 +128,43 @@ mod tests {
         assert_eq!(check_normal_mail(&body_with(b"a a a")), (3, 0));
         assert_eq!(check_normal_mail(&body_with(b"a a a a")), (4, 1));
     }
+    #[test]
+    fn symbol_classification_boundaries() {
+        // %..=@ are symbols; the neighbours are not.
+        assert!(is_mail_symbol(37)); // '%'
+        assert!(is_mail_symbol(64)); // '@'
+        assert!(!is_mail_symbol(36));
+        assert!(!is_mail_symbol(65)); // 'A'
+        // 127..=133 are symbols; 134 is not.
+        assert!(is_mail_symbol(127));
+        assert!(is_mail_symbol(133));
+        assert!(!is_mail_symbol(134));
+        // Named singletons.
+        assert!(is_mail_symbol(33)); // '!'
+        assert!(is_mail_symbol(34)); // '"'
+        assert!(is_mail_symbol(95)); // '_'
+        assert!(is_mail_symbol(144)); // hyphen
+        assert!(!is_mail_symbol(145));
+        assert!(!is_mail_symbol(b'a'));
+        assert!(!is_mail_symbol(CHAR_SPACE));
+    }
+
+    #[test]
+    fn symbol_repeat_needs_eight() {
+        // Seven backslashes: run too short to flag.
+        assert_eq!(check_normal_mail(&body_with(&[92; 7])), (7, 0));
+        // Mixed runs each under the limit are fine.
+        assert_eq!(check_normal_mail(&body_with(b"aa!!bb")), (6, 0));
+        // An ordinary char hitting exactly 3 flags; a symbol at 7 does not.
+        assert_eq!(check_normal_mail(&body_with(b"xyz!!!qqqq")), (10, 1));
+        // C ABI null-safety.
+        unsafe {
+            assert_eq!(mNpc_CheckNormalMail_sub(std::ptr::null_mut(), std::ptr::null()), 0);
+            let body = body_with(b"Hi!");
+            let mut count = -1i32;
+            let flagged = mNpc_CheckNormalMail_sub(&mut count, body.as_ptr());
+            assert_eq!((count, flagged), (3, 0));
+        }
+    }
+
 }

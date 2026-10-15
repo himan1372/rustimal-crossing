@@ -218,3 +218,41 @@ mod tests {
         assert_eq!(show_event(3605, 21 * 3600, false, false), ShowEvent::None);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn frame_timer_pal() {
+        // PAL 50 Hz: n * 50 / 60.
+        assert_eq!(frame_timer(false, 4800), 4800);
+        assert_eq!(frame_timer(true, 4800), 4000);
+        assert_eq!(frame_timer(true, 3600), 3000);
+        assert_eq!(frame_timer(true, 60), 50);
+        assert_eq!(pc_mkbc_roll_alpha(80, 0), 127);
+    }
+
+    #[test]
+    fn strum_and_mark_bounds() {
+        assert_eq!(strum_frame(true, 0.5), 32.0);
+        assert_eq!(strum_frame(false, 0.5), 24.0);
+        // mark_song ignores out-of-range ids; 51 is the last valid.
+        let mut bits = [0u32; 2];
+        mark_song(&mut bits, 52);
+        assert_eq!(bits, [0, 0]);
+        mark_song(&mut bits, 51);
+        assert_eq!(bits, [0, 1 << 19]);
+        assert_eq!(count_uncollected(&bits), 51);
+    }
+
+    #[test]
+    fn page_clamp() {
+        // Last page clamps string ids at STRING_END.
+        let last = page_strings(16);
+        assert!(last.iter().all(|&id| id <= STRING_END));
+        assert_eq!(*last.last().unwrap(), STRING_END);
+        // Out-of-range page index clamps to the last page.
+        assert_eq!(page_strings(99), page_strings(16));
+    }
+}

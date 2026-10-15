@@ -212,4 +212,51 @@ mod tests {
         // fossil check wins over art range overlap is impossible; priority holds
         assert_eq!(curator_offer_class(0x1EEC, false), offer_class::OTHER);
     }
+
+    #[test]
+    fn encoding_constants() {
+        // NPC id bit layout.
+        assert_eq!(npc_id::IDX_MASK, 0x0FFF);
+        assert_eq!(npc_id::TYPE_MASK, 0xF000);
+        assert_eq!(npc_id::SPECIAL_TYPE, 0xD000);
+        // Name types.
+        assert_eq!(name_type::SPNPC, 13);
+        assert_eq!(name_type::NPC, 14);
+        // Capacities.
+        assert_eq!(capacity::EVENT_NPC_NUM, 5);
+        assert_eq!(capacity::MASK_NPC_NUM, 3);
+        // Curator range endpoints.
+        assert_eq!(curator_range::ART_LO, 0x12AC);
+        assert_eq!(curator_range::ART_HI, 0x12E7);
+        assert_eq!(curator_range::INSECT_LO, 0x2D00);
+        assert_eq!(curator_range::INSECT_HI_EXCL, 0x2D28);
+        assert_eq!(curator_range::FISH_LO, 0x2300);
+        assert_eq!(curator_range::FISH_HI, 0x2340);
+        assert_eq!(curator_range::ITM_FOSSIL, 0x2511);
+        assert_eq!(curator_range::EMPTY_NO, 0x0000);
+        // Offer classes are a dense 0-6.
+        assert_eq!(offer_class::EMPTY, 0);
+        assert_eq!(offer_class::OTHER, 6);
+    }
+
+    #[test]
+    fn type_extraction_edges() {
+        // Villager ids are never special; special ids always are.
+        assert!(!npc_is_special(0xEFFF));
+        assert!(npc_is_special(0xD000));
+        assert_eq!(npc_get_idx(0xEABC), 0x0ABC);
+        assert_eq!(npc_get_type(0xEABC), 0xE000);
+        // Name type comes from the top nibble.
+        assert_eq!(name_type_of(0xEFFF), name_type::NPC);
+        assert_eq!(name_type_of(0xDFFF), name_type::SPNPC);
+        assert_eq!(name_type_of(0x0000), 0);
+        // Curator range edges: insect 0x2D28 is OUT (exclusive), fish 0x2340 is IN.
+        assert!(!curator_is_insect(0x2D28));
+        assert!(curator_is_fish(0x2340));
+        // Offer priority: empty beats everything, fossil beats ranges.
+        assert_eq!(curator_offer_class(0x0000, true), offer_class::EMPTY);
+        assert_eq!(curator_offer_class(0x12AC, true), offer_class::FOSSIL);
+        assert_eq!(curator_offer_class(0x2511, true), offer_class::FOSSIL);
+    }
+
 }

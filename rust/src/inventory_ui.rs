@@ -530,3 +530,43 @@ mod tests {
         assert!(!sell_markable(0x2F00, true) && sell_markable(0x2F00, false) && !sell_markable(0x2100, false));
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn tag_constants() {
+        // Spot-check mTG_TYPE_* discriminants.
+        assert_eq!(NONE, 0);
+        assert_eq!(FIELD_DEFAULT, 1);
+        assert_eq!(TAG_PUT_ALL, 63);
+        assert_eq!(FIELD_SIGN, 72);
+        assert_eq!(FIELD_BALLOON, 73);
+        assert_eq!(TAG_PASSWORD_ITEM, 77);
+        assert_eq!(SELL_ALL_ITEM, 48);
+    }
+
+    #[test]
+    fn paper_stack_boundaries() {
+        // 64 designs per stack size.
+        assert_eq!(item::paper_stack(0x2000), 0);
+        assert_eq!(item::paper_stack(0x203F), 0);
+        assert_eq!(item::paper_stack(0x2040), 1);
+        // Single letters -> letter menu; stacks -> multi-letter menu.
+        let fg = ItemCtx { field: FIELD_FG, ..Default::default() };
+        assert_eq!(decide_item_normal(0x203F, &fg), FIELD_LETTER);
+        assert_eq!(decide_item_normal(0x2040, &fg), FIELD_LETTERS);
+    }
+
+    #[test]
+    fn mail_inventory_edge() {
+        // Unused letter -> NONE in every mode.
+        let m = MailCtx::default();
+        assert_eq!(decide_mail_inventory(iv_open::NORMAL, FIELD_FG, &m), NONE);
+        assert_eq!(decide_mail_inventory(iv_open::SEND_MAIL, FIELD_FG, &m), NONE);
+        // Received-font letter indoors maps to room menus.
+        let r = MailCtx { used: true, sendable: true, has_present: false, recv_font: true };
+        assert_eq!(decide_mail_inventory(iv_open::NORMAL, FIELD_FG, &r), ROOM_SMAIL);
+    }
+}

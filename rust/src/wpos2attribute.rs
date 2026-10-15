@@ -633,3 +633,60 @@ mod tests {
         assert_eq!(pc_slate_ground_height(10, 11, 20, 12, area::S, 100.0), 300.0);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn f32_is_zero_and_projection() {
+        assert!(f32_is_zero(0.0079));
+        assert!(!f32_is_zero(0.008));
+        assert!(f32_is_zero(-0.005));
+        assert!(!f32_is_zero(0.01));
+        // Projection of (1,2) onto segment (0,0)-(4,0) is (1,0).
+        assert_eq!(
+            cross_line_and_perpendicular((0.0, 0.0), (4.0, 0.0), (1.0, 2.0)),
+            Some((1.0, 0.0))
+        );
+        // Degenerate segment -> None.
+        assert_eq!(
+            cross_line_and_perpendicular((3.0, 3.0), (3.0, 3.0), (1.0, 1.0)),
+            None
+        );
+    }
+
+    #[test]
+    fn default_branch_and_wave_tables() {
+        let mk = |raw: u8, area: u8, fg: bool| Wpos2AttributeInputs {
+            raw_attr: raw,
+            area,
+            local_xz: (0.0, 0.0),
+            local_valid: true,
+            is_fg_field: fg,
+            wave_cos: 0.0,
+        };
+        // Attrs outside every special family pass through verbatim (FG).
+        for raw in [0u8, 1, 4, 5, 6, 11, 12, 13, 20, 24] {
+            let o = wpos2attribute_step(&mk(raw, area::N, true));
+            assert_eq!((o.attr, o.cant_dig), (raw, false), "raw {}", raw);
+        }
+        // <= GRASS3 collapses to FLOOR off-FG; above GRASS3 passes.
+        for raw in [0u8, 1, 2, 3] {
+            assert_eq!(wpos2attribute_step(&mk(raw, area::N, false)).attr, attr::FLOOR);
+        }
+        assert_eq!(wpos2attribute_step(&mk(4, area::N, false)).attr, 4);
+        // Attr 63 redirect carries the queried area through.
+        for a in [area::N, area::W, area::S, area::E] {
+            assert_eq!(wpos2attribute_step(&mk(63, a, true)).redirect, Some(a));
+        }
+        // Attr-62 (top of the 43-62 family) is undiggable FLOOR off-FG.
+        let o = wpos2attribute_step(&mk(62, area::N, false));
+        assert_eq!((o.attr, o.cant_dig), (attr::FLOOR, true));
+        // Wood-bridge row for attr 30: N->RIVER_NE, W->WOOD, S->WOOD, E->RIVER_NE.
+        assert_eq!(WOODB_WATER_INFO[3], [attr::RIVER_NE, attr::WOOD, attr::WOOD, attr::RIVER_NE]);
+        for (a, want) in [(area::N, 21u8), (area::W, 23), (area::S, 23), (area::E, 21)] {
+            assert_eq!(wpos2attribute_step(&mk(30, a, true)).attr, want);
+        }
+    }
+}

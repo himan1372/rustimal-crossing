@@ -319,4 +319,46 @@ mod tests {
         assert_eq!(pc_npc_talk_end(11, 0, LOOKS_GIRL, &mut start), 11); // timer dead
         assert!(!start);
     }
+
+    #[test]
+    fn looks_and_sched_constants() {
+        // Personality ids are a dense 0-5.
+        assert_eq!(LOOKS_GIRL, 0);
+        assert_eq!(LOOKS_KO_GIRL, 1);
+        assert_eq!(LOOKS_BOY, 2);
+        assert_eq!(LOOKS_SPORT_MAN, 3);
+        assert_eq!(LOOKS_GRIM_MAN, 4);
+        assert_eq!(LOOKS_NANIWA_LADY, 5);
+        assert_eq!(LOOKS_NUM, 6);
+        // Schedule states are a dense 0-6.
+        assert_eq!(SCHED_FIELD, 0);
+        assert_eq!(SCHED_IN_HOUSE, 1);
+        assert_eq!(SCHED_SLEEP, 2);
+        assert_eq!(SCHED_STAND, 3);
+        assert_eq!(SCHED_WANDER, 4);
+        assert_eq!(SCHED_WALK_WANDER, 5);
+        assert_eq!(SCHED_SPECIAL, 6);
+    }
+
+    #[test]
+    fn looks_clamping_and_table_shape() {
+        // Looks out of range clamp to a valid row.
+        assert_eq!(pc_npc_schedule_saved(99, sec(10, 0)), pc_npc_schedule_saved(5, sec(10, 0)));
+        assert_eq!(pc_npc_schedule_saved(-3, sec(10, 0)), pc_npc_schedule_saved(0, sec(10, 0)));
+        assert_eq!(pc_npc_unlock_timer_value(99), pc_npc_unlock_timer_value(5));
+        assert_eq!(pc_npc_count_talk(0, 100, -1), 1);
+        // Every table's end times are strictly ascending and end at midnight.
+        for table in SCHEDULE_TABLES {
+            let mut prev = -1;
+            for &(_, end) in table {
+                assert!(end > prev);
+                prev = end;
+            }
+            assert_eq!(prev, 24 * 3600);
+        }
+        // Lazy boy sleeps until 08:00 sharp.
+        assert_eq!(pc_npc_schedule_saved(LOOKS_BOY, sec(7, 59)), SCHED_SLEEP);
+        assert_eq!(pc_npc_schedule_saved(LOOKS_BOY, sec(8, 0)), SCHED_IN_HOUSE);
+    }
+
 }

@@ -429,3 +429,27 @@ mod tests {
         assert!((page_offset_y(20) - 100.0).abs() < 0.01);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn warning_colors_and_sack_exact() {
+        // Non-yes/no warning: everything base color.
+        assert_eq!(warning_line_color(0, 0, false), 0);
+        assert_eq!(warning_line_color(4, 0, false), 0);
+        // Yes/No: selected line pink, the other choice white, rest base.
+        assert_eq!(warning_line_color(3, 0, true), 1);
+        assert_eq!(warning_line_color(4, 0, true), 2);
+        assert_eq!(warning_line_color(0, 1, true), 0);
+        assert_eq!(warning_line_color(4, 1, true), 1);
+        // Exact per-frame display step: 4200 / 42 = 100.
+        assert_eq!(make_money_sack(4200, 4200), Some((0, -100)));
+        assert_eq!(make_money_sack(100, 0), None);
+        assert_eq!(make_money_sack(99, 100), None);
+        // Warning table shape.
+        assert_eq!(WARNINGS.len(), 28);
+        assert_eq!(WARNINGS[0].unwrap().0.len(), 5);
+    }
+}

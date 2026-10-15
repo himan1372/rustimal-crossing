@@ -326,4 +326,42 @@ mod tests {
         assert_eq!(pc_ghc_in_recreate(1, 1, 0), 0);
         assert_eq!(pc_ghc_in_recreate(0, 1, 1), 0);
     }
+
+    #[test]
+    fn constants_and_looks_wrap() {
+        // Action/state/term constant sanity.
+        assert_eq!(SEC_8_00, 28800);
+        assert_eq!(TIMER_BIRTH_WAIT, 600);
+        assert_eq!(TIMER_FADE_OUT, 20);
+        assert_eq!(SP_NPC_EV_MAJIN, 0xD081);
+        assert_eq!(SP_NPC_EV_GROUNDHOG_0, 0xD088);
+        // Message index: looks wraps with % 6.
+        assert_eq!(pc_ghc_msg_no(6, TERM_1_HOUR, 0), pc_ghc_msg_no(0, TERM_1_HOUR, 0));
+        // Term below TERM_1_MIN is not decremented.
+        assert_eq!(pc_ghc_msg_no(0, TERM_15_MIN, 1), 15698 + 2 * 3 + 1);
+        // Event index below the NPC range wraps and falls back to 0.
+        assert_eq!(pc_ghc_event_idx(0xD080), 0);
+        assert_eq!(pc_ghc_event_idx(0xD08A), 2); // in range
+        assert_eq!(pc_ghc_event_idx(0xD08C), 0); // idx 4 > 3
+        // Placement offsets line up with the yaw table.
+        assert_eq!(DEF_POS[0], [0.0, -20.0]);
+        assert_eq!(DEF_POS[3], [0.0, -20.0]);
+    }
+
+    #[test]
+    fn thresholds_and_terms_edge() {
+        // Just before 08:00 is still the one-minute term.
+        assert_eq!(pc_ghc_now_term(28799), TERM_1_MIN);
+        // Term enum ordering is ascending with descending thresholds.
+        assert!(TERM_1_HOUR < TERM_30_MIN && TERM_30_MIN < TERM_15_MIN);
+        assert!(TERM_15_MIN < TERM_5_MIN && TERM_5_MIN < TERM_1_MIN);
+        // Talk allowed in every term except the one-minute term.
+        for term in [TERM_1_HOUR, TERM_30_MIN, TERM_15_MIN, TERM_5_MIN, TERM_EVENT_TIME] {
+            assert_eq!(pc_ghc_talk_allowed(term), 1);
+        }
+        // Tortimer think at exactly 08:00 takes the late branch.
+        assert_eq!(pc_ghc_soncho_think(28800, TERM_EVENT_TIME, 0, 0), 4);
+        assert_eq!(pc_ghc_soncho_think(28800, TERM_EVENT_TIME, 0, 1), 2);
+    }
+
 }

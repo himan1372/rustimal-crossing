@@ -178,3 +178,34 @@ mod tests {
         assert_eq!(select_bridge_blocks(&before, &[], 2, 0, true), (Some(11), None));
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn pluss_bridge_shape() {
+        assert_eq!(PLUSS_BRIDGE.len(), block_type::TYPE_NUM);
+        // Spot-mapped entries beyond the river range.
+        assert_eq!(bridge_counterpart(24), 88);
+        assert_eq!(bridge_counterpart(64), 82); // BEACH_RIVER -> BEACH_RIVER_BRIDGE
+        assert_eq!(bridge_counterpart(255), 255); // out of table range
+        // Non-255 entry count as a verbatim-table checksum:
+        // 13->86 (1), 24/25/27/28/29 (5), 32-36 (5), 40-46->47-53 (7), 64->82 (1).
+        assert_eq!(PLUSS_BRIDGE.iter().filter(|&&b| b != 255).count(), 19);
+    }
+
+    #[test]
+    fn bridge_selection_clamps_and_river_edges() {
+        // Picks beyond the list clamp to the last river block.
+        let before = vec![3, 7];
+        assert_eq!(select_bridge_blocks(&before, &[], 99, 0, true), (Some(7), None));
+        // Second bridge disallowed even with picks available.
+        assert_eq!(select_bridge_blocks(&before, &[9], 0, 0, false), (Some(3), None));
+        // River range boundaries.
+        assert_eq!(river_to_bridge_block(block_type::RIVER_FIRST), Some(block_type::RIVER_BRIDGE_FIRST));
+        assert_eq!(river_to_bridge_block(block_type::RIVER_LAST), Some(block_type::RIVER_BRIDGE_LAST));
+        assert!(!is_river_block(39) && !is_bridge_block(54));
+        assert_eq!(block_type::BRIDGE_OFFSET, block_type::RIVER_BRIDGE_FIRST - block_type::RIVER_FIRST);
+    }
+}

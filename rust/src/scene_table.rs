@@ -320,3 +320,39 @@ mod tests {
         assert_eq!(pc_scene_manifest(99, out.as_mut_ptr()), 0);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn status_and_arena_sizes() {
+        assert_eq!(SCENE_STATUS_TOTAL, 0x14 * 52);
+        assert_eq!(SCENE_STATUS_TOTAL, 0x410);
+        assert_eq!(EXCHANGE_ARENA_SIZE, 0xA000);
+        assert_eq!(item_type::BGITEM, 0);
+        assert_eq!(item_type::BGPOSTITEM, 3);
+        assert_eq!(room_type::NPC_ROOM, 2);
+        assert_eq!(draw_type::TRAIN, 2);
+        assert_eq!(draw_type::PLAYER_SELECT, 3);
+    }
+
+    #[test]
+    fn fieldct_c_abi() {
+        let mut out = [0u8; 6];
+        // npc_room01 FIELDCT(DUMMY=1, bg 1, 0xA000, NPC_ROOM=2, INDOORS=1).
+        let packed = (0xA000u32 << 16) | (2u32 << 8) | 1u32;
+        pc_fieldct_unpack(5, 1, 1, packed, out.as_mut_ptr());
+        assert_eq!(out, [1, 1, 0xA0, 0x00, 2, 1]);
+        // Null out: no crash.
+        pc_fieldct_unpack(5, 1, 1, packed, core::ptr::null_mut());
+        // Manifest ABI on a bad id leaves the buffer untouched.
+        let mut out2 = [9u8; 8];
+        assert_eq!(pc_scene_manifest(52, out2.as_mut_ptr()), 0);
+        assert_eq!(out2, [9u8; 8]);
+        // Manifest ABI on id 0.
+        let mut out3 = [0u8; 8];
+        assert_eq!(pc_scene_manifest(0, out3.as_mut_ptr()), 1);
+        assert_eq!(&out3[..], &[0, 255, 0, 12, 2, 1, 0, 0]);
+    }
+}

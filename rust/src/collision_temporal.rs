@@ -232,3 +232,52 @@ mod tests {
         assert_eq!(frame_order::ACTOR, 2);
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn oc_clear_preserves_other_bits() {
+        // Only COLLIDED / PLAYER_WAS_HIT / elem HIT are removed.
+        assert_eq!(oc_clear_flags0(flag0::DONT_UPDATE_POS), flag0::DONT_UPDATE_POS);
+        assert_eq!(
+            oc_clear_flags1(flag1::OCC_CHECK | flag1::TRIS_HIT),
+            flag1::OCC_CHECK | flag1::TRIS_HIT
+        );
+        assert_eq!(oc_clear_elem_flags(0), 0);
+        assert_eq!(oc_clear_elem_flags(flag1::TRIS_HIT), flag1::TRIS_HIT); // different bit family
+    }
+
+    #[test]
+    fn latch_rearm_cycle() {
+        // Hit -> cleared at the next setOCC -> can latch again: one frame.
+        let (f1, _) = occ_hit_info(0);
+        let (_, f1b, _) = setocc_after_hit(0, f1);
+        assert_eq!(f1b, 0);
+        let (f1c, has) = occ_hit_info(f1b);
+        assert_eq!((f1c, has), (flag1::TRIS_HIT, true));
+        // occ_hit_info is idempotent on an already-latched object.
+        assert_eq!(occ_hit_info(flag1::TRIS_HIT).0, flag1::TRIS_HIT);
+    }
+
+    #[test]
+    fn dispatch_unknown_types() {
+        assert!(!oc_dispatch(3, 0) && !oc_dispatch(0, 3) && !oc_dispatch(3, 3));
+        assert!(!occ_dispatch(3, 0) && !occ_dispatch(2, 3) && !occ_dispatch(3, 3));
+        assert_eq!(pc_oc_dispatch(1, 1), 1);
+        assert_eq!(pc_occ_dispatch(0, 0), 0);
+    }
+
+    #[test]
+    fn frame_phases_and_pipeline() {
+        assert_eq!(
+            [frame_phase::COLLISION_OC, frame_phase::COLLISION_CLEAR, frame_phase::ACTOR_LOOP, frame_phase::DRAW_REGISTER, frame_phase::NUM],
+            [0, 1, 2, 3, 4]
+        );
+        assert_eq!(TOOL_TRIANGLE_PIPELINE_FRAMES, 1);
+        assert_eq!(OCC_WORK_CAP, pool::OCC_CAP);
+        assert_eq!(flag0::DONT_UPDATE_POS, 0x04);
+        assert_eq!(elem_flag::HIT, 0x02);
+    }
+}

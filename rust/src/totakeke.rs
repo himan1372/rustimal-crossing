@@ -288,4 +288,62 @@ mod tests {
         assert_eq!(count_uncollected(w0, w1), 51);
         assert_eq!(select_song(w0, w1, 50), 50);
     }
+
+    #[test]
+    fn flags_and_think_states() {
+        // Event save flags.
+        assert_eq!(flag::HELLO, 1 << 0);
+        assert_eq!(flag::AIRCHECK_RECEIVED, 1 << 4);
+        assert_eq!(flag::SP_DELETE_MAJIN, 1 << 13);
+        assert_eq!(flag::SP_ROLL_DRAW, 1 << 14);
+        assert_eq!(flag::SP_ROLL_END, 1 << 15);
+        // Think states are a dense 0-12 sequence.
+        assert_eq!(think::NONE, 0);
+        assert_eq!(think::WAIT, 1);
+        assert_eq!(think::ROLL, 2);
+        assert_eq!(think::GIVE_MERODY, 10);
+        assert_eq!(think::POCKETS_FULL, 11);
+        assert_eq!(think::GIVE_LATER, 12);
+        // Schedule and placement.
+        assert_eq!(schedule::WEEKDAY, 6);
+        assert_eq!(schedule::START_HOUR, 20);
+        assert_eq!(schedule::END_HOUR, 23);
+        assert_eq!(schedule::BLOCK, (1, 3));
+        assert_eq!(schedule::UNIT, (7, 7));
+        assert_eq!(schedule::ACTOR_ARG, 0x51);
+        // Collection bounds.
+        assert_eq!(collection::MINIDISK_START, 0x2A00);
+        assert_eq!(collection::MINIDISK_END, 0x2A37);
+        assert_eq!(collection::MINIDISK52, 0x2A34);
+        assert_eq!(collection::NUM_GOOD_MD, 52);
+        assert_eq!(collection::WORDS, 2);
+    }
+
+    #[test]
+    fn song_kernels_edges() {
+        // Greeting talk wraps with & 3.
+        assert_eq!(greet_msg(4), greet_msg(0));
+        assert_eq!(greet_msg(5), MSG_START + 0x1);
+        // Fallback song roll folds mod 3.
+        assert_eq!(request_fallback_song(3), 0x37);
+        assert_eq!(request_fallback_song(5), 0x39);
+        // Long-song boundary at 0x34.
+        assert!(!request_is_long(0x33));
+        assert!(request_is_long(0x34));
+        // Reroll: different songs never reroll; 3 retries max.
+        assert!(!needs_reroll(7, 8, 2));
+        assert!(!needs_reroll(7, 7, 3));
+        // collect song 51 sets word1 bit 19.
+        let (w0, w1) = collect(0, 0, 51);
+        assert_eq!((w0, w1), (0, 1 << 19));
+        // Round trip: collect 0..=31 then select idx 0 -> song 32.
+        let mut words = (0u32, 0u32);
+        for s in 0..32u8 {
+            words = collect(words.0, words.1, s);
+        }
+        assert_eq!(count_uncollected(words.0, words.1), 20);
+        assert_eq!(select_song(words.0, words.1, 0), 32);
+        assert_eq!(select_song(words.0, words.1, 19), 51);
+    }
+
 }

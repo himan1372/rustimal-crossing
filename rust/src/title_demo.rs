@@ -447,3 +447,139 @@ pub extern "C" fn pc_titledemo_advance_frame(
         DEMO_STATE.lock().unwrap().frame_30fps = demo_frame_clamp(f);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn keydata_decode_bit_layout() {
+        // Documented layout: bit 0 = A, bits 7:1 = stick Y, bit 8 = B, bits 15:9 = stick X.
+        let z = decode_keydata(0x0000);
+        assert_eq!(z, DemoInput { stick_x: 0, stick_y: 0, btn_a: false, btn_b: false });
+        assert!(decode_keydata(0x0001).btn_a);
+        assert!(!decode_keydata(0x0001).btn_b);
+        assert!(decode_keydata(0x0100).btn_b);
+        assert!(!decode_keydata(0x0100).btn_a);
+        // Stick X extremes: 0x0200 -> +1, 0x7E00 -> +63, 0x8000 -> -64.
+        assert_eq!(decode_keydata(0x0200).stick_x, 1);
+        assert_eq!(decode_keydata(0x7E00).stick_x, 63);
+        assert_eq!(decode_keydata(0x8000).stick_x, -64);
+        // Stick Y extremes: 0x007E -> +63, 0x0080 -> -64.
+        assert_eq!(decode_keydata(0x007E).stick_y, 63);
+        assert_eq!(decode_keydata(0x0080).stick_y, -64);
+        assert_eq!(decode_keydata(0x0002).stick_y, 1); // field 0b0000001 = +1
+        // Combined sample: A + B + X=-1 (0xFE00) + Y=+1 (0x0002).
+        let d = decode_keydata(0xFE00 | 0x0100 | 0x0002 | 0x0001);
+        assert_eq!(d.stick_x, -1);
+        assert_eq!(d.stick_y, 1);
+        assert!(d.btn_a && d.btn_b);
+        // demo_header wraps both axes.
+        assert_eq!(demo_header(0, demo_header_key::TOOL), 0x0000);
+        assert_eq!(demo_header(1, demo_header_key::TOOL), 0x2204);
+        assert_eq!(demo_header(5, 0), demo_header(0, 0));
+        assert_eq!(demo_header(0, 6), demo_header(0, 0));
+    }
+
+    #[test]
+    fn demo_id_cycling() {
+        assert_eq!(demono_next(TITLEDEMO_LOGO), TITLEDEMO_START1);
+        assert_eq!(demono_next(1), 2);
+        assert_eq!(demono_next(5), TITLEDEMO_START1); // wraps past NUM
+        assert_eq!(demono_next(0), 1);
+        assert_eq!(titledemo_index(TITLEDEMO_LOGO), 0);
+        assert_eq!(titledemo_index(TITLEDEMO_NONE), 0);
+        assert_eq!(titledemo_index(1), 0);
+        assert_eq!(titledemo_index(5), 4);
+        // Button input dies at frame 3530.
+        assert_eq!(DEMO_START_END_FRAME, 3530);
+        assert!(demo_button_ok(3529));
+        assert!(!demo_button_ok(3530));
+        assert!(!demo_button_ok(3600));
+        assert_eq!(DEMO_LENGTH_FRAMES_30FPS, 1800);
+        assert_eq!(DEMO_LENGTH_FRAMES_60FPS, 3600);
+    }
+
+    #[test]
+    fn frame_advance_and_clamp() {
+        // One 30fps tick advances exactly one sample (accum ~0).
+        let (f, a) = advance_demo_frame(10, 0.0, 1.0 / 30.0);
+        assert_eq!(f, 11);
+        assert!(a.abs() < 1e-6, "accum={a}");
+        // delta_time clamps to 1/30 s: a huge dt advances only one frame.
+        let (f, a) = advance_demo_frame(10, 0.0, 1.0);
+        assert_eq!(f, 11);
+        assert!(a.abs() < 1e-6, "accum={a}");
+        // Negative dt contributes nothing.
+        assert_eq!(advance_demo_frame(10, 0.25, -1.0), (10, 0.25));
+        // Accumulator carries fractional frames across calls.
+        let (f, a) = advance_demo_frame(10, 0.9, 1.0 / 60.0);
+        assert_eq!(f, 11);
+        assert!((a - 0.4).abs() < 1e-6, "accum={a}");
+        // Saturation at the last recorded sample.
+        let (f, a) = advance_demo_frame(1799, 0.0, 1.0 / 30.0);
+        assert_eq!(f, 1799);
+        assert!(a.abs() < 1e-6, "accum={a}");
+        assert_eq!(advance_demo_frame(1798, 0.9, 1.0 / 30.0).0, 1799);
+        // Clamp helper.
+        assert_eq!(demo_frame_clamp(-5), 0);
+        assert_eq!(demo_frame_clamp(1800), 1799);
+        assert_eq!(demo_frame_clamp(1799), 1799);
+        // Demo ends at 60 s.
+        assert!(!demo_time_done(59.9));
+        assert!(demo_time_done(60.0));
+        // Tool id passes through the verified no-op filter.
+        for tool in [0x0000u16, 0x2201, 0x2203, 0x2204, 0xFFFF] {
+            assert_eq!(demo_tool_passthrough(tool), tool);
+        }
+    }
+
+    #[test]
+    fn trademark_flow() {
+        // Fresh boot skips straight to the demo scene.
+        let s = TrademarkState::new(true);
+        assert_eq!(s.stage, trademark_stage::GOTO_DEMO);
+        // Cold boot: opaque fade, logo hidden, timers primed.
+        let mut s = TrademarkState::new(false);
+        assert_eq!(s.stage, trademark_stage::PICK_DEMO);
+        assert_eq!(s.alpha, TRADEMARK_ALPHA_MAX);
+        assert_eq!(s.alpha2, 0.0);
+        assert_eq!(s.logo_timer, TRADEMARK_LOGO_TIMER);
+        assert_eq!(s.move_timer, TRADEMARK_MOVE_TIMER);
+        // Stage 0 picks the demo and plays its fanfare.
+        let ev = trademark_move_step(&mut s, 1.0, 0);
+        assert_eq!(ev, TrademarkEvent::PlayFanfare(83));
+        assert_eq!(s.stage, trademark_stage::WAIT);
+        assert_eq!(s.alpha, 0.0);
+        // Fanfare index wraps across the 5 demos.
+        let mut s2 = TrademarkState::new(false);
+        let ev = trademark_move_step(&mut s2, 1.0, 7);
+        assert_eq!(ev, TrademarkEvent::PlayFanfare(85)); // TITLE_DEMO_BGM[7 % 5]
+        // Walk the whole machine to the demo scene.
+        let mut s = TrademarkState::new(false);
+        let mut last = TrademarkEvent::None;
+        for _ in 0..500 {
+            last = trademark_move_step(&mut s, 1.0, 2);
+            if s.stage == trademark_stage::GOTO_DEMO {
+                break;
+            }
+        }
+        assert_eq!(s.stage, trademark_stage::GOTO_DEMO);
+        assert_eq!(last, TrademarkEvent::GotoDemo);
+        // Fade values end clamped at opaque.
+        assert_eq!(s.alpha, TRADEMARK_ALPHA_MAX);
+        assert_eq!(s.alpha2, TRADEMARK_ALPHA_MAX);
+        // START cancel: only at LOGO_HOLD with pad + START, or already set.
+        assert!(trademark_cancel_check(trademark_stage::LOGO_HOLD, false, true, true));
+        assert!(!trademark_cancel_check(trademark_stage::LOGO_HOLD, false, false, true));
+        assert!(!trademark_cancel_check(trademark_stage::LOGO_HOLD, false, true, false));
+        assert!(!trademark_cancel_check(trademark_stage::WAIT, false, true, true));
+        assert!(trademark_cancel_check(trademark_stage::WAIT, true, false, false));
+        // Tradeday presets and door positions are sane.
+        assert_eq!(DEMO_TRADEDAYS.len(), TITLE_DEMO_NUM);
+        assert_eq!(DEMO_TRADEDAYS[0], (4, 6, 13, 3));
+        assert_eq!(DEMO_DOOR_POSITIONS.len(), TITLE_DEMO_NUM);
+        assert_eq!(TITLE_DEMO_BGM, [83, 84, 85, 86, 87]);
+        assert_eq!(trademark_stage::GOTO_DEMO, 5);
+    }
+}

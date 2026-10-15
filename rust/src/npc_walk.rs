@@ -470,4 +470,64 @@ mod tests {
         assert_eq!(p.owner[0], None);
         assert!(town_forced_field(false, true));
     }
+
+    #[test]
+    fn goal_and_status_constants() {
+        // Goal ids are a dense 0-4 enum.
+        assert_eq!(goal::SHRINE, 0);
+        assert_eq!(goal::HOME, 1);
+        assert_eq!(goal::ALONE, 2);
+        assert_eq!(goal::MY_HOME, 3);
+        assert_eq!(goal::NONE, 4);
+        // Status ids.
+        assert_eq!(status::NONE, 0);
+        assert_eq!(status::WALKING, 1);
+        assert_eq!(status::STAY_IN_BLOCK, 2);
+        assert_eq!(status::ARRIVE, 3);
+        assert_eq!(status::UNSET, 5);
+        // Appear status/way vocabulary.
+        assert_eq!(APPEAR_REGULAR, 0);
+        assert_eq!(APPEAR_GUEST, 1);
+        assert_eq!(APPEAR_STATUS_NONE, 2);
+        assert_eq!(WAY_UP, 0);
+        assert_eq!(WAY_DOWN, 1);
+        assert_eq!(WAY_LEFT, 2);
+        assert_eq!(WAY_RIGHT, 3);
+        assert_eq!(WAY_NONE, 4);
+        // Five walkers for a full town of 15.
+        assert_eq!(WALK_MAX, 5);
+        // Out-of-range fallback acre.
+        assert_eq!(FALLBACK_BLOCK, (4, 3));
+    }
+
+    #[test]
+    fn decide_npc_and_pool_edges() {
+        // No candidates: everyone used or no goals at this hour.
+        let mut animals = [WalkAnimal::default(); ANIMAL_NUM_MAX];
+        animals[0] = WalkAnimal { exists: true, looks: 0, home_block: (1, 1), now_block: Some((1, 1)) };
+        // looks 0 at 05:00 has no goals (first slot empty).
+        assert_eq!(decide_npc(&animals, 0, t(5, 0), &mut seq(vec![0])), None);
+        // All used -> None.
+        assert_eq!(decide_npc(&animals, 0xFFFF, t(12, 0), &mut seq(vec![0])), None);
+        // Non-existent animals are skipped.
+        let empty = [WalkAnimal::default(); ANIMAL_NUM_MAX];
+        assert_eq!(decide_npc(&empty, 0, t(12, 0), &mut seq(vec![0])), None);
+        // Schedule pool: full pool returns None; reset of unknown is a no-op.
+        let mut p = SchedulePool::default();
+        for i in 0..SCHEDULE_NUM as u8 {
+            assert!(p.set(i, 0, false).is_some());
+        }
+        assert_eq!(p.set(99, 0, false), None);
+        p.reset(200); // unknown animal: no panic, no change
+        assert!(p.owner.iter().all(|o| o.is_some()));
+        // Town forced-field gate.
+        assert!(town_forced_field(true, false));
+        assert!(town_forced_field(false, true));
+        assert!(!town_forced_field(false, false));
+        // Goal clamp: out-of-range blocks fall back to (4,3).
+        let w = NpcWalk::default();
+        let slot = WalkInfo { goal_type: 99, ..WalkInfo::default() };
+        assert_eq!(w.goal_block(&slot, &animals, &mut seq(vec![0])), FALLBACK_BLOCK);
+    }
+
 }

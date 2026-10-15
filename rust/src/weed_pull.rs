@@ -58,3 +58,54 @@ mod tests {
         assert_eq!(pull_on_frame(true, Some(0x0000), 0), None);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn weed_boundaries() {
+        assert_eq!(GRASS_A, 0x0008);
+        assert_eq!(GRASS_C, 0x000A);
+        assert!(!is_weed(0x0007));
+        assert!(is_weed(GRASS_A));
+        assert!(is_weed(0x0009));
+        assert!(is_weed(GRASS_C));
+        assert!(!is_weed(0x000B));
+        assert!(!is_weed(0xFFFF));
+        assert!(!is_weed(0x0000));
+    }
+
+    #[test]
+    fn fly_angle_offset_math() {
+        // DEG2SHORT_ANGLE2(110.0) = trunc(110 * 65536 / 360).
+        assert_eq!(FLY_ANGLE_OFFSET, (110.0f32 * 65536.0 / 360.0) as i32);
+        assert_eq!(FLY_ANGLE_OFFSET, 20024);
+    }
+
+    #[test]
+    fn pull_angle_wrapping() {
+        // Fly angle is (20024 + facing) wrapped to s16.
+        assert_eq!(pull_on_frame(true, Some(0x0009), -20024), Some(0));
+        // Positive overflow: 20024 + 32767 = 52791 -> -12745.
+        assert_eq!(pull_on_frame(true, Some(0x0008), 32767), Some(-12745));
+        // Negative: 20024 - 32768 = -12744 (no wrap needed).
+        assert_eq!(pull_on_frame(true, Some(0x000A), -32768), Some(-12744));
+    }
+
+    #[test]
+    fn pull_conditions_and_consts() {
+        // Frame miss or cleared unit -> nothing happens.
+        assert_eq!(pull_on_frame(false, Some(0x0009), 0), None);
+        assert_eq!(pull_on_frame(true, None, 0), None);
+        assert_eq!(pull_on_frame(true, Some(0x000B), 0), None);
+        assert_eq!(pull_on_frame(true, Some(0x0000), 0), None);
+        // Non-weed grass-adjacent item ids are ignored.
+        for item in [0x0007u16, 0x000B, 0x000C, 0x0100] {
+            assert_eq!(pull_on_frame(true, Some(item), 100), None);
+        }
+        assert_eq!(REQUEST_PRIORITY, 8);
+        assert_eq!(PULL_FRAME, 17.0);
+        assert_eq!(ANIM_MORPH, -6.0);
+    }
+}

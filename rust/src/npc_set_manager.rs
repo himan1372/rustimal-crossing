@@ -306,4 +306,44 @@ mod tests {
         assert!(spawning_blocked(false, false, false, true) && !spawning_blocked(false, false, false, false));
         assert!(may_walk(true, false) && !may_walk(true, true));
     }
+
+    #[test]
+    fn walk_step_wrapping() {
+        // Unit underflow wraps to the previous block at unit 14.
+        assert_eq!(walk_step((2, 2), (0, 7), (1, 2)), ((1, 2), (14, 7), true));
+        // Unit overflow wraps to the next block at unit 1.
+        assert_eq!(walk_step((2, 2), (15, 7), (3, 2)), ((3, 2), (1, 7), true));
+        // No crossing: block unchanged, flag false.
+        assert_eq!(walk_step((2, 2), (7, 7), (2, 3)), ((2, 2), (7, 8), false));
+        // Both axes can wrap in one step.
+        assert_eq!(walk_step((2, 2), (15, 15), (3, 3)), ((3, 3), (1, 1), true));
+    }
+
+    #[test]
+    fn crowd_and_counts() {
+        // Per-acre count saturates at 14 when reaching 15 (quirk).
+        assert_eq!(in_block_after_enter(0), 1);
+        assert_eq!(in_block_after_enter(13), 14);
+        assert_eq!(in_block_after_enter(14), 14);
+        // Crowd flip only touches WALKING/STAY_IN_BLOCK.
+        assert_eq!(crowd_status(status::ARRIVE, 3), status::ARRIVE);
+        assert_eq!(crowd_status(status::ARRIVE, 0), status::ARRIVE);
+        assert_eq!(crowd_status(status::STAY_IN_BLOCK, 3), status::STAY_IN_BLOCK);
+        assert_eq!(crowd_status(status::WALKING, 2), status::WALKING);
+        // Go-home candidate table: home first (ARRIVE), then N/S/W/E.
+        assert_eq!(GO_HOME_OFFSETS[0], ((0, 0), status::ARRIVE));
+        assert_eq!(GO_HOME_OFFSETS.len(), 5);
+        // Regular-appear statuses.
+        assert!(regular_status_ok(status::WALKING));
+        assert!(regular_status_ok(status::STAY_IN_BLOCK));
+        assert!(regular_status_ok(status::ARRIVE));
+        assert!(!regular_status_ok(status::NONE));
+        // Tick/frame constants.
+        assert_eq!(WALK_TICK_FRAMES, 420);
+        assert_eq!(ARRIVE_STAY_FRAMES, 108000);
+        assert_eq!(GO_HOME_COUNT, 108001);
+        assert_eq!(GUEST_RESET_TIMER, 10800);
+        assert_eq!(BLOCK_NPC_CAP, 3);
+    }
+
 }

@@ -295,4 +295,40 @@ mod tests {
         assert_eq!(speech_msg(false, weather::RAIN, 2), 0x3DB5 + 6);
         assert_eq!(speech_force_msg(), 0x3DB5);
     }
+
+    #[test]
+    fn constants_and_followup_math() {
+        // Name-table metadata.
+        assert_eq!(meta::NAME_STRING, 0x4E3);
+        assert_eq!(meta::PARAM, 2);
+        // Bridge data.
+        assert_eq!(bridge::ANIMAL_NUM_MAX, 15);
+        assert_eq!(bridge::TUG_TIMER, 0x12C);
+        assert_eq!(bridge::FOLLOWUP_MAX, 5);
+        assert_eq!(bridge::PENDING_MSG_BASE, 0x2F44);
+        // Follow-up message wraps msg_no mod 5.
+        assert_eq!(followup_msg(true, 7), 0x2F47 + 2);
+        assert_eq!(followup_msg(false, 5), 0x2F39);
+        assert_eq!(next_followup_msg(0), 1);
+        assert_eq!(next_followup_msg(4), 0);
+        // Speech: SAKURA/LEAVES take the default arm (+6, no roll).
+        assert_eq!(speech_msg(false, weather::SAKURA, 3), 0x3DB5 + 6);
+        assert_eq!(speech_msg(false, weather::LEAVES, 0), 0x3DB5 + 6);
+        // Groundhog branch ignores weather entirely.
+        assert_eq!(speech_msg(true, weather::SNOW, 4), 0x3DB5 + 1 + 4);
+        // Bridge-remain math: spots-1-used.
+        assert_eq!(bridge_remain(1, 0), 0);
+        assert!(bridge_final_candidate(bridge_remain(1, 0)));
+    }
+
+    #[test]
+    fn bridge_day_edges() {
+        // Saturday is always eligible, even on the scheduled date.
+        assert!(bridge_day_eligible(weekday::SATURDAY, 0x1234, 0x1234));
+        // Sunday is never eligible.
+        assert!(!bridge_day_eligible(weekday::SUNDAY, 0x0000, 0xFFFF));
+        // A non-Sunday with no scheduled date (0) and a different today.
+        assert!(bridge_day_eligible(5, 0x0000, 0x0101));
+    }
+
 }

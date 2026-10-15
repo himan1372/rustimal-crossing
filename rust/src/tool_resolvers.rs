@@ -237,3 +237,30 @@ mod tests {
         assert_eq!(ROD_CAST_DISTANCE, 100.0);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn dig_gate_boundary() {
+        // Exactly at the half-unit threshold does NOT count as different.
+        assert!(!dig_differs_from_last(40.0, 0.0, 0.0, 0.0, 40.0, 40.0));
+        assert!(dig_differs_from_last(40.01, 0.0, 0.0, 0.0, 40.0, 40.0));
+        assert!(!dig_differs_from_last(0.0, -40.0, 0.0, 0.0, 40.0, 40.0));
+    }
+
+    #[test]
+    fn axe_broken_and_abi_modes() {
+        // Broken axe stays broken.
+        let (w, d) = axe_apply_damage(8, 8, false);
+        assert_eq!((w, d), (8, 0));
+        // C ABI: mode 0 = sweep, 1 = radial, other = sweep (default arm).
+        assert_eq!(pc_net_geometry(0, 5.0, 0), 50.0);
+        assert_eq!(pc_net_geometry(0, 5.0, 2), 50.0);
+        assert_eq!(pc_net_geometry(1, 5.0, 0), 60.0);
+        // Rod sample boundary: exactly 60 is rejected.
+        assert_eq!(pc_rod_sample_ok(1, 0, 60.0), 0);
+        assert_eq!(pc_rod_sample_ok(1, 0, 59.99), 1);
+    }
+}

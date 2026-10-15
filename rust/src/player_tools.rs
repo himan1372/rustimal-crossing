@@ -291,3 +291,56 @@ mod tests {
         assert_eq!(pc_vib_rod_hook(0), 0);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn axe_frame_edges() {
+        // Between events: 16.9 is after BeeAttackStatus(16.5), before 17.0.
+        assert_eq!(swing_axe_frame_event(16.9, false, false), None);
+        assert_eq!(swing_axe_frame_event(17.0, false, false), Some(AxeSwingEvent::SettleOrWalk));
+        // Far past the end still settles.
+        assert_eq!(swing_axe_frame_event(100.0, false, false), Some(AxeSwingEvent::SettleOrWalk));
+        // Negative/zero cutcount always becomes a stump.
+        assert_eq!(tree_hit_outcome(-1, false), (true, true, false));
+        assert_eq!(tree_hit_outcome(0, true), (true, false, true));
+        assert_eq!(tree_hit_outcome(1, false), (false, true, false));
+        // C ABI: null out-param is a safe no-op returning 0.
+        assert_eq!(pc_tree_hit_outcome(0, 0, std::ptr::null_mut()), 0);
+        assert_eq!(pc_swing_axe_frame_event(16.5), 3);
+        assert_eq!(pc_swing_axe_frame_event(10.0), 1);
+        assert_eq!(pc_swing_axe_frame_event(100.0), 4);
+        assert_eq!(semantic::CHOP_TREE, 0);
+        assert_eq!(semantic::CHOP_PALM_TREE, 1);
+    }
+
+    #[test]
+    fn net_rod_edges() {
+        // end_flag or hit alone is enough; unknown check_type continues.
+        assert_eq!(net_swing_outcome(5, true, false), NetSwingOutcome::Continue);
+        assert_eq!(net_swing_outcome(5, false, true), NetSwingOutcome::Continue);
+        assert_eq!(net_swing_outcome(0, false, true), NetSwingOutcome::Stop);
+        assert_eq!(net_swing_outcome(2, false, true), NetSwingOutcome::Pull);
+        assert_eq!(net_swing_outcome(0, false, false), NetSwingOutcome::Continue);
+        // Priority ladder: swing < pull/stop/vib/collect < fly.
+        assert!(tool_priority::SWING_NET < tool_priority::PULL_NET);
+        assert_eq!(tool_priority::PULL_NET, tool_priority::STOP_NET);
+        assert_eq!(tool_priority::PULL_NET, tool_priority::VIB_ROD);
+        assert_eq!(tool_priority::PULL_NET, tool_priority::COLLECT_ROD);
+        assert!(tool_priority::VIB_ROD < tool_priority::FLY_ROD);
+        // Rod case routing: only 5 and 6 are live.
+        assert_eq!(relax_rod_case(-1), RodBiteOutcome::Nothing);
+        assert_eq!(relax_rod_case(7), RodBiteOutcome::Nothing);
+        assert!(vib_rod_hook(-5)); // any nonzero status hooks
+        assert!(!vib_rod_hook(0));
+        assert!(!cast_rod_frame_event(20.5));
+        assert!(!cast_rod_frame_event(0.0));
+        // C ABI.
+        assert_eq!(pc_net_swing_outcome(0, 0, 1), 2);
+        assert_eq!(pc_net_swing_outcome(2, 0, 1), 1);
+        assert_eq!(pc_relax_rod_case(-1), 0);
+        assert_eq!(pc_vib_rod_hook(-5), 1);
+    }
+}

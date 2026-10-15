@@ -295,3 +295,98 @@ mod tests {
         assert!(soccer_target(true, 2, true) && !soccer_target(true, 1, true));
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    fn free_errands() -> [Errand; ERRAND_QUEST_NUM] {
+        [Errand::cleared(); ERRAND_QUEST_NUM]
+    }
+
+    #[test]
+    fn slot_selection_edges() {
+        // Existing first-job is preferred over a free slot anywhere.
+        let mut es = free_errands();
+        set_plant_flower(&mut es[3]);
+        assert_eq!(first_job_slot(&es), Some(3));
+        // All slots occupied by non-first-job quests -> None.
+        let mut es = free_errands();
+        for e in es.iter_mut() {
+            e.base.quest_type = qtype::DELIVERY;
+        }
+        assert_eq!(first_job_slot(&es), None);
+        // Errand::cleared is free, pocketless, and not a first job.
+        let e = Errand::cleared();
+        assert!(is_free(&e.base));
+        assert_eq!(e.pockets_idx, -1);
+        assert!(!e.is_first_job());
+        // set_start documents the progress-0 quirk.
+        let mut e = Errand::cleared();
+        set_start(&mut e);
+        assert!(first_job_finished(&e));
+        assert_eq!(e.used_ids, [0, 0]);
+        assert_eq!(e.base.quest_kind, fj::START);
+        assert!(!e.base.time_limit_enabled);
+    }
+
+    #[test]
+    fn step_details() {
+        // Plant-flower / introductions record nothing extra.
+        let mut e = Errand::cleared();
+        set_plant_flower(&mut e);
+        assert_eq!(e.base.quest_kind, fj::PLANT_FLOWER);
+        assert_eq!(e.recipient, 0);
+        assert_eq!(e.used_num, 0);
+        assert!(e.is_first_job());
+        let mut e = Errand::cleared();
+        set_introductions(&mut e);
+        assert_eq!(e.base.quest_kind, fj::INTRODUCTIONS);
+        // Change-cloth records only the item.
+        let mut e = Errand::cleared();
+        set_change_cloth(&mut e, 0x2201);
+        assert_eq!(e.item, 0x2201);
+        assert_eq!(e.recipient, 0);
+        // Notice (not open) returns false and clears the recipient.
+        let mut e = Errand::cleared();
+        e.recipient = 0xE001;
+        assert!(!set_notice_or_open(&mut e, false));
+        assert_eq!(e.recipient, 0);
+        assert_eq!(e.base.quest_kind, fj::POST_NOTICE);
+        // first_job_common always sets progress 2, no limit, FIRST_JOB type.
+        for kind in [fj::DELIVER_CARPET, fj::DELIVER_AXE, fj::DELIVER_AXE2, fj::SEND_LETTER2] {
+            let mut e = Errand::cleared();
+            set_delivery_step(&mut e, kind, 0xE009, 0x1234, 7);
+            assert_eq!(e.base.progress, 2);
+            assert!(!e.base.time_limit_enabled);
+            assert_eq!(e.errand_type, ERRAND_TYPE_FIRST_JOB);
+            assert_eq!(e.used_ids, [0, 0]); // delivery steps record no used id
+        }
+        // Letter2 writes used_ids[1] like letter 1.
+        let mut e = Errand::cleared();
+        set_letter(&mut e, 0xE005, true);
+        assert_eq!(e.used_ids, [0, 0xE005]);
+        assert_eq!(e.used_num, 2);
+        assert_eq!(e.base.quest_kind, fj::SEND_LETTER2);
+        // Lookup edges.
+        let mut es = free_errands();
+        set_furniture(&mut es[0], 0xE001, 0x1234, 4);
+        assert_eq!(errand_for_pocket(&es, POCKETS_SLOT_COUNT, 0x1234, ITEM_COND_QUEST), None);
+        assert_eq!(errand_for_pocket(&es, 4, 0x9999, ITEM_COND_QUEST), None);
+        assert!(!pocket_is_first_job(&es, 4, 0x1234, ITEM_COND_PRESENT));
+        let d = [QuestBase { quest_type: qtype::NONE, ..Default::default() }; POCKETS_SLOT_COUNT];
+        assert_eq!(delivery_for_pocket(&d, POCKETS_SLOT_COUNT), None);
+        assert_eq!(occurred_delivery(&d, 0), None);
+        // Snowman: wrong acre or non-1 progress -> unchanged.
+        assert_eq!(snowman_contest(1, (2, 3), (4, 5), true), SnowmanContest::Unchanged);
+        assert_eq!(snowman_contest(0, (2, 3), (2, 3), true), SnowmanContest::Unchanged);
+        // Soccer: non-NPC actor or non-requester -> false.
+        assert!(!soccer_target(false, 2, true));
+        assert!(!soccer_target(true, 2, false));
+        // pocket_overdue via the errand path (delivery free at that slot).
+        let mut d = [QuestBase { quest_type: qtype::NONE, ..Default::default() }; POCKETS_SLOT_COUNT];
+        assert!(pocket_overdue(&d, &es, 4, 0x1234, |_| true));
+        assert!(!pocket_overdue(&d, &es, 4, 0x1234, |_| false));
+        assert!(!pocket_overdue(&d, &es, 5, 0x1234, |_| true)); // wrong pocket
+    }
+}

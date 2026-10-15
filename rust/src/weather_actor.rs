@@ -393,3 +393,53 @@ mod tests {
         assert_eq!(rain_ambience(1, false), Some(7));
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn rain_drop_boundaries() {
+        // random_f returns 0: x=-130, z=-200, vy=-11.5.
+        let (x, z, vy) = rain_drop(&mut |_| 0.0);
+        assert_eq!((x, z, vy), (-130.0, -200.0, -11.5));
+        // random_f returns its max: x=130, z=160, vy=-14.0.
+        let (x, z, vy) = rain_drop(&mut |m| m);
+        assert_eq!((x, z, vy), (130.0, 160.0, -14.0));
+        assert_eq!((RAIN_LIFE, RAIN_SPLASH_AFTER, SPLASH_LIFE), (1000, 10, 8));
+    }
+
+    #[test]
+    fn request_and_switch_edges() {
+        // Same status: just re-aims, no change request.
+        let mut c = WeatherCtl::new(wt::RAIN, 2, 2);
+        c.request(wt::RAIN, 3, true);
+        assert_eq!((c.aim_level, c.request_change, c.next_status), (3, false, wt::RAIN));
+        // env_ok false: nothing changes.
+        c.request(wt::CLEAR, 1, false);
+        assert_eq!((c.aim_level, c.request_change, c.next_status), (3, false, wt::RAIN));
+        // Indoors switch: no particle drain needed.
+        let mut c2 = WeatherCtl::new(wt::RAIN, 0, 0);
+        c2.alloc(0, 1, 5);
+        c2.request(wt::CLEAR, 2, true);
+        assert_eq!(c2.try_switch(false), Some(wt::CLEAR));
+        // renew_level steps exactly one level per 180 frames.
+        let mut c3 = WeatherCtl::new(wt::RAIN, 3, 1);
+        for _ in 0..179 {
+            assert!(!c3.renew_level());
+        }
+        assert_eq!(c3.current_level, 3);
+        assert!(c3.renew_level());
+        assert_eq!(c3.current_level, 2);
+        // Thunder flash suppressed when the scene disallows it.
+        let mut th = Thunder::default();
+        for _ in 0..30 {
+            th.step(7, wt::RAIN, 3, false, |_| 0.0);
+        }
+        // 31st frame would flash (t == t2 == 30) but flash_ok=false.
+        assert_eq!(th.step(7, wt::RAIN, 3, false, |_| 0.0), ThunderEvent::None);
+        assert_eq!(rain_ambience(0, false), None);
+        assert_eq!(rain_ambience(3, false), Some(9));
+        assert_eq!(rain_ambience(3, true), Some(0x14));
+    }
+}

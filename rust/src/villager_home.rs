@@ -418,4 +418,64 @@ mod tests {
         let elig_arr = [1u8, 1, 1, 1, 1, 1];
         assert_eq!(pc_min_looks_bitfield(pop_arr.as_ptr(), elig_arr.as_ptr()), 0b101000);
     }
+
+    #[test]
+    fn home_info_markers() {
+        // Unset marker is all 0xFF.
+        let u = HomeInfo::unset();
+        assert_eq!((u.block_x, u.block_z, u.ut_x, u.ut_z), (0xFF, 0xFF, 0xFF, 0xFF));
+        assert!(!u.is_set());
+        // is_set only needs one of block_x/block_z set.
+        // Default (0,0) reads as set: only the 0xFF marker means unset.
+        assert!(HomeInfo::default().is_set());
+        let mut h = HomeInfo::unset();
+        h.block_z = 0;
+        assert!(h.is_set()); // either coordinate set counts
+        // Swap helper respects bounds.
+        let mut t = [0usize, 1, 2];
+        make_rand_table(&mut t, &[(0, 2), (9, 9)]);
+        assert_eq!(t, [2, 1, 0]);
+        assert_eq!(LOT_SHUFFLE_SWAPS, 30);
+    }
+
+    #[test]
+    fn lot_scan_order_and_assignment_edges() {
+        // Scan order: bz, bx, uz, ux — a later cell sorts after an earlier one.
+        let lots = collect_reserved_lots(|bx, bz, ux, uz| (bx, bz, ux, uz) == (0, 1, 0, 0) || (bx, bz, ux, uz) == (0, 0, 0, 0));
+        assert_eq!(lots.len(), 2);
+        assert_eq!((lots[0].block_z, lots[1].block_z), (0, 1));
+        // Out-of-range lot_order indices are skipped like the source.
+        let lots = vec![
+            ReservedLot { block_x: 0, block_z: 0, ut_x: 1, ut_z: 1 },
+            ReservedLot { block_x: 2, block_z: 2, ut_x: 3, ut_z: 3 },
+        ];
+        let homes = assign_homes(&lots, &[5, 0], 1);
+        assert_eq!(homes.len(), 1);
+        assert_eq!(homes[0].ut_z, 2); // marker + 1
+        // No lots at all: nobody gets a home.
+        assert!(assign_homes(&[], &[0], 2).is_empty());
+        // Selection respects the count cap.
+        let order = [0usize, 1, 2, 3, 4, 5];
+        let sel = decide_living_npc_max(&order, |i| i, |_| grow_perm::STARTER, 3);
+        assert_eq!(sel.len(), 3);
+        // Empty input selects nothing.
+        let sel = decide_living_npc_max(&[], |i| i, |_| grow_perm::STARTER, 6);
+        assert!(sel.is_empty());
+    }
+
+    #[test]
+    fn growth_gates_edges() {
+        // Rank 6 probability is 100: any rng < 100 passes.
+        assert!(check_grow_field_rank(6, 99));
+        assert!(!check_grow_field_rank(6, 100));
+        assert!(!check_grow_field_rank(6, 255));
+        // Population exactly at max blocks growth.
+        assert!(!check_grow(ANIMAL_NUM_MAX, true, true, true, true));
+        assert!(check_grow(ANIMAL_NUM_MAX - 1, true, true, true, true));
+        // Min-looks with no eligible categories -> empty bitfield.
+        assert_eq!(min_looks_bitfield(&[0; 6], &[false; 6]), 0);
+        // Ties produce multi-bit bitfields.
+        assert_eq!(min_looks_bitfield(&[2, 2, 5, 5, 5, 5], &[true; 6]), 0b000011);
+    }
+
 }

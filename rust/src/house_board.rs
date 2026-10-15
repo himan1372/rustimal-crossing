@@ -140,3 +140,76 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    extern "C" fn w10(_ch: u8) -> i32 {
+        10
+    }
+
+    #[test]
+    fn line_check_null_out() {
+        let s = b"ab";
+        // Null out pointer: the result code still comes back.
+        assert_eq!(
+            pc_hboard_line_check(s.as_ptr(), 0, 2, 0, 0, w10, core::ptr::null_mut()),
+            LINE_CHECK_OK
+        );
+        assert_eq!(
+            pc_hboard_line_check(s.as_ptr(), 5, 2, 0, 0, w10, core::ptr::null_mut()),
+            LINE_CHECK_OVER_STR_LEN
+        );
+    }
+
+    #[test]
+    fn line_len_accumulates() {
+        let s = b"hello";
+        let mut out = [0i32; 3];
+        let (mut pos, mut w, mut l) = (0usize, 0i32, 0i32);
+        for _ in 0..5 {
+            let r = pc_hboard_line_check(s.as_ptr(), pos, 5, w, l, w10, out.as_mut_ptr());
+            assert_eq!(r, LINE_CHECK_OK);
+            pos = out[0] as usize;
+            w = out[1];
+            l = out[2];
+        }
+        assert_eq!((pos, w, l), (5, 50, 5));
+        // Then the end of string.
+        assert_eq!(
+            pc_hboard_line_check(s.as_ptr(), pos, 5, w, l, w10, out.as_mut_ptr()),
+            LINE_CHECK_OVER_STR_LEN
+        );
+    }
+
+    #[test]
+    fn width_boundary_exact() {
+        // line_width + width == 192 is fine; 193 overflows.
+        let s = b"a";
+        let mut out = [0i32; 3];
+        assert_eq!(
+            pc_hboard_line_check(s.as_ptr(), 0, 1, 182, 0, w10, out.as_mut_ptr()),
+            LINE_CHECK_OK
+        );
+        assert_eq!(out[1], 192);
+        assert_eq!(
+            pc_hboard_line_check(s.as_ptr(), 0, 1, 183, 0, w10, out.as_mut_ptr()),
+            LINE_CHECK_OVER_WIDTH
+        );
+        // Result codes are the documented discriminants.
+        assert_eq!(
+            [LINE_CHECK_OK, LINE_CHECK_NEWLINE, LINE_CHECK_OVER_WIDTH, LINE_CHECK_OVER_STR_LEN],
+            [0, 1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn message_layout_constants() {
+        assert_eq!(HBOARD_LINE_WIDTH_MAX, 192);
+        assert_eq!(HBOARD_LINE_NUM, 4);
+        assert_eq!(HBOARD_MESSAGE_LEN, 128);
+        assert_eq!(CHAR_NEW_LINE, 205);
+        assert_eq!(HBOARD_LINE_Y_STEP, 16.0);
+    }
+}

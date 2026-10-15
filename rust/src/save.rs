@@ -369,3 +369,47 @@ mod tests {
         assert!(save_t_region("nope").is_none());
     }
 }
+
+#[cfg(test)]
+mod wave4_tests {
+    use super::*;
+
+    #[test]
+    fn checksum_odd_length_and_fixup_math() {
+        // Odd lengths sum to zero per the source, so an odd-length
+        // region "validates" (quirk of mFRm_ReturnCheckSum).
+        assert_eq!(checksum_sum(&[0x11, 0x22, 0x33]), 0);
+        assert!(checksum_valid(&[0x11, 0x22, 0x33]));
+        // Empty region: fixup is 0, valid.
+        assert_eq!(checksum_fixup(&[], 0), 0);
+        assert!(checksum_valid(&[]));
+        // Fixup subtracts the current field value first: words 5,3 sum 8,
+        // current 5 -> fixup = twos-complement of 3.
+        let data = [0x00u8, 0x05, 0x00, 0x03];
+        assert_eq!(checksum_sum(&data), 8);
+        assert_eq!(checksum_fixup(&data, 5), (!3u16).wrapping_add(1));
+        // C ABI: null/empty -> 0.
+        unsafe {
+            assert_eq!(pc_save_checksum(core::ptr::null(), 4), 0);
+            assert_eq!(pc_save_checksum_fixup(data.as_ptr(), 0, 0), 0);
+            assert_eq!(pc_save_checksum_valid(data.as_ptr(), 4), 0);
+        }
+    }
+
+    #[test]
+    fn file_table_and_regions() {
+        assert_eq!(SAVE_FILE_TABLE.len(), 8);
+        assert_eq!(SAVE_FILE_TABLE[0].kind, SaveFileKind::Misc);
+        assert_eq!(SaveFileKind::Player as u8, 7);
+        // Present/Player live outside the MURA file.
+        assert!(!SAVE_FILE_TABLE[6].in_main_file && !SAVE_FILE_TABLE[7].in_main_file);
+        assert!(SAVE_FILE_TABLE[1].in_main_file);
+        // The weather byte region is 1 byte.
+        let (_, wspan) = save_t_region("weather").unwrap();
+        assert_eq!(wspan, 1);
+        // Region table is non-overlapping in offset order.
+        assert!(SAVE_T_REGIONS.windows(2).all(|w| w[0].1 + w[0].2 <= w[1].1));
+        // Reset preservation is exactly the three keep regions.
+        assert_eq!(reset_preserved_regions().len(), 3);
+    }
+}

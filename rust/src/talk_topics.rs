@@ -348,3 +348,65 @@ mod tests {
         assert_eq!(pc_weather_time_msg_no(0x1FE8, 2, 1, 1), 0x1FE8 + 15);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn prob_tables_sum_to_100() {
+        let sum = |p: &[u8]| p.iter().map(|&w| w as u32).sum::<u32>();
+        assert_eq!(sum(&KI_PROB), 100);
+        assert_eq!(sum(&NORMAL_1_PROB), 100);
+        assert_eq!(sum(&NORMAL_2_PROB), 100);
+        assert_eq!(sum(&TRADE_PROB), 100);
+        assert_eq!(sum(&NORMAL_3_PROB), 100);
+        assert_eq!(sum(&GAME_PROB), 100);
+        // Every message base table is indexed by looks (0..=5).
+        assert_eq!(base::KI_NORMAL.len(), LOOKS_NUM);
+        assert_eq!(base::KI_WEATHER_TIME.len(), LOOKS_NUM);
+        assert_eq!(base::KI_FREE_ITEM.len(), LOOKS_NUM);
+        assert_eq!(base::KI_FTR.len(), LOOKS_NUM);
+        assert_eq!(base::KI_FREE_ITEM_MONEY.len(), LOOKS_NUM);
+        assert_eq!(base::LETTER.len(), LOOKS_NUM);
+        assert_eq!(base::MEMORY.len(), LOOKS_NUM);
+        assert_eq!(base::TRADE_FREE_ITEM.len(), LOOKS_NUM);
+        assert_eq!(base::TRADE_FTR.len(), LOOKS_NUM);
+        assert_eq!(base::TRADE_ITEM.len(), LOOKS_NUM);
+        assert_eq!(base::TRADE_FREE_ITEM_MONEY.len(), LOOKS_NUM);
+        assert_eq!(base::NORMAL3_NORMAL.len(), LOOKS_NUM);
+        assert_eq!(base::NORMAL3_WEATHER_TIME.len(), LOOKS_NUM);
+        assert_eq!(base::NORMAL3_WEATHER.len(), LOOKS_NUM);
+        assert_eq!(base::NORMAL3_SEASON.len(), LOOKS_NUM);
+        assert_eq!(base::GAME_HINT.len(), LOOKS_NUM);
+        assert_eq!(base::REMOVE_YES.len(), LOOKS_NUM);
+        assert_eq!(base::EV_SPECIAL.len(), LOOKS_NUM);
+        assert_eq!(base::EV_CAL.len(), LOOKS_NUM);
+    }
+
+    #[test]
+    fn chooser_and_season_edges() {
+        // Uniform trade table: rigged pick of index 75 lands in category 3.
+        let mut rng = |_: u32| 75u32;
+        assert_eq!(decide_idx_prob_table(&TRADE_PROB, &mut rng), 3);
+        // Partial weights: the unfilled tail keeps category 0.
+        let mut rng = |_: u32| 99u32;
+        assert_eq!(decide_idx_prob_table(&[50], &mut rng), 0);
+        let mut rng = |_: u32| 49u32;
+        assert_eq!(decide_idx_prob_table(&[50], &mut rng), 0);
+        // Shuffle is a no-op when every swap is the identity.
+        let mut rng = |_: u32| 0u32;
+        assert_eq!(decide_idx_prob_table(&GAME_PROB, &mut rng), 0);
+        // Season month clamps out-of-range months to January.
+        assert_eq!(normal3_season_msg_no(0x1FD7, 0), 0x1FD7 + 10);
+        assert_eq!(normal3_season_msg_no(0x1FD7, 13), 0x1FD7 + 10);
+        assert_eq!(normal3_season_msg_no(0x1FD7, -3), 0x1FD7 + 10);
+        assert_eq!(normal3_season_msg_no(0x1FD7, 3), 0x1FD7 + 0); // March -> +0
+        // First-job hint: snooty looks add 50.
+        assert_eq!(fj_hint_msg_no(0, 5), 0x0841 + 50);
+        assert_eq!(FJ_HINT_BASE, 0x0841);
+        // Weather/time matrix extremes.
+        assert_eq!(weather_time_msg_no(0, 0, 0, 0), 0);
+        assert_eq!(weather_time_msg_no(100, 3, 3, 1), 100 + 18 + 6 + 1);
+    }
+}

@@ -257,3 +257,39 @@ mod tests {
         assert_eq!(f.find_slot(200, &norm), None);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn eligible_count_abi() {
+        // flags pack: bit 0 = is furniture, bits 1..3 = excluded kind (7 = none).
+        let mut flags = [0u8; HOUSE_SCAN_W * HOUSE_SCAN_H];
+        flags[0] = 0b1111; // furniture, no exclusion -> counted
+        flags[1] = 0b0111; // furniture, excluded kind 3 -> not counted
+        flags[2] = 0b1110; // not furniture -> not counted
+        flags[3] = 0b1111; // counted
+        assert_eq!(pc_eligible_furniture_count(flags.as_ptr()), 2);
+        assert_eq!(pc_eligible_furniture_count(std::ptr::null()), 0);
+    }
+
+    #[test]
+    fn goods_source_discriminants() {
+        assert_eq!(GoodsSource::RandomItem as u8, 0);
+        assert_eq!(GoodsSource::VillagerHouse as u8, 1);
+        assert_eq!(pc_npc_house_goods(0), 1);
+        assert_eq!(pc_npc_house_goods(9), 0);
+        assert_eq!(pc_npc_house_goods(10), 0); // out of range -> general generator
+    }
+
+    #[test]
+    fn island_constants() {
+        assert_eq!(ISLAND_FTR_NUM, 16);
+        assert_eq!(ISLAND_FTR_SAVE_NUM, 4);
+        assert_eq!(HOUSE_SCAN_W * HOUSE_SCAN_H, 100);
+        let f = IslandFtr::new();
+        assert_eq!(f.trade_list.len(), ISLAND_FTR_SAVE_NUM);
+        assert_eq!(f.item_list.len(), ISLAND_FTR_NUM);
+    }
+}

@@ -229,3 +229,39 @@ mod tests {
         assert_eq!(pc_type_comb_count(types.as_ptr(), 5, 39, u.as_ptr(), 0), 2);
     }
 }
+
+#[cfg(test)]
+mod tests_wave4 {
+    use super::*;
+
+    #[test]
+    fn traversal_covers_grid() {
+        // Z-major, X-minor over 7x10 = 70 cells, no duplicates.
+        let trav: Vec<_> = select_traversal().collect();
+        assert_eq!(trav.len(), 70);
+        assert_eq!(*trav.last().unwrap(), (6, 9));
+        let mut seen = [[false; 7]; 10];
+        for (bx, bz) in trav {
+            assert!(!seen[bz][bx]);
+            seen[bz][bx] = true;
+        }
+    }
+
+    #[test]
+    fn abi_null_safety() {
+        assert_eq!(pc_search_already_use(std::ptr::null(), 3), 0);
+        let types = [39u8; 5];
+        assert_eq!(pc_type_comb_count(std::ptr::null(), 5, 39, types.as_ptr() as *const i16, 0), 0);
+        assert_eq!(pc_type_comb_count(types.as_ptr(), 5, 39, std::ptr::null(), 0), 0);
+    }
+
+    #[test]
+    fn combi_constants() {
+        assert_eq!(COMBI_COUNT, 368);
+        assert_eq!(USE_DATA_LEN, 70);
+        assert_eq!(USE_DATA_EMPTY, -1);
+        assert_eq!(FALLBACK_COMBI, 161);
+        let u = use_data_reset();
+        assert_eq!(u.len(), USE_DATA_LEN);
+    }
+}
