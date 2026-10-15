@@ -6,13 +6,13 @@
 - 2026-10-14 (muse): virtual GBA link done in C (`src/pc_gba_joybus.c` — Dolphin-compatible TCP JOYBUS master).
 - 2026-10-14 (muse): villager favor flows ported (`villager_favor.rs`); 13/13 tests pass.
 - 2026-10-14 (muse): **full-coverage audit** — all 140 `src/game/` + 264 `src/actor/` + 280 `src/static/`
-  decomp files compared against the 194 Rust modules. **No new unported gameplay systems found.**
+  decomp files compared against the 193 Rust modules. **No new unported gameplay systems found.**
   Uncertain items verified as intentionally C-side: `m_demo.c` (talk-demo getters/setters only),
   minor event-visitor lifecycles (`ac_ev_castaway/dokutu/dozaemon/ghost/majin`), the 26 `ac_t_*`
   tool visual actors, and special-NPC master actor lifecycles (Nook/shop masters/guides/etc.) —
   none contain portable pure kernels.
 
-- **Ported to Rust:** 194 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
+- **Ported to Rust:** 193 modules in `rust/src/` (plus `lib.rs`; decomp-verified against GAFE01_00 Rev 0 USA)
 - **Still in C:** the 🔶 entry below, plus — by design — actor lifecycles, save mutation,
   RNG call order, RTC reads, drawing/display lists, and ARAM/JW resource fetches.
 - 2026-10-11 (claude): marked birthdays, event NPC placement, holiday scenery, buildings & scenery,
