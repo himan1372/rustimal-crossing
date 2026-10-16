@@ -4248,7 +4248,12 @@ static int mNpc_CheckGrowFieldRank() {
     int res = FALSE;
 
     if (rank >= 0 && rank < mFAs_FIELDRANK_NUM) {
+#ifdef USE_RUST
+        /* Wave F plug: growth rank check from Rust (RANDOM stays in C). */
+        if (pc_check_grow_field_rank((u8)rank, (u8)RANDOM(100))) {
+#else
         if (RANDOM(100) < npc_grow_prob[rank]) {
+#endif
             res = TRUE;
         }
     }
@@ -4261,6 +4266,34 @@ static int mNpc_CheckGrow() {
     lbRTC_time_c* last_grow_time = Save_GetPointer(last_grow_time);
     int res = FALSE;
 
+#ifdef USE_RUST
+    /* Wave F plug: villager growth gates from Rust. The first-init TimeCopy
+     * side effect stays in C; rank_ok comes from the wired
+     * mNpc_CheckGrowFieldRank above. */
+    {
+        u32 interval;
+        u8 day_elapsed;
+        u8 rank_ok;
+
+        if (lbRTC_IsEqualTime(&mTM_rtcTime_clear_code, last_grow_time, lbRTC_CHECK_ALL) == TRUE) {
+            lbRTC_TimeCopy(last_grow_time, rtc_time); // first initialization
+        } else {
+            rank_ok = (mNpc_CheckGrowFieldRank() == TRUE) ? 1 : 0;
+
+            if (lbRTC_IsOverTime(last_grow_time, rtc_time) == lbRTC_OVER) {
+                interval = lbRTC_IntervalTime(rtc_time, last_grow_time);
+            } else {
+                interval = lbRTC_IntervalTime(last_grow_time, rtc_time);
+            }
+            day_elapsed = (interval >= (lbRTC_HOURS_PER_DAY * lbRTC_MINUTES_PER_HOUR)) ? 1 : 0;
+
+            res = pc_check_grow((u8)Save_Get(now_npc_max), day_elapsed,
+                                (mLd_PlayerManKindCheck() == FALSE) ? 1 : 0,
+                                (mNpc_CheckFriendAllAnimal(&Common_Get(now_private)->player_ID) == TRUE) ? 1 : 0,
+                                rank_ok);
+        }
+    }
+#else
     if (Save_Get(now_npc_max) < ANIMAL_NUM_MAX) {
         if (lbRTC_IsEqualTime(&mTM_rtcTime_clear_code, last_grow_time, lbRTC_CHECK_ALL) == TRUE) {
             lbRTC_TimeCopy(last_grow_time, rtc_time); // first initialization
@@ -4282,6 +4315,7 @@ static int mNpc_CheckGrow() {
             }
         }
     }
+#endif
 
     return res;
 }

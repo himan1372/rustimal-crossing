@@ -404,12 +404,12 @@ u8 pc_force_call_req_proc(u8 force_call_flag, u8 talk_condition_none,
 /* npc_ai.rs — schedule manager step + global override (Wave C).
  * out[0]=saved_type, out[1]=current_type, out[2]=new forced_timer. */
 void pc_schedule_step(u8 looks, u32 now_sec, u32 forced_type,
-                      i32 forced_timer, i32 forced_ticks, u32* out);
+                      s32 forced_timer, s32 forced_ticks, u32* out);
 u8 pc_schedule_global_override(u8 first_job, u8 halloween, u32* out_type);
 
 /* talk_topics.rs — first-job hint + KI weather/time message (Wave C). */
-i32 pc_fj_hint_msg_no(i32 hint_type, u8 looks);
-i32 pc_weather_time_msg_no(i32 base, i32 time_kind, i32 weather, i32 rand2);
+s32 pc_fj_hint_msg_no(s32 hint_type, u8 looks);
+s32 pc_weather_time_msg_no(s32 base, s32 time_kind, s32 weather, s32 rand2);
 
 
 /* ---- Wave E furniture: furniture.rs / fg_data.rs ---- */
@@ -449,7 +449,7 @@ u8 pc_quest_complete(u8 progress);
 /* mQst_CheckLimitOver: kind-specific timeout days from the limit tables
  * (+ contest finish bonus when progress == 0); -1 if not applicable.
  * C keeps the kind-range guard and all RTC arithmetic. */
-i32 pc_quest_limit_days(u8 quest_type, u8 quest_kind, u8 progress);
+s32 pc_quest_limit_days(u8 quest_type, u8 quest_kind, u8 progress);
 
 /* quest_gen.rs — quest generation + letter kernels. */
 
@@ -463,6 +463,25 @@ u8 pc_letter_carpet_or_wallpaper(u8 coin);
 
 /* mQst_GetRemailData: reply handbill id = 0x75 + rank * LOOKS_NUM + looks. */
 u16 pc_letter_handbill(u8 rank, u8 looks);
+
+
+/* ---- Wave F misc: bee_ant.rs / weather_season.rs / villager_home.rs ---- */
+/* Only the exports with verified C sites are declared. The 4 m_lib helpers,
+ * 5 constants, and 26 unmapped exports remain available in Rust but are not
+ * declared here (no single C site to plug). */
+
+/* bee_ant.rs — bee spawn eligibility. */
+int pc_bee_spawn_eligible(int first_intro, int reset_flag, int chase_flag,
+                          int title_demo);
+
+/* weather_season.rs — weather/wind term lookups (tables verified). */
+u8 pc_weather_term(u8 month, u8 day);
+u8 pc_wind_term(u8 month, u8 day);
+
+/* villager_home.rs — villager growth checks. */
+u8 pc_check_grow_field_rank(u8 rank, u8 rng100);
+u8 pc_check_grow(u8 population, u8 day_elapsed, u8 player_from_town,
+                 u8 talked_to_all, u8 rank_ok);
 
 #ifdef __cplusplus
 }
