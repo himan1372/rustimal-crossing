@@ -404,12 +404,12 @@ u8 pc_force_call_req_proc(u8 force_call_flag, u8 talk_condition_none,
 /* npc_ai.rs — schedule manager step + global override (Wave C).
  * out[0]=saved_type, out[1]=current_type, out[2]=new forced_timer. */
 void pc_schedule_step(u8 looks, u32 now_sec, u32 forced_type,
-                      s32 forced_timer, s32 forced_ticks, u32* out);
+                      i32 forced_timer, i32 forced_ticks, u32* out);
 u8 pc_schedule_global_override(u8 first_job, u8 halloween, u32* out_type);
 
 /* talk_topics.rs — first-job hint + KI weather/time message (Wave C). */
-s32 pc_fj_hint_msg_no(s32 hint_type, u8 looks);
-s32 pc_weather_time_msg_no(s32 base, s32 time_kind, s32 weather, s32 rand2);
+i32 pc_fj_hint_msg_no(i32 hint_type, u8 looks);
+i32 pc_weather_time_msg_no(i32 base, i32 time_kind, i32 weather, i32 rand2);
 
 
 /* ---- Wave E furniture: furniture.rs / fg_data.rs ---- */
@@ -434,31 +434,35 @@ u32 pc_fg_parse_count(const u8* data, size_t len);
 u8 pc_fg_sign_count(const u8* record);
 
 
-/* ---- Wave C remainder: talk_topics.rs / npc_ai.rs / force_call.rs ---- */
-/* pc_talk_patience (npc_ai.rs) is already declared but intentionally left
- * unwired: mNpc_GetOverImpatient is already wired by Wave 2B pc_npc_patience,
- * and npc_ai's Patience enum has inverted discriminants vs m_npc.h. */
+/* ---- Wave D quest family: quest.rs / quest_gen.rs (m_quest.c) ----
+ * C keeps all quest state, tables, RNG, and side effects; Rust computes
+ * the pure kernels below. */
 
-/* talk_topics.rs — talk-kind branch selector (0=FjHint, 1=Ki, 2=Normal). */
-u8 pc_select_talk_kind(u8 first_job_hint_pending, u8 mood_happy);
+/* quest.rs — quest state kernels. */
 
-/* npc_ai.rs — uzai (annoyance) trigger thresholds. */
-u8 pc_uzai_trigger(int step, int tool, u8 crossed);
+/* mQst_CheckFreeQuest: 1 when quest_type == NONE (free slot). */
+u8 pc_quest_free(u8 quest_type);
 
-/* force_call.rs — auto-greeting message number. */
-int pc_auto_greeting_msg_no(u8 is_island, u8 looks, int rand3);
-/* force_call.rs — force-talk request path (0=none, 1=forced, 2=greeting).
- * Replaces the Wave 1 pc_topic_force_gate plug at the same site. */
-u8 pc_force_talk_request(int force_call_msg_no, u8 friendship_known,
-                         int effective_friendship, u8 action_is_search,
-                         u8 act_obj_is_player, f32 force_call_timer,
-                         f32 player_distance_xz, f32 player_distance_y);
+/* mQst_CheckFirstJobFin: 1 when progress == 0 (quest complete). */
+u8 pc_quest_complete(u8 progress);
 
-/* npc_ai.rs — full wander decision (0=Wait, 1=Walk, 2=Run).
- * Replaces the Wave 2 pc_wander_choice plug at the same site. */
-u8 pc_wander_decide_next(u8 looks, int rng10, u8 fatigued, u8 feel_sleepy,
-                         u8 think_walk_wander, u8 is_special_npc,
-                         u32 sched_current, u32 sched_saved);
+/* mQst_CheckLimitOver: kind-specific timeout days from the limit tables
+ * (+ contest finish bonus when progress == 0); -1 if not applicable.
+ * C keeps the kind-range guard and all RTC arithmetic. */
+i32 pc_quest_limit_days(u8 quest_type, u8 quest_kind, u8 progress);
+
+/* quest_gen.rs — quest generation + letter kernels. */
+
+/* mPr_ITEM_COND_QUEST constant bridge. Wire only where the Rust constant
+ * should be authoritative; otherwise keep the C macro. */
+u8 pc_item_condition_quest(void);
+
+/* mQst_GetPresent 50/50: nonzero when the pre-rolled coin picks carpet.
+ * C generates the RANDOM(4) roll and keeps category/list selection. */
+u8 pc_letter_carpet_or_wallpaper(u8 coin);
+
+/* mQst_GetRemailData: reply handbill id = 0x75 + rank * LOOKS_NUM + looks. */
+u16 pc_letter_handbill(u8 rank, u8 looks);
 
 #ifdef __cplusplus
 }

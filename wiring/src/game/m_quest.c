@@ -138,10 +138,15 @@ extern void mQst_CopyErrand(mQst_errand_c* dst, mQst_errand_c* src) {
 }
 
 extern int mQst_CheckFreeQuest(mQst_base_c* quest) {
+#ifdef USE_RUST
+    /* Wave D plug: quest slot is free iff quest_type == NONE. */
+    int res = (int)pc_quest_free((u8)quest->quest_type);
+#else
     int res = FALSE;
     if (quest->quest_type == mQst_QUEST_TYPE_NONE) {
         res = TRUE;
     }
+#endif
 
     return res;
 }
@@ -159,14 +164,19 @@ extern int mQst_CheckLimitOver(mQst_base_c* quest) {
                 res = TRUE;
             } else {
                 int type = quest->quest_type;
-                u32 kind = quest->quest_kind;
 
                 if ((u32)quest->quest_kind < l_limit_table_max[type]) {
+#ifdef USE_RUST
+                    /* Wave D plug: kind-specific timeout days (+ contest finish bonus when progress == 0). */
+                    int days = (int)pc_quest_limit_days((u8)type, (u8)quest->quest_kind, (u8)quest->progress);
+#else
+                    u32 kind = quest->quest_kind;
                     int days = l_limit_table[type][quest->quest_kind];
 
                     if (type == mQst_QUEST_TYPE_CONTEST && quest->progress == 0) {
                         days += l_contest_fin_limit[kind];
                     }
+#endif
 
                     lbRTC_TimeCopy(&temp, &quest->time_limit);
                     lbRTC_Sub_DD(&temp, days);
@@ -220,7 +230,12 @@ static int mQst_GetErrandIdxbyItemIdx(int idx) {
     if (idx >= 0 && idx < mPr_POCKETS_SLOT_COUNT) {
         Private_c* priv = Common_Get(now_private);
 
+#ifdef USE_RUST
+        /* Wave D plug: ITEM_COND_QUEST constant bridge. */
+        if (mPr_GET_ITEM_COND(priv->inventory.item_conditions, idx) == pc_item_condition_quest()) {
+#else
         if (mPr_GET_ITEM_COND(priv->inventory.item_conditions, idx) == mPr_ITEM_COND_QUEST) {
+#endif
             errand = priv->errands;
             item = priv->inventory.pockets[idx];
 
@@ -323,8 +338,14 @@ extern void mQst_CheckGrabItem(mActor_name_t item, int pocket_idx) {
             mQst_ClearDelivery(delivery, 1);
         }
 
+#ifdef USE_RUST
+        /* Wave D plug: ITEM_COND_QUEST constant bridge. */
+        if ((u32)grab->type == mQst_QUEST_TYPE_NONE &&
+            mPr_GET_ITEM_COND(item_cond, pocket_idx) == pc_item_condition_quest()) {
+#else
         if ((u32)grab->type == mQst_QUEST_TYPE_NONE &&
             mPr_GET_ITEM_COND(item_cond, pocket_idx) == mPr_ITEM_COND_QUEST) {
+#endif
 
             for (i = 0; i < mPr_ERRAND_QUEST_NUM; i++) {
                 if (mQst_CheckFreeQuest(&errand->base) == FALSE && errand->pockets_idx == pocket_idx &&
@@ -534,11 +555,20 @@ static mActor_name_t mQst_GetPresent(int rank) {
         case mQst_LETTER_RANK_5: {
             list = mSP_LISTTYPE_ABC;
 
+#ifdef USE_RUST
+            /* Wave D plug: 50/50 carpet pick; C keeps the RANDOM(4) roll. */
+            if (pc_letter_carpet_or_wallpaper((u8)(mQst_GetRandom(4) & 1)) != 0) {
+                category = mSP_KIND_CARPET;
+            } else {
+                category = mSP_KIND_WALLPAPER;
+            }
+#else
             if ((mQst_GetRandom(4) & 1) == 0) {
                 category = mSP_KIND_CARPET;
             } else {
                 category = mSP_KIND_WALLPAPER;
             }
+#endif
 
             break;
         }
@@ -564,11 +594,20 @@ static mActor_name_t mQst_GetPresent(int rank) {
         case mQst_LETTER_RANK_11: {
             list = mSP_LISTTYPE_RARE;
 
+#ifdef USE_RUST
+            /* Wave D plug: 50/50 carpet pick; C keeps the RANDOM(4) roll. */
+            if (pc_letter_carpet_or_wallpaper((u8)(mQst_GetRandom(4) & 1)) != 0) {
+                category = mSP_KIND_CARPET;
+            } else {
+                category = mSP_KIND_WALLPAPER;
+            }
+#else
             if ((mQst_GetRandom(4) & 1) == 0) {
                 category = mSP_KIND_CARPET;
             } else {
                 category = mSP_KIND_WALLPAPER;
             }
+#endif
 
             break;
         }
@@ -591,7 +630,12 @@ static void mQst_GetRemailData(Mail_c* letter, PersonalID_c* recipient_id, AnmPe
     int header_back_pos;
 
     mMl_clear_mail(letter);
+#ifdef USE_RUST
+    /* Wave D plug: reply handbill id = 0x75 + rank * LOOKS_NUM + looks. */
+    handbill_no = (int)pc_letter_handbill((u8)rank, (u8)looks);
+#else
     handbill_no = 0x75 + (rank * mNpc_LOOKS_NUM + looks);
+#endif
     mNpc_GetNpcWorldNameAnm(name_buf, sender_id);
     mHandbill_Set_free_str(mHandbill_FREE_STR6, name_buf, ANIMAL_NAME_LEN);
 
@@ -737,11 +781,16 @@ extern int mQst_CheckFirstJobQuestbyItemIdx(int idx) {
 }
 
 extern int mQst_CheckFirstJobFin(mQst_errand_c* errand) {
+#ifdef USE_RUST
+    /* Wave D plug: first-job errand is finished iff progress == 0. */
+    int res = (int)pc_quest_complete((u8)errand->base.progress);
+#else
     int res = FALSE;
 
     if (errand->base.progress == 0) {
         res = TRUE;
     }
+#endif
 
     return res;
 }
