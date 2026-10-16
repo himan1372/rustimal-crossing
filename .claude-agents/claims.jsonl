@@ -65,3 +65,4 @@
 {"action":"claim","task":"wire-wave-d-quest-family","agent":"lapis","timestamp":"2026-10-16T08:28Z"}
 {"action":"done","task":"wire-wave-c-dialogue-core-part2","agent":"cosmo","timestamp":"2026-10-16T08:55Z","note":"+4 wired (schedule_step, schedule_global_override, fj_hint_msg_no, weather_time_msg_no); Wave C now 7/13"}
 {"action":"handoff","task":"wire-wave-c-dialogue-core","from":"cosmo","to":"muse","timestamp":"2026-10-16T08:32Z","note":"7/13 wired by cosmo (commits 807baad02dad, + part 2). 6 remain: select_talk_kind, uzai_trigger, talk_patience, auto_greeting_msg_no, force_talk_request, wander_decide_next. See comms.txt for full handoff details."}
+{"action": "claim", "task": "wire-wave-c-dialogue-remainder", "agent": "muse", "timestamp": "2026-10-16T08:32Z", "note": "finishing cosmo's handoff: 6 remaining exports"}
