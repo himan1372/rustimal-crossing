@@ -99,6 +99,12 @@ sites in wiring/ and the "Already wired" tables in rewiring.md.
    aNPC_think_wander_decide_next (skipped).
 4. Quest: quest.rs (7), quest_gen.rs (15)
 5. Furniture: furniture.rs (10), fg_data.rs (2)
+   — DONE 2026-10-16 (muse, commit 7a187795, claim wire-wave-e-furniture).
+   Wired 7: pc_ftr_get_rotation, pc_ftr_save_angle, pc_room_bounds_ok (macro,
+   4 sites), pc_switch_bit_index, pc_judge_place_2nd_layer, pc_ftr_is_storage,
+   pc_furniture_weight (body, 3 sites). +12 decls. Deliberately unwired:
+   pc_ftr_no_rot_2_idx (macro unused), pc_fg_parse_count/sign_count (tool helpers),
+   pc_furniture_storage_slots (const 3), pc_scene_furniture_max (needs classifier).
 6. Misc low-risk: bee_ant.rs (6), weather_season.rs (5), frame_loops.rs (3),
    villager_home.rs (5), collision.rs pc_collision_neighborhood/pack (sub-ops)
 
