@@ -545,26 +545,36 @@ static void mCoBG_MakeUnitVector(mCoBG_vec_info_c* vec_info, mCoBG_UnitInfo_c* u
 
     for (unit = 0; unit < ut_count2; unit++) {
         static mCoBG_MAKE_FORBID_ATTR_VECTOR_PROC make_forbid_atr_vector_proc[] = { &mCoBG_MakeForbidAttrVector_DUMMY, &mCoBG_MakeForbidAttrVector };
+#ifdef USE_RUST
+        /* Wave B plug: cardinal edge mask from Rust (indexed by unit). */
+        u8 edge_mask = pc_cardinal_edge_mask((u8)ut_count, (u8)unit);
+#else
+        u8 edge_mask = make_info_p[0];
+#endif
 
         (*make_slate_wall[attr_wall])(vec_info, ut_info_p, check_type, old_in_water);
-        if (make_info_p[0] & 1) {
+        if (edge_mask & 1) {
             (*make_normal_wall[attr_wall])(vec_info, ut_info_p, &ut_info[unit - ut_count], mCoBG_WALL_UP, check_type, old_in_water);
         }
 
-        if (make_info_p[0] & 2) {
+        if (edge_mask & 2) {
             (*make_normal_wall[attr_wall])(vec_info, ut_info_p, &ut_info[unit - 1], mCoBG_WALL_LEFT, check_type, old_in_water);
         }
 
-        if (make_info_p[0] & 4) {
+        if (edge_mask & 4) {
             (*make_normal_wall[attr_wall])(vec_info, ut_info_p, &ut_info[unit + ut_count], mCoBG_WALL_DOWN, check_type, old_in_water);
         }
 
-        if (make_info_p[0] & 8) {
+        if (edge_mask & 8) {
             (*make_normal_wall[attr_wall])(vec_info, ut_info_p, &ut_info[unit + 1], mCoBG_WALL_RIGHT, check_type, old_in_water);
         }
 
         (*make_forbid_atr_vector_proc[forbid_proc])(vec_info, ut_info_p, check_type);
+#ifdef USE_RUST
+        /* Rust indexes by unit directly; no table pointer to advance. */
+#else
         make_info_p++;
+#endif
         ut_info_p++;
     }
 }

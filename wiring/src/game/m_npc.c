@@ -4980,10 +4980,20 @@ static int mNpc_CountTalkNum(int animal_idx, int looks) {
     if (animal_idx >= 0 && animal_idx < ARRAY_COUNT(l_npc_talk_info)) {
         mNpc_Talk_Info_c* talk_info = &l_npc_talk_info[animal_idx];
 
+#ifdef USE_RUST
+        /* Wave B plug: talk-count gate from Rust. */
+        if (pc_talk_count_allowed(talk_info->talk_num,
+                                  l_npc_temper[looks].talk_num_max,
+                                  talk_info->timer)) {
+            talk_info->talk_num++;
+            res = TRUE;
+        }
+#else
         if (talk_info->talk_num < l_npc_temper[looks].talk_num_max && talk_info->timer > 0) {
             talk_info->talk_num++;
             res = TRUE;
         }
+#endif
     }
 
     return res;
@@ -5105,6 +5115,21 @@ extern void mNpc_TalkEndMove(int animal_idx, int looks) {
 }
 
 extern int mNpc_GetNpcFloorNo() {
+#ifdef USE_RUST
+    /* Wave B plug: combined wall/floor lookup from Rust (floor half). */
+    mActor_name_t field_id = mFI_GetFieldId();
+    mActor_name_t owner_name = Common_Get(house_owner_name);
+
+    if (mFI_GET_TYPE(field_id) == mFI_FIELD_NPCROOM0 &&
+        owner_name != EMPTY_NO && owner_name != RSV_NO) {
+        int idx = mNpc_SearchAnimalinfo(Save_Get(animals), owner_name, ANIMAL_NUM_MAX);
+        int combined = pc_house_wall_floor(1,
+            Common_Get(npclist[idx]).house_data.wall_id,
+            Common_Get(npclist[idx]).house_data.floor_id, 1);
+        return (combined < 0) ? -1 : (combined & 0xFF);
+    }
+    return -1;
+#else
     mActor_name_t field_id = mFI_GetFieldId();
     mActor_name_t owner_name = Common_Get(house_owner_name);
     int floor_no = -1;
@@ -5119,9 +5144,25 @@ extern int mNpc_GetNpcFloorNo() {
     }
 
     return floor_no;
+#endif
 }
 
 extern int mNpc_GetNpcWallNo() {
+#ifdef USE_RUST
+    /* Wave B plug: combined wall/floor lookup from Rust (wall half). */
+    mActor_name_t field_id = mFI_GetFieldId();
+    mActor_name_t owner_name = Common_Get(house_owner_name);
+
+    if (mFI_GET_TYPE(field_id) == mFI_FIELD_NPCROOM0 &&
+        owner_name != EMPTY_NO && owner_name != RSV_NO) {
+        int idx = mNpc_SearchAnimalinfo(Save_Get(animals), owner_name, ANIMAL_NUM_MAX);
+        int combined = pc_house_wall_floor(1,
+            Common_Get(npclist[idx]).house_data.wall_id,
+            Common_Get(npclist[idx]).house_data.floor_id, 1);
+        return (combined < 0) ? -1 : ((combined >> 8) & 0xFF);
+    }
+    return -1;
+#else
     mActor_name_t field_id = mFI_GetFieldId();
     mActor_name_t owner_name = Common_Get(house_owner_name);
     int wall_no = -1;
@@ -5136,6 +5177,7 @@ extern int mNpc_GetNpcWallNo() {
     }
 
     return wall_no;
+#endif
 }
 
 /* 75% */

@@ -344,6 +344,50 @@ u16 pc_catalog_mail_template(u8 shop_level);
  * with the retail TU (title_demo precedent). */
 int pc_npc_check_normal_mail_sub(int* char_num, const u8* body);
 
+
+/* ---- Wave B leftovers: bg_check.rs / move_bg.rs / terrain_walls.rs /
+ * ---- dialogue_topics.rs / house.rs                            */
+/* NOTE: bg_check / move_bg / terrain_walls sit near the open acre-boundary
+ * bug. These exports are pure kernels (coordinate generation, wall
+ * classification); the acre-edge wall logic itself stays in C. */
+
+/* bg_check.rs — fixed-buffer neighborhood coordinates
+ * (mCoBG_MakeSizeUnitInfo coordinate core). PcUnitCoord is repr(C)
+ * { int x; int z }; the caller provides capacity >= 49. Returns count. */
+typedef struct { int x; int z; } pc_unit_coord_t;
+u8 pc_bg_neighborhood_coords(int center_x, int center_z, int size,
+                             pc_unit_coord_t* coords);
+
+/* move_bg.rs — move-bg wall construction (pure geometry kernel).
+ * PcMoveBgWall is repr(C) { f32 start_x, start_z, end_x, end_z, normal_x,
+ * normal_z; s16 normal_angle; u8 wall_name; f32 bottom, top }. */
+typedef struct {
+    f32 start_x; f32 start_z; f32 end_x; f32 end_z;
+    f32 normal_x; f32 normal_z; s16 normal_angle; u8 wall_name;
+    f32 bottom; f32 top;
+} pc_move_bg_wall_t;
+u8 pc_make_move_bg_walls(f32 right, f32 left, f32 up, f32 down,
+                         f32 pos_x, f32 pos_y, f32 pos_z, s16 angle_y,
+                         const f32* base_ofs, f32 scale, f32 height,
+                         u8 check_type, pc_move_bg_wall_t* out);
+/* Move-bg frame delta: writes 3-element delta to out_delta. */
+void pc_move_bg_delta(f32 cur_x, f32 cur_y, f32 cur_z,
+                      f32 last_x, f32 last_y, f32 last_z, f32* out_delta);
+
+/* terrain_walls.rs — cardinal edge mask + exact height check. */
+u8 pc_cardinal_edge_mask(u8 size, u8 index);
+u8 pc_check_height_exactly(f32 start_top, f32 start_btm, f32 end_top, f32 end_btm,
+                           f32 start_x, f32 start_z, f32 end_x, f32 end_z,
+                           u8 wall_name, f32 pos_y, f32 point_x, f32 point_z,
+                           u8 is_move_bg, f32* out_top, f32* out_bot);
+
+/* dialogue_topics.rs — talk gating kernels. */
+u8 pc_talk_count_allowed(u8 talk_num, u8 talk_num_max, u16 timer);
+u8 pc_talk_patience_raw(u8 talk_num, u8 over_impatient_num, u8 talk_num_max);
+
+/* house.rs — catalog order date comparison. */
+u8 pc_order_date_passed(u16 oy, u8 om, u8 od, u16 ty, u8 tm, u8 td);
+
 #ifdef __cplusplus
 }
 #endif

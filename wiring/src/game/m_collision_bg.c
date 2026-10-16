@@ -454,13 +454,27 @@ static void mCoBG_InitRevpos(xyz_t* rev_pos) {
 }
 
 static void mCoBG_MakeSizeUnitInfo(mCoBG_UnitInfo_c *unit_info, int ut_x, int ut_z, s16 size) {
+#ifdef USE_RUST
+  /* Wave B plug: neighborhood coordinates from Rust (pc_unit_coord_t is
+   * repr(C) { int x; int z }, matching the Rust PcUnitCoord layout). */
+  {
+    pc_unit_coord_t coords[49];
+    int n = pc_bg_neighborhood_coords(ut_x, ut_z, size, coords);
+    int i;
+
+    for (i = 0; i < n; i++) {
+      mCoBG_Unit2UnitInfo_OutOfUnitPos(unit_info, coords[i].x, coords[i].z);
+      unit_info++;
+    }
+  }
+#else
   int x;
   int z;
   int start_x;
   int start_z;
   int end_x;
   int end_z;
-  
+
   start_z = ut_z - (size >> 1);
   start_x = ut_x - (size >> 1);
   end_z = start_z + size;
@@ -472,6 +486,7 @@ static void mCoBG_MakeSizeUnitInfo(mCoBG_UnitInfo_c *unit_info, int ut_x, int ut
       unit_info++;
     }
   }
+#endif
 }
 
 
@@ -594,6 +609,20 @@ static int mCoBG_CheckHeightExactly(mCoBG_WallHeight_c* wall_height, f32 pos_y, 
     f32* start = unit_vec->start;
     f32* end = unit_vec->end;
     f32 div;
+
+#ifdef USE_RUST
+    /* Wave B plug: height interpolation from Rust. Slate walls stay in C
+     * (Rust returns None for slates; the C calls mCoBG_GetWallHeight). */
+    if (unit_vec->wall_name != mCoBG_WALL_SLATE_UP &&
+        unit_vec->wall_name != mCoBG_WALL_SLATE_DOWN) {
+        return pc_check_height_exactly(
+            bounds->start_top, bounds->start_btm, bounds->end_top, bounds->end_btm,
+            start[0], start[1], end[0], end[1],
+            unit_vec->wall_name, pos_y, point[0], point[1],
+            (unit_vec->regist_p != NULL) ? 1 : 0,
+            &wall_height->top, &wall_height->bot);
+    }
+#endif
 
     if (unit_vec->regist_p != NULL) {
         wall_height->top = bounds->end_top;
@@ -1893,9 +1922,22 @@ static void mCoBG_MoveActorWithMoveBg_OnMoveBg(ACTOR* actorx) {
         xyz_t* last_pos_p = regist->last_wpos;
 
         if (pos_p != NULL && last_pos_p != NULL) {
+#ifdef USE_RUST
+            /* Wave B plug: move-bg frame delta from Rust. */
+            {
+                f32 delta[3];
+                pc_move_bg_delta(pos_p->x, pos_p->y, pos_p->z,
+                                 last_pos_p->x, last_pos_p->y, last_pos_p->z,
+                                 delta);
+                move.x = delta[0];
+                move.y = delta[1];
+                move.z = delta[2];
+            }
+#else
             move.x = pos_p->x - last_pos_p->x;
             move.y = pos_p->y - last_pos_p->y;
             move.z = pos_p->z - last_pos_p->z;
+#endif
 
             actorx->world.position.x += move.x;
             actorx->world.position.y += move.y;
