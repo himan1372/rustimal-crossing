@@ -1104,8 +1104,14 @@ extern void mSP_ShopItsumoChirashi(int house_no, int shop_level, mActor_name_t i
             mIN_copy_name_str(item_name_str, item);
             mHandbill_Set_free_str(mHandbill_FREE_STR7, item_name_str, mIN_ITEM_NAME_LEN);
             mMl_clear_mail(&leaflet);
+#ifdef USE_RUST
+            /* Wave A mail plug: rare-chirashi handbill template from Rust. */
+            mHandbill_Load_HandbillFromRom(leaflet.content.header, &header_back_start, leaflet.content.footer,
+                                           leaflet.content.body, pc_leaflet_rare_chirashi_template(shop_level, type));
+#else
             mHandbill_Load_HandbillFromRom(leaflet.content.header, &header_back_start, leaflet.content.footer,
                                            leaflet.content.body, rare_chirashi_bunmen[shop_level][type & 1]);
+#endif
             leaflet.content.font = mMl_FONT_RECV;
             leaflet.content.header_back_start = header_back_start;
             leaflet.content.mail_type = mMl_TYPE_SHOP_SALE_LEAFLET;
@@ -1508,7 +1514,12 @@ extern void mSP_InitShopSaveData() {
     mSP_InitGoods();
     Save_Get(shop).rare_item = EMPTY_NO;
 
+#ifdef USE_RUST
+    /* Wave A mail plug: lottery item slot count from Rust. */
+    for (i = 0; i < pc_lottery_item_count(); i++) {
+#else
     for (i = 0; i < mSP_LOTTERY_ITEM_COUNT; i++) {
+#endif
         lottery_items[0] = EMPTY_NO;
         lottery_items++;
     }

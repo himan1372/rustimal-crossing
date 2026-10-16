@@ -838,6 +838,10 @@ static int mPr_GetMotherMailPaperType(int month, int day) {
     Private_c* priv = Common_Get(now_private);
     int paper;
 
+#ifdef USE_RUST
+    /* Wave A mail plug: mother-mail paper selection from Rust. */
+    return pc_mother_mail_paper((u8)month, (u8)day, priv->birthday.month, priv->birthday.day);
+#else
     /* TODO: should paper be enums? */
     if (priv->birthday.month == month && priv->birthday.day == day) {
         paper = 1;
@@ -853,6 +857,7 @@ static int mPr_GetMotherMailPaperType(int month, int day) {
     }
 
     return paper - 1;
+#endif
 }
 
 static void mPr_GetMotherMail(Mail_c* mail, PersonalID_c* pid, mActor_name_t present, int stationery, int mail_no) {
@@ -955,6 +960,10 @@ static int mPr_CheckMotherMailMonthly(mPr_mother_mail_data_c* send_data, int mon
 }
 
 static int mPr_GetMotherMailMonthlyNotSendNum(mPr_mother_mail_data_c* send_data, int month) {
+#ifdef USE_RUST
+    /* Wave A mail plug: unsent monthly-mail count from Rust. */
+    return pc_mother_mail_monthly_not_send((const u8*)send_data, (u8)month);
+#else
     int slot;
     int not_send_num = 0;
     int i;
@@ -981,6 +990,7 @@ static int mPr_GetMotherMailMonthlyNotSendNum(mPr_mother_mail_data_c* send_data,
     }
 
     return not_send_num;
+#endif
 }
 
 static void mPr_SetMotherMailMonthly(mPr_mother_mail_data_c* send_data, int month, int idx) {
@@ -1021,6 +1031,11 @@ static void mPr_GetMotherMailMonthlyData(mPr_mother_mail_data_c* send_data, int*
     int i;
 
     *present = EMPTY_NO;
+
+#ifdef USE_RUST
+    /* Wave A mail plug: monthly mail number from Rust (season-index
+     * selection moves into Rust; RANDOM + scan stay in C). */
+#else
     mail_start_idx = 3;
 
     if (month <= lbRTC_FEBRUARY) {
@@ -1034,6 +1049,7 @@ static void mPr_GetMotherMailMonthlyData(mPr_mother_mail_data_c* send_data, int*
     }
 
     *mail_no = mail_start_no_table[mail_start_idx];
+#endif
 
     selected_event = RANDOM(not_send_num);
     max = mPr_MOTHER_MAIL_MONTHLY_NUM;
@@ -1052,7 +1068,11 @@ static void mPr_GetMotherMailMonthlyData(mPr_mother_mail_data_c* send_data, int*
         }
     }
 
+#ifdef USE_RUST
+    *mail_no = pc_mother_mail_monthly_no((u8)month, (u8)*event_no);
+#else
     *mail_no += *event_no + (month - 1 - mail_start_idx * 3) * 2;
+#endif
 
     if (month == lbRTC_MAY && *event_no == 1) {
         *present = may_2_item_table[RANDOM(1)];
@@ -1068,6 +1088,11 @@ static void mPr_GetMotherMailMonthlyData(mPr_mother_mail_data_c* send_data, int*
 }
 
 static int mPr_GetMotherMailNormalNotSendNum(mPr_mother_mail_data_c* send_data) {
+#ifdef USE_RUST
+    /* Wave A mail plug: unsent normal-mail count from Rust (MotherMailData
+     * is repr(C), 10 bytes, layout-matched to mPr_mother_mail_data_c). */
+    return pc_mother_mail_normal_not_send((const u8*)send_data);
+#else
     int not_send_num = 0;
     int i;
     int j;
@@ -1081,6 +1106,7 @@ static int mPr_GetMotherMailNormalNotSendNum(mPr_mother_mail_data_c* send_data) 
     }
 
     return not_send_num;
+#endif
 }
 
 static void mPr_SetMotherMailNormal(mPr_mother_mail_data_c* send_data, int idx) {

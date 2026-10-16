@@ -1165,15 +1165,70 @@ static int mNpc_CheckMailChar(u8 c) {
     return FALSE;
 }
 
-/* mNpc_CheckNormalMail_sub is provided by the Rust staticlib
- * (rust/src/villager_mail.rs). The C version is omitted here to avoid
- * a duplicate symbol at link time. */
+#ifndef USE_RUST
+/* C version of mNpc_CheckNormalMail_sub (vanilla build only). In USE_RUST
+ * builds the Rust staticlib provides pc_npc_check_normal_mail_sub instead;
+ * the C symbol is omitted there to avoid a duplicate at link time. */
+extern int mNpc_CheckNormalMail_sub(int* char_num, u8* body) {
+    u8 last_char = CHAR_SPACE;
+    int run_len = 1;
+    int consecutive_chars = FALSE;
+    int t = 0;
+    int i;
+
+    char_num[0] = 0;
+
+    for (i = 0; i < MAIL_BODY_LEN; i++) {
+        if (body[0] != CHAR_SPACE) {
+
+            if (last_char == body[0]) {
+                run_len++;
+
+                if (run_len >= 3) {
+                    if (mNpc_CheckMailChar(body[0]) == TRUE) {
+                        if (run_len >= 8) {
+                            consecutive_chars = TRUE;
+                            break;
+                        }
+                    } else {
+                        consecutive_chars = TRUE;
+                        break;
+                    }
+                }
+            } else {
+                run_len = 0;
+                last_char = body[0];
+            }
+
+            char_num[0]++;
+        }
+
+        body++;
+        t++;
+    }
+
+    for (i = t; i < MAIL_BODY_LEN; i++) {
+        if (body[0] != CHAR_SPACE) {
+            char_num[0]++;
+        }
+
+        body++;
+    }
+
+    return consecutive_chars;
+}
+#endif
 
 extern u8 mNpc_CheckNormalMail_length(int* len, u8* body) {
     int hit_chars;
     u8 rank = mNpc_LETTER_RANK_NUM;
     int hit_rate = mMC_get_mail_hit_rate(&hit_chars, body, NULL);
+#ifdef USE_RUST
+    /* Wave A mail plug: repeated-character check from Rust. */
+    int run_on = pc_npc_check_normal_mail_sub(len, body);
+#else
     int run_on = mNpc_CheckNormalMail_sub(len, body);
+#endif
 
     if (hit_chars < 3) {
         if (len[0] < 5) {
@@ -1191,6 +1246,11 @@ extern u8 mNpc_CheckNormalMail_length(int* len, u8* body) {
 }
 
 extern u8 mNpc_CheckNormalMail_nes(u8* body) {
+#ifdef USE_RUST
+    /* Wave A mail plug: NES letter-rank classifier from Rust (subsumes the
+     * inner mMck_check_key_hit_nes call — pc_mck_key_hit left unwired). */
+    return (u8)pc_npc_letter_rank(body);
+#else
     u8 rank = mNpc_LETTER_RANK_NUM;
     int key_hit = mMck_check_key_hit_nes(body);
 
@@ -1201,6 +1261,7 @@ extern u8 mNpc_CheckNormalMail_nes(u8* body) {
     }
 
     return rank;
+#endif
 }
 
 static u8 mNpc_CheckNormalMail(u8* body) {
@@ -1492,7 +1553,12 @@ static void mNpc_GetRemailGoodData(Mail_c* mail, PersonalID_c* pid, AnmPersonalI
     }
 
     mNpc_SetRemailFreeString(pid, anm_id, remail);
+#ifdef USE_RUST
+    /* Wave A mail plug: good-remail base message number from Rust. */
+    msg_no = pc_npc_good_base_no(foreign, looks);
+#else
     msg_no = msg_tbl[looks];
+#endif
     mNpc_GetHandbillz(mail, msg_no + RANDOM(32), msg_no + RANDOM(32), msg_no + RANDOM(16) + give_present * 16,
                       msg_no + RANDOM(32), msg_no + RANDOM(32));
     mail->present = present;
@@ -1515,8 +1581,13 @@ static void mNpc_GetRemailWrongData(Mail_c* mail, PersonalID_c* pid, AnmPersonal
     }
 
     mNpc_SetRemailFreeString(pid, anm_id, remail);
+#ifdef USE_RUST
+    /* Wave A mail plug: bad-remail message number from Rust (RANDOM stays in C). */
+    msg_no = pc_npc_bad_msg_no(foreign, looks, RANDOM(3));
+#else
     msg_no = mail_no[foreign] + looks * 3;
     msg_no += RANDOM(3);
+#endif
     mHandbill_Load_HandbillFromRom(tmp_super, &header_back_start, tmp_ps, mail->content.body, msg_no);
     mail->content.header_back_start = header_back_start;
     mem_copy(mail->content.header, tmp_super, MAIL_HEADER_LEN);
@@ -1671,8 +1742,14 @@ static void mNpc_GetEventMail(Mail_c* mail, PersonalID_c* pid, AnmPersonalID_c* 
     mNpc_GetNpcWorldNameAnm(animal_name, anm_id);
     mHandbill_Set_free_str(mHandbill_FREE_STR6, animal_name, ANIMAL_NAME_LEN);
     mNpc_GetEventPresent(&present, type);
+#ifdef USE_RUST
+    /* Wave A mail plug: NPC event mail number from Rust. */
+    mNpc_LoadMailDataCommon2(mail, pid, anm_id, present, mNpc_GetPaperType(),
+                             pc_npcmail_event_no((u8)looks, (u8)type));
+#else
     mNpc_LoadMailDataCommon2(mail, pid, anm_id, present, mNpc_GetPaperType(),
                              0x60 + looks * mNpc_EVENT_MAIL_FRIEND_NUM + type);
+#endif
 }
 
 static int mNpc_SendEventPresentMail(PersonalID_c* pid, int player_no, AnmPersonalID_c* anm_id, int type) {
@@ -3478,8 +3555,13 @@ static int mNpc_SetGoodbyMailData(Mail_c* mail, PersonalID_c* pid, AnmPersonalID
     int res = FALSE;
 
     if (looks < mNpc_LOOKS_NUM) {
+#ifdef USE_RUST
+        /* Wave A mail plug: goodbye mail number from Rust (RANDOM stays in C). */
+        mail_no = pc_npcmail_goodbye_no(looks, (u8)mQst_GetRandom(3));
+#else
         mail_no = 0x20E + looks * 3;
         mail_no += mQst_GetRandom(3);
+#endif
         mNpc_GetNpcWorldNameAnm(animal_name, anm_id);
         mHandbill_Set_free_str(mHandbill_FREE_STR0, pid->player_name, PLAYER_NAME_LEN);
         mHandbill_Set_free_str(mHandbill_FREE_STR1, animal_name, ANIMAL_NAME_LEN);
@@ -6721,10 +6803,24 @@ static int mNpc_SendHPMailNum_famicom(PersonalID_c* pid, AnmPersonalID_c* anm_id
             mMpswd_check_present(password) == TRUE &&        // present is valid
             mMpswd_check_name(password) == TRUE              // player & town name match
         ) {
+        if (password->hit_rate_index == 1 &&                 // hit rate index must be 1
+            mMpswd_password_zuru_check(password) == FALSE && // checksum is valid
+            mMpswd_check_present(password) == TRUE &&        // present is valid
+            mMpswd_check_name(password) == TRUE              // player & town name match
+        ) {
+#ifdef USE_RUST
+            /* Wave A mail plug: famicom mail number from Rust (password
+             * checks stay in C). */
+            mail_no = pc_npcmail_famicom_no((u8)anm_id->looks, 1);
+            present = password->item;
+        } else {
+            mail_no = pc_npcmail_famicom_no((u8)anm_id->looks, 0);
+#else
             mail_no = 0x24A + anm_id->looks; // valid password
             present = password->item;
         } else {
             mail_no = 0x250 + anm_id->looks; // invalid password
+#endif
         }
 
         mHandbill_Set_free_str(mHandbill_FREE_STR0, pid->player_name, PLAYER_NAME_LEN);
@@ -6791,6 +6887,17 @@ static int mNpc_SendHPMailNum_popular(PersonalID_c* pid, AnmPersonalID_c* anm_id
                 target_npc_id = NPC_START | password->npc_code;
                 looks = mNpc_GetLooks(target_npc_id);
 
+#ifdef USE_RUST
+                /* Wave A mail plug: popular-vote mail numbers from Rust. */
+                if (npc_idx == password->npc_code) {
+                    mail_no = pc_npcmail_popular_no((u8)looks, 0, password->npc_code);
+                } else if (mNpc_CheckIslandAnimalTableNo(target_npc_id) == TRUE) {
+                    mail_no = pc_npcmail_popular_no((u8)looks, 2, password->npc_code);
+                } else {
+                    looks = mNpc_GetLooks(target_npc_id); // re-calling the function?
+                    mail_no = pc_npcmail_popular_no((u8)looks, 1, password->npc_code);
+                }
+#else
                 if (npc_idx == password->npc_code) {
                     mail_no = 0x256 + looks;
                 } else if (mNpc_CheckIslandAnimalTableNo(target_npc_id) == TRUE) {
@@ -6799,13 +6906,19 @@ static int mNpc_SendHPMailNum_popular(PersonalID_c* pid, AnmPersonalID_c* anm_id
                     looks = mNpc_GetLooks(target_npc_id); // re-calling the function?
                     mail_no = 0x25C + looks;
                 }
+#endif
 
                 mNpc_GetNpcWorldNameTableNo(name_str, NPC_START | password->npc_code);
                 mNpc_GetNpcWorldNameTableNo(submenu_name_str, NPC_START | password->npc_code);
                 valid = TRUE;
             } else {
+#ifdef USE_RUST
+                /* Wave A mail plug: special-NPC mail number from Rust. */
+                mail_no = pc_npcmail_popular_no((u8)looks, 3, password->npc_code);
+#else
                 /* Special NPC */
                 mail_no = 0x268 + password->npc_code;
+#endif
                 npc_id = mMpswd_get_sp_npc_num(password->npc_code);
                 mNpc_GetActorWorldName(name_str, npc_id);
                 mNpc_GetActorWorldName(submenu_name_str, npc_id);
@@ -6824,8 +6937,13 @@ static int mNpc_SendHPMailNum_popular(PersonalID_c* pid, AnmPersonalID_c* anm_id
                 present = password->item;
             }
         } else {
+#ifdef USE_RUST
+            /* Wave A mail plug: invalid-password mail number from Rust. */
+            mail_no = pc_npcmail_popular_no((u8)anm_id->looks, 4, password->npc_code);
+#else
             /* Invalid password */
             mail_no = 0x288 + anm_id->looks;
+#endif
         }
 
         mHandbill_Set_free_str(mHandbill_FREE_STR0, pid->player_name, PLAYER_NAME_LEN);
@@ -7122,6 +7240,26 @@ static int mNpc_SendHPMailNum_magazine(PersonalID_c* pid, AnmPersonalID_c* anm_i
     if (mPO_get_keep_mail_sum() < mPO_MAIL_STORAGE_SIZE) {
         mMl_clear_mail(hp_mail);
 
+#ifdef USE_RUST
+        /* Wave A mail plug: magazine mail number from Rust (verdict + present
+         * stay in C). */
+        {
+            u8 verdict;
+
+            if (mNpc_CheckHit_Rate(password->hit_rate_index, 3) == TRUE &&
+                mMpswd_password_zuru_check(password) == FALSE &&
+                mMpswd_check_present(password) == TRUE) {
+                verdict = (mNpc_GetHit(password->hit_rate_index) == TRUE) ? 0 : 1;
+                if (verdict == 0 && password->item != RSV_NO) {
+                    present = password->item;
+                }
+            } else {
+                verdict = 2;
+            }
+
+            mail_no = pc_npcmail_magazine_no((u8)anm_id->looks, verdict);
+        }
+#else
         if (mNpc_CheckHit_Rate(password->hit_rate_index, 3) == TRUE && // hitrate index is valid
             mMpswd_password_zuru_check(password) == FALSE &&           // checksum is valid
             mMpswd_check_present(password) == TRUE                     // present is valid
@@ -7142,6 +7280,7 @@ static int mNpc_SendHPMailNum_magazine(PersonalID_c* pid, AnmPersonalID_c* anm_i
             /* Invalid password */
             mail_no = 0x2AC + anm_id->looks;
         }
+#endif
 
         mHandbill_Set_free_str(mHandbill_FREE_STR0, pid->player_name, PLAYER_NAME_LEN);
         mNpc_ClearBufSpace1(name_str, ANIMAL_NAME_LEN);

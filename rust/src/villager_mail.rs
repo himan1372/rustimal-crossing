@@ -1,6 +1,8 @@
 //! Rust port of the bounded repeated-character check used for villager mail.
 //!
-//! The game-facing `mNpc_CheckNormalMail_sub` C ABI is retained. The source
+//! The game-facing C ABI is `pc_npc_check_normal_mail_sub` (renamed from
+//! `mNpc_CheckNormalMail_sub` to avoid a link collision with the retail C
+//! TU; see title_demo precedent). The source
 //! algorithm scans the fixed 192-byte mail body and applies different repeat
 //! limits to ordinary characters and punctuation/control symbols.
 
@@ -75,7 +77,7 @@ pub(crate) fn check_normal_mail(body: &[u8; MAIL_BODY_LEN]) -> (i32, i32) {
 /// `char_num` must be writable and `body` must point to at least 192 readable
 /// bytes, matching `MAIL_BODY_LEN` in `include/m_mail.h`.
 #[no_mangle]
-pub unsafe extern "C" fn mNpc_CheckNormalMail_sub(char_num: *mut i32, body: *const u8) -> i32 {
+pub unsafe extern "C" fn pc_npc_check_normal_mail_sub(char_num: *mut i32, body: *const u8) -> i32 {
     if char_num.is_null() || body.is_null() {
         return 0;
     }
@@ -95,7 +97,7 @@ pub unsafe extern "C" fn mNpc_CheckNormalMail_sub(char_num: *mut i32, body: *con
 #[cfg(test)]
 mod tests {
     use super::{
-        check_normal_mail, is_mail_symbol, mNpc_CheckNormalMail_sub, CHAR_SPACE, MAIL_BODY_LEN,
+        check_normal_mail, is_mail_symbol, pc_npc_check_normal_mail_sub, CHAR_SPACE, MAIL_BODY_LEN,
     };
 
     fn body_with(prefix: &[u8]) -> [u8; MAIL_BODY_LEN] {
@@ -159,10 +161,10 @@ mod tests {
         assert_eq!(check_normal_mail(&body_with(b"xyz!!!qqqq")), (10, 1));
         // C ABI null-safety.
         unsafe {
-            assert_eq!(mNpc_CheckNormalMail_sub(std::ptr::null_mut(), std::ptr::null()), 0);
+            assert_eq!(pc_npc_check_normal_mail_sub(std::ptr::null_mut(), std::ptr::null()), 0);
             let body = body_with(b"Hi!");
             let mut count = -1i32;
-            let flagged = mNpc_CheckNormalMail_sub(&mut count, body.as_ptr());
+            let flagged = pc_npc_check_normal_mail_sub(&mut count, body.as_ptr());
             assert_eq!((count, flagged), (3, 0));
         }
     }

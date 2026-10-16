@@ -250,6 +250,100 @@ int pc_uki_bite_frames(u8 golden, u8 category);
  * C still applies DEG2SHORT_ANGLE2 and the search-distance table. */
 f32 pc_uki_search_angle(u8 golden, u8 area);
 
+
+/* ---- Mail family (Wave A): leaflet.rs / mail.rs / mother_mail.rs /
+ * ---- npc_event_mail.rs / npc_reply.rs / special_delivery.rs /
+ * ---- villager_mail.rs                                        */
+
+/* leaflet.rs — post-office leaflet broadcast (m_post_office.c,
+ * ac_npc_post_man_move.c_inc, ac_event_manager.c, m_event.c, m_shop.c).
+ * C keeps the singleton state, mailboxes, and all side effects. */
+
+/* House pending bit for a leaflet recipient mask (0 = pending). */
+int pc_leaflet_house_pending(s16 flags, int house_no);
+
+/* Event-leaflet type filter: which broadcast channel a mail type uses. */
+int pc_leaflet_event_filter(u8 mail_type);
+
+/* Shop-sale leaflet template selection by shop level and category. */
+int pc_leaflet_shop_sale_template(int shop_level, int category);
+
+/* Broker-sale leaflet template from a pre-rolled RNG value (roll stays in C). */
+int pc_leaflet_broker_template(int rng3);
+
+/* Rare-chirashi leaflet template by shop level and rare type. */
+int pc_leaflet_rare_chirashi_template(int shop_level, int rare_type);
+
+/* Postman delivery check: normal mail pending + leaflet/event flags. */
+int pc_leaflet_postman_check(int normal_pending, s16 leaflet_flags,
+                             s16 event_flags, int house_no, int is_arbeit);
+
+/* Next leaflet delivery hour slot. */
+int pc_leaflet_next_delivery(u8 hour);
+
+/* mail.rs — mailbox and post-office queue kernels (m_mail.c, m_post_office.c). */
+
+/* Font-state: mailbox slot unused marker from a font byte. */
+u8 pc_mail_unused(u8 font_byte);
+
+/* Font-state: mark-read transformation of a font byte. */
+u8 pc_mail_mark_read(u8 font_byte);
+
+/* Next delivery time slot (09:00/17:00 schedule) for an hour. */
+u16 pc_next_delivery(u8 hour);
+
+/* Post-office queue full check from player/npc mail counts. */
+u8 pc_po_full(s16 players, s16 npcs);
+
+/* Last used mailbox slot index from a used-flags array. */
+size_t pc_mailbox_last_idx(const u8* used, size_t n);
+
+/* mother_mail.rs — mother's mail scheduler (m_private.c).
+ * C keeps the per-player collection state and all RNG rolls. */
+
+/* Fixed-date (Pool A) letter paper selection. */
+int pc_mother_mail_paper(u8 month, u8 day, u8 bday_month, u8 bday_day);
+
+/* Pool B no-repeat check: 1 when the normal letter was already sent. */
+int pc_mother_mail_normal_not_send(const u8* num);
+
+/* Pool C monthly no-repeat check. */
+int pc_mother_mail_monthly_not_send(const u8* num, u8 month);
+
+/* Pool C monthly letter number for a month and event number. */
+int pc_mother_mail_monthly_no(u8 month, u8 event_no);
+
+/* npc_event_mail.rs — NPC event/famicom/popular/magazine/goodbye mail
+ * number selection. C keeps looks/tables and the send itself. */
+u16 pc_npcmail_event_no(u8 looks, u8 typ);
+u16 pc_npcmail_famicom_no(u8 looks, u8 valid);
+u16 pc_npcmail_popular_no(u8 looks, u8 target, u16 npc_code);
+u16 pc_npcmail_magazine_no(u8 looks, u8 verdict);
+u16 pc_npcmail_goodbye_no(u8 looks, u8 roll);
+
+/* npc_reply.rs — villager letter-reply kernels. C keeps the letter body
+ * buffer, friendship state, and all RNG rolls. */
+int pc_mck_key_hit(const u8* body);
+int pc_npc_letter_rank(const u8* body);
+int pc_npc_bad_msg_no(int foreign, int looks, int roll3);
+int pc_npc_good_base_no(int foreign, int looks);
+int pc_npc_receive_friendship(int rank, int has_present);
+
+/* special_delivery.rs — catalog orders and lottery (m_shop.c / post office).
+ * C keeps shop level, tickets, and all RNG rolls. */
+u8 pc_catalog_order_num(void);
+u8 pc_lottery_item_count(void);
+u8 pc_lottery_req_tickets(void);
+u8 pc_ticket_month(u16 item);
+u8 pc_ticket_count(u16 item);
+u8 pc_lottery_roll(u8 rng_100);
+u16 pc_catalog_mail_template(u8 shop_level);
+
+/* villager_mail.rs — bounded repeated-character check for villager mail
+ * bodies. Renamed from mNpc_CheckNormalMail_sub to avoid a link collision
+ * with the retail TU (title_demo precedent). */
+int pc_npc_check_normal_mail_sub(int* char_num, const u8* body);
+
 #ifdef __cplusplus
 }
 #endif
