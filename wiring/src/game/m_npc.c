@@ -6879,11 +6879,6 @@ static int mNpc_SendHPMailNum_famicom(PersonalID_c* pid, AnmPersonalID_c* anm_id
             mMpswd_check_present(password) == TRUE &&        // present is valid
             mMpswd_check_name(password) == TRUE              // player & town name match
         ) {
-        if (password->hit_rate_index == 1 &&                 // hit rate index must be 1
-            mMpswd_password_zuru_check(password) == FALSE && // checksum is valid
-            mMpswd_check_present(password) == TRUE &&        // present is valid
-            mMpswd_check_name(password) == TRUE              // player & town name match
-        ) {
 #ifdef USE_RUST
             /* Wave A mail plug: famicom mail number from Rust (password
              * checks stay in C). */
