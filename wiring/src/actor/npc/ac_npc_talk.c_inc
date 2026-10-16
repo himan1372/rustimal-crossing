@@ -3,12 +3,26 @@
 static int aNPC_force_call_req_proc(NPC_ACTOR* nactorx, int msg_no) {
     int ret = FALSE;
 
+#ifdef USE_RUST
+    /* Wave C plug: availability gate from Rust; C performs the state update.
+       mDemo_CAN_ACTOR_TALK decomposes to !SPEAK && !TALK per the Rust port
+       (force_call.rs demo_can_actor_talk). */
+    if (pc_force_call_req_proc(nactorx->think.force_call_flag,
+                               (u8)(nactorx->condition_info.talk_condition == aNPC_TALK_TYPE_NONE),
+                               (u8)(mDemo_Check(mDemo_TYPE_SPEAK, (ACTOR*)nactorx) == TRUE),
+                               (u8)(mDemo_Check(mDemo_TYPE_TALK, (ACTOR*)nactorx) == TRUE))) {
+        nactorx->think.force_call_flag = aNPC_FORCE_CALL_REQUEST;
+        nactorx->think.force_call_msg_no = msg_no;
+        ret = TRUE;
+    }
+#else
     if (nactorx->think.force_call_flag == aNPC_FORCE_CALL_NONE &&
         nactorx->condition_info.talk_condition == aNPC_TALK_TYPE_NONE && mDemo_CAN_ACTOR_TALK((ACTOR*)nactorx)) {
         nactorx->think.force_call_flag = aNPC_FORCE_CALL_REQUEST;
         nactorx->think.force_call_msg_no = msg_no;
         ret = TRUE;
     }
+#endif
 
     return ret;
 }
@@ -562,6 +576,28 @@ static void aNPC_set_talk_info_talk_request_check(ACTOR* actorx) {
 static void aNPC_talk_request_event_npc(ACTOR* actorx, GAME* game) {
     NPC_ACTOR* nactorx = (NPC_ACTOR*)actorx;
 
+#ifdef USE_RUST
+    /* Wave C plug: dispatch decision from Rust; C performs the actions.
+       0=Wait, 1=SetupTalkStart, 2=InvokeProc, 3=RequestTalkDemo. */
+    {
+        GAME_PLAY* play = (GAME_PLAY*)game;
+        u8 action = pc_talk_request_dispatch(
+            (u8)(mDemo_Check(mDemo_TYPE_SPEAK, actorx) == TRUE),
+            (u8)(mDemo_Check(mDemo_TYPE_SPEECH, actorx) == TRUE),
+            (u8)(mDemo_Check(mDemo_TYPE_TALK, actorx) == TRUE),
+            (u8)mDemo_Check_ListenAble(),
+            (u8)(play->submenu.process_status == mSM_PROCESS_WAIT),
+            (u8)(play->submenu.wait_timer == 0),
+            (u8)(nactorx->talk_info.talk_request_proc != NULL));
+        if (action == 1) {
+            aNPC_setup_talk_start(nactorx, game);
+        } else if (action == 2) {
+            (*nactorx->talk_info.talk_request_proc)(actorx, game);
+        } else if (action == 3) {
+            mDemo_Request(mDemo_TYPE_TALK, actorx, NULL);
+        }
+    }
+#else
     if ((mDemo_Check(mDemo_TYPE_SPEAK, actorx) == TRUE || mDemo_Check(mDemo_TYPE_SPEECH, actorx) == TRUE ||
          mDemo_Check(mDemo_TYPE_TALK, actorx) == TRUE) &&
         !mDemo_Check_ListenAble()) {
@@ -577,18 +613,32 @@ static void aNPC_talk_request_event_npc(ACTOR* actorx, GAME* game) {
             }
         }
     }
+#endif
 }
 
 static int aNPC_normal_talk_request(ACTOR* actorx, GAME* game) {
     NPC_ACTOR* nactorx = (NPC_ACTOR*)actorx;
     int ret = FALSE;
 
+#ifdef USE_RUST
+    /* Wave C plug: gate decision from Rust; C performs the actions. */
+    {
+        int proc_present = CLIP(quest_manager_clip)->talk_request_proc != NULL;
+        int proc_result = proc_present ? (CLIP(quest_manager_clip)->talk_request_proc(actorx) == TRUE) : FALSE;
+        if (pc_normal_talk_request_gate((u8)proc_present, (u8)proc_result)) {
+            nactorx->think.force_call_flag = aNPC_FORCE_CALL_NONE;
+            aNPC_setup_talk_start(nactorx, game);
+            ret = TRUE;
+        }
+    }
+#else
     if (CLIP(quest_manager_clip)->talk_request_proc != NULL &&
         CLIP(quest_manager_clip)->talk_request_proc(actorx) == TRUE) {
         nactorx->think.force_call_flag = aNPC_FORCE_CALL_NONE;
         aNPC_setup_talk_start(nactorx, game);
         ret = TRUE;
     }
+#endif
 
     return ret;
 }

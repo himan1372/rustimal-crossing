@@ -388,6 +388,19 @@ u8 pc_talk_patience_raw(u8 talk_num, u8 over_impatient_num, u8 talk_num_max);
 /* house.rs — catalog order date comparison. */
 u8 pc_order_date_passed(u16 oy, u8 om, u8 od, u16 ty, u8 tm, u8 td);
 
+/* talk_request.rs — talk-request dispatch + normal-talk gate (Wave C dialogue core).
+ * C keeps all demo/submenu state and performs the actions; Rust decides. */
+u8 pc_talk_request_dispatch(u8 demo_speak_active, u8 demo_speech_active,
+                            u8 demo_talk_active, u8 demo_listenable,
+                            u8 submenu_wait, u8 submenu_wait_timer_zero,
+                            u8 has_talk_request_proc);
+u8 pc_normal_talk_request_gate(u8 clip_proc_present, u8 clip_proc_result);
+
+/* force_call.rs — force-call request availability gate (Wave C).
+ * mDemo_CAN_ACTOR_TALK decomposes to !SPEAK && !TALK per the Rust port. */
+u8 pc_force_call_req_proc(u8 force_call_flag, u8 talk_condition_none,
+                          u8 in_speak_demo, u8 in_talk_demo);
+
 #ifdef __cplusplus
 }
 #endif
