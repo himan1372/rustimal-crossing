@@ -2166,7 +2166,7 @@ static void aMR_InitFactorCollisionDirect(void) {
 }
 
 static mActor_name_t aMR_GetSaveAngle(f32 angle, mActor_name_t item) {
-#if 0 /* pc_ftr_save_angle disabled 2026-10-16: returns enum not bitflags, corrupts item ID */
+#ifdef USE_RUST
     /* Wave E plug: angle quantization from Rust (table lookup stays in C). */
     f32 sin = sinf_table(DEG2RAD(angle));
     f32 cos = cosf_table(DEG2RAD(angle));
