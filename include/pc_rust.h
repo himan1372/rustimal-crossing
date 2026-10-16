@@ -401,6 +401,28 @@ u8 pc_normal_talk_request_gate(u8 clip_proc_present, u8 clip_proc_result);
 u8 pc_force_call_req_proc(u8 force_call_flag, u8 talk_condition_none,
                           u8 in_speak_demo, u8 in_talk_demo);
 
+
+/* ---- Wave E furniture: furniture.rs / fg_data.rs ---- */
+/* NOTE: furniture is referenced from the pending save system, but these
+ * are read-only catalog kernels (rotation, bounds, placement, counts).
+ * They do not touch save data. */
+
+/* furniture.rs — furniture catalog kernels. */
+u8 pc_ftr_get_rotation(u16 item);
+u16 pc_ftr_no_rot_2_idx(u16 ftr_no, u8 rot);
+u8 pc_ftr_save_angle(f32 sin_v, f32 cos_v);
+size_t pc_furniture_storage_slots(void);
+size_t pc_scene_furniture_max(u8 kind);
+u8 pc_room_bounds_ok(int x, int z);
+u8 pc_switch_bit_index(int x, int z);
+u8 pc_judge_place_2nd_layer(u8 below_is_surface, u8 layer1_empty);
+u8 pc_ftr_is_storage(u16 interaction_type);
+u32 pc_furniture_weight(void);
+
+/* fg_data.rs — foreground data parsing kernels. */
+u32 pc_fg_parse_count(const u8* data, size_t len);
+u8 pc_fg_sign_count(const u8* record);
+
 #ifdef __cplusplus
 }
 #endif
