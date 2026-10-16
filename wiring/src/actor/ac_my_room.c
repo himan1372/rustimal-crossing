@@ -566,7 +566,7 @@ static int aMR_CountFriendFurniture(FTR_ACTOR* ftr_actor, u8 friend_type) {
 }
 
 static int aMR_GetWeight(int type) {
-#if 0 /* Wave E disabled 2026-10-16 */
+#ifdef USE_RUST
     /* Wave E plug: furniture weight from Rust (always 1). */
     (void)type;
     return (int)pc_furniture_weight();
@@ -1249,7 +1249,7 @@ static void aMR_Status2MoveBgCollisionScale(FTR_ACTOR* ftr_actor, s16 status) {
 
 static void aMR_FurnitureCt(FTR_ACTOR* ftr_actor, GAME* game, int ut_x, int ut_z, mActor_name_t item, int ftr_idx,
                             s16 status, s16 layer, s16 placed_flag) {
-#if 0 /* Wave E disabled 2026-10-16 */
+#ifdef USE_RUST
     /* Wave E plug: furniture rotation from Rust. */
     int angle = pc_ftr_get_rotation((u16)item);
 #else
