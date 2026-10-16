@@ -2166,8 +2166,7 @@ static void aMR_InitFactorCollisionDirect(void) {
 }
 
 static mActor_name_t aMR_GetSaveAngle(f32 angle, mActor_name_t item) {
-#if 0 /* Wave E DISABLED 2026-10-16: furniture loss bug */
-#ifdef USE_RUST
+#if 0 /* Wave E disabled 2026-10-16 */
     /* Wave E plug: angle quantization from Rust (table lookup stays in C). */
     f32 sin = sinf_table(DEG2RAD(angle));
     f32 cos = cosf_table(DEG2RAD(angle));
@@ -2188,7 +2187,6 @@ static mActor_name_t aMR_GetSaveAngle(f32 angle, mActor_name_t item) {
     } else if (cos < -0.8f) {
         item |= mRmTp_DIRECT_NORTH;
     }
-#endif
 #endif
 
     return item;
@@ -3267,8 +3265,7 @@ static int aMR_JudgePlace2ndLayer(int ut_x, int ut_z) {
                     u8 used = l_aMR_work.used_list[ftrID];
 
                     if (used &&
-#if 0 /* Wave E DISABLED 2026-10-16: furniture loss bug */
-#ifdef USE_RUST
+#if 0 /* Wave E disabled 2026-10-16 */
                         /* Wave E plug: 2nd-layer judge from Rust. */
                         pc_judge_place_2nd_layer(
                             (aMR_layer_set_info[ftr_actor->name] == aFTR_SET_TYPE_SURFACE) ? 1 : 0,
@@ -3276,7 +3273,6 @@ static int aMR_JudgePlace2ndLayer(int ut_x, int ut_z) {
 #else
                         aMR_layer_set_info[ftr_actor->name] == aFTR_SET_TYPE_SURFACE &&
                         fg_layer1_p[ut] == EMPTY_NO) {
-#endif
 #endif
                         return TRUE;
                     }
