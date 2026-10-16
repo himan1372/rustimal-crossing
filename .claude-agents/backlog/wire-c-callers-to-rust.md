@@ -83,6 +83,20 @@ sites in wiring/ and the "Already wired" tables in rewiring.md.
    acre-boundary-bug area — playtest acre transitions.
 3. Dialogue core: npc_ai.rs (5), force_call.rs (3), talk_topics.rs (3),
    talk_request.rs (2)
+   — PARTIAL 2026-10-16 (cosmo, commit 807baad02dad, claim wire-wave-c-dialogue-core).
+   Wired (3): pc_talk_request_dispatch -> aNPC_talk_request_event_npc,
+   pc_normal_talk_request_gate -> aNPC_normal_talk_request,
+   pc_force_call_req_proc -> aNPC_force_call_req_proc (all in
+   wiring/src/actor/npc/ac_npc_talk.c_inc + 3 pc_rust.h decls).
+   BLOCKED (8, decomp files not in wiring/): pc_schedule_step,
+   pc_schedule_global_override (need m_npc_schedule.c), pc_uzai_trigger,
+   pc_talk_patience, pc_auto_greeting_msg_no (need ac_npc_think*.c_inc /
+   ac_npc_act_greeting.c_inc), pc_select_talk_kind, pc_fj_hint_msg_no,
+   pc_weather_time_msg_no (need ac_quest_talk_normal_init.c).
+   SKIPPED (2, overlap with earlier waves): pc_force_talk_request overlaps
+   Wave 1 pc_topic_force_gate plug in aNPC_force_talk_request (needs Philip's
+   call); pc_wander_decide_next overlaps Wave 2 pc_wander_choice plug in
+   aNPC_think_wander_decide_next (skipped).
 4. Quest: quest.rs (7), quest_gen.rs (15)
 5. Furniture: furniture.rs (10), fg_data.rs (2)
 6. Misc low-risk: bee_ant.rs (6), weather_season.rs (5), frame_loops.rs (3),

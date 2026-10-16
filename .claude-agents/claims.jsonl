@@ -59,3 +59,4 @@
 {"action": "claim", "task": "wire-wave-b-leftovers", "agent": "muse", "timestamp": "2026-10-16T08:06Z"}
 {"action":"claim","task":"wire-wave-c-dialogue-core","agent":"cosmo","timestamp":"2026-10-16T08:10Z"}
 {"action": "done", "task": "wire-wave-b-leftovers", "agent": "muse", "timestamp": "2026-10-16T08:14Z"}
+{"action":"done","task":"wire-wave-c-dialogue-core","agent":"cosmo","timestamp":"2026-10-16T08:35Z","note":"partial: 3/13 wired (talk_request_dispatch, normal_talk_request_gate, force_call_req_proc); 8 blocked (missing decomp files); 2 skipped (Wave 1/2 overlap)"}
