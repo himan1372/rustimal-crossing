@@ -122,12 +122,42 @@ static void aNPC_think_wander_decide_next(NPC_ACTOR* nactorx) {
             }
         }
     } else {
+#ifdef USE_RUST
+        /* Wave C plug: REPLACES the Wave 2 pc_wander_choice plug.
+         * Full wander decision from Rust (0=Wait, 1=Walk, 2=Run): handles
+         * fatigue, sleepy, walk-wander, border table, and the FIELD schedule
+         * downgrade. C keeps RANDOM(10); the WALK move_next side effect runs
+         * in the switch below. */
+        {
+            int looks;
+            u8 is_special;
+            mNPS_schedule_c* sched_p = nactorx->npc_info.schedule;
+
+            if (aNPC_IS_NRM_NPC(nactorx)) {
+                looks = mNpc_GetNpcLooks((ACTOR*)nactorx);
+#ifdef TARGET_PC
+                if (looks < 0 || looks >= ARRAY_COUNT(decide_boarder)) {
+                    looks = mNpc_LOOKS_BOY;
+                }
+#endif
+                is_special = 0;
+            } else {
+                looks = 6; /* s_npc table == naniwa_lady */
+                is_special = 1;
+            }
+
+            act_idx = aNPC_ACT_WAIT + pc_wander_decide_next(
+                (u8)looks, RANDOM(10),
+                (aNPC_check_fatigue(nactorx) == TRUE) ? 1 : 0,
+                (aNPC_get_feel_info(nactorx) == mNpc_FEEL_SLEEPY) ? 1 : 0,
+                (nactorx->think.idx == aNPC_THINK_WALK_WANDER) ? 1 : 0,
+                is_special,
+                (sched_p != NULL) ? (u32)sched_p->current_type : 0,
+                (sched_p != NULL) ? (u32)sched_p->saved_type : 0);
+        }
+#else
         int rng = RANDOM(10);
         int* boarder_p;
-#ifdef USE_RUST
-        /* Wave 2 plug: personality for pc_wander_choice (s_npc table == naniwa_lady). */
-        u8 wander_personality;
-#endif
 
         if (aNPC_IS_NRM_NPC(nactorx)) {
             int looks = mNpc_GetNpcLooks((ACTOR*)nactorx);
@@ -138,14 +168,8 @@ static void aNPC_think_wander_decide_next(NPC_ACTOR* nactorx) {
             }
 #endif
             boarder_p = decide_boarder[looks];
-#ifdef USE_RUST
-            wander_personality = (u8)looks;
-#endif
         } else {
             boarder_p = s_npc_decide_boarder;
-#ifdef USE_RUST
-            wander_personality = 6;
-#endif
         }
 
         if (nactorx->think.idx == aNPC_THINK_WALK_WANDER) {
@@ -155,21 +179,15 @@ static void aNPC_think_wander_decide_next(NPC_ACTOR* nactorx) {
                 act_idx = aNPC_ACT_WALK;
             }
         } else {
-#ifdef USE_RUST
-            /* Wave 2 plug: wander action from personality + RANDOM(10) roll.
-               C keeps RANDOM(10) and the WALK_WANDER fast path.
-               Rust returns 0/1/2; C offsets by aNPC_ACT_WAIT. */
-            act_idx = aNPC_ACT_WAIT + pc_wander_choice(wander_personality, rng);
-#else
             for (act_idx = aNPC_ACT_WAIT; act_idx < aNPC_ACT_RUN; act_idx++) {
                 if (rng <= *boarder_p) {
                     break;
                 }
-                
+
                 boarder_p++;
             }
-#endif
         }
+#endif
 
         switch (act_idx) {
             case aNPC_ACT_WAIT:

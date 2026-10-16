@@ -404,12 +404,12 @@ u8 pc_force_call_req_proc(u8 force_call_flag, u8 talk_condition_none,
 /* npc_ai.rs — schedule manager step + global override (Wave C).
  * out[0]=saved_type, out[1]=current_type, out[2]=new forced_timer. */
 void pc_schedule_step(u8 looks, u32 now_sec, u32 forced_type,
-                      i32 forced_timer, i32 forced_ticks, u32* out);
+                      s32 forced_timer, s32 forced_ticks, u32* out);
 u8 pc_schedule_global_override(u8 first_job, u8 halloween, u32* out_type);
 
 /* talk_topics.rs — first-job hint + KI weather/time message (Wave C). */
-i32 pc_fj_hint_msg_no(i32 hint_type, u8 looks);
-i32 pc_weather_time_msg_no(i32 base, i32 time_kind, i32 weather, i32 rand2);
+s32 pc_fj_hint_msg_no(s32 hint_type, u8 looks);
+s32 pc_weather_time_msg_no(s32 base, s32 time_kind, s32 weather, s32 rand2);
 
 
 /* ---- Wave E furniture: furniture.rs / fg_data.rs ---- */
@@ -432,6 +432,33 @@ u32 pc_furniture_weight(void);
 /* fg_data.rs — foreground data parsing kernels. */
 u32 pc_fg_parse_count(const u8* data, size_t len);
 u8 pc_fg_sign_count(const u8* record);
+
+
+/* ---- Wave C remainder: talk_topics.rs / npc_ai.rs / force_call.rs ---- */
+/* pc_talk_patience (npc_ai.rs) is already declared but intentionally left
+ * unwired: mNpc_GetOverImpatient is already wired by Wave 2B pc_npc_patience,
+ * and npc_ai's Patience enum has inverted discriminants vs m_npc.h. */
+
+/* talk_topics.rs — talk-kind branch selector (0=FjHint, 1=Ki, 2=Normal). */
+u8 pc_select_talk_kind(u8 first_job_hint_pending, u8 mood_happy);
+
+/* npc_ai.rs — uzai (annoyance) trigger thresholds. */
+u8 pc_uzai_trigger(int step, int tool, u8 crossed);
+
+/* force_call.rs — auto-greeting message number. */
+int pc_auto_greeting_msg_no(u8 is_island, u8 looks, int rand3);
+/* force_call.rs — force-talk request path (0=none, 1=forced, 2=greeting).
+ * Replaces the Wave 1 pc_topic_force_gate plug at the same site. */
+u8 pc_force_talk_request(int force_call_msg_no, u8 friendship_known,
+                         int effective_friendship, u8 action_is_search,
+                         u8 act_obj_is_player, f32 force_call_timer,
+                         f32 player_distance_xz, f32 player_distance_y);
+
+/* npc_ai.rs — full wander decision (0=Wait, 1=Walk, 2=Run).
+ * Replaces the Wave 2 pc_wander_choice plug at the same site. */
+u8 pc_wander_decide_next(u8 looks, int rng10, u8 fatigued, u8 feel_sleepy,
+                         u8 think_walk_wander, u8 is_special_npc,
+                         u32 sched_current, u32 sched_saved);
 
 #ifdef __cplusplus
 }

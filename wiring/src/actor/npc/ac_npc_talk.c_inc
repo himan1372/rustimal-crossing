@@ -659,19 +659,19 @@ static int aNPC_force_talk_request(ACTOR* actorx) {
     int ret = FALSE;
 
 #ifdef USE_RUST
-    /* Wave 1 plug: 0 = no talk, 1 = forced message, 2 = spontaneous.
-       All state stays in C; only the predicate moves to Rust. */
+    /* Wave C plug: REPLACES the Wave 1 pc_topic_force_gate plug above.
+     * 0 = none, 1 = forced message, 2 = friendship greeting.
+     * C computes effective friendship; Rust owns the predicate. */
     {
-        int gate = (friendship_p != NULL)
-            ? pc_topic_force_gate(nactorx->think.force_call_msg_no,
-                                  *friendship_p,
-                                  nactorx->condition_info.over_friendship,
-                                  (nactorx->action.type == aNPC_ACT_TYPE_SEARCH &&
-                                   nactorx->action.act_obj == aNPC_ACT_OBJ_PLAYER),
-                                  nactorx->think.force_call_timer,
-                                  actorx->player_distance_xz,
-                                  actorx->player_distance_y)
-            : (nactorx->think.force_call_msg_no != -1 ? 1 : 0);
+        int gate = (int)pc_force_talk_request(
+            nactorx->think.force_call_msg_no,
+            (friendship_p != NULL) ? 1 : 0,
+            (friendship_p != NULL) ? (*friendship_p + nactorx->condition_info.over_friendship) : 0,
+            (nactorx->action.type == aNPC_ACT_TYPE_SEARCH) ? 1 : 0,
+            (nactorx->action.act_obj == aNPC_ACT_OBJ_PLAYER) ? 1 : 0,
+            nactorx->think.force_call_timer,
+            actorx->player_distance_xz,
+            actorx->player_distance_y);
 
         if (gate == 1) {
             mDemo_Request(mDemo_TYPE_SPEAK, actorx, &aNPC_set_talk_info_force_call);

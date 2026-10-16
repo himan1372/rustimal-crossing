@@ -2176,7 +2176,25 @@ static void aQMgr_talk_normal_select_talk(QUEST_MANAGER_ACTOR* manager) {
 
     player_event = mEv_SAVED_FIRSTJOB_PLR0 + Common_Get(player_no);
     aQMgr_normal_set_free_str(manager);
-    
+
+#ifdef USE_RUST
+    /* Wave C plug: talk-kind branch selector from Rust (0=FjHint, 1=Ki,
+     * 2=Normal). C keeps the three decide_* calls and the AddFirstJobHint
+     * side effect. */
+    {
+        u8 talk_kind = pc_select_talk_kind(
+            (!mLd_PlayerManKindCheck() && ((mEv_CheckFirstJob() == TRUE && !mEv_CheckEvent(player_event)) || mPr_CheckFirstJobHint(Now_Private) != TRUE)) ? 1 : 0,
+            (animal->mood == mNpc_FEEL_HAPPY) ? 1 : 0);
+        if (talk_kind == 0) {
+            msg_no = aQMgr_decide_fj_hint_msg_no(looks);
+            mPr_AddFirstJobHint(Now_Private);
+        } else if (talk_kind == 1) {
+            msg_no = aQMgr_decide_ki_msg_no(manager, looks);
+        } else {
+            msg_no = aQMgr_decide_normal_msg_no(manager, looks);
+        }
+    }
+#else
     if (!mLd_PlayerManKindCheck() && ((mEv_CheckFirstJob() == TRUE && !mEv_CheckEvent(player_event)) || mPr_CheckFirstJobHint(Now_Private) != TRUE)) {
         msg_no = aQMgr_decide_fj_hint_msg_no(looks);
         mPr_AddFirstJobHint(Now_Private);
@@ -2187,6 +2205,7 @@ static void aQMgr_talk_normal_select_talk(QUEST_MANAGER_ACTOR* manager) {
             msg_no = aQMgr_decide_normal_msg_no(manager, looks);
         }
     }
+#endif
 
     manager->msg_no = aQMgr_change_NG_msg(msg_no);
     mMsg_SET_CONTINUE_MSG_NUM(manager->msg_no);
