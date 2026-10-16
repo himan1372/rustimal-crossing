@@ -45,6 +45,7 @@ enum {
  * The Rust plug rejected wall furniture on room load, causing progressive
  * furniture loss. Reverted to original C macro pending correct bounds. */
 #if 0
+#if 0 /* Wave E DISABLED 2026-10-16: furniture loss bug */
 #ifdef USE_RUST
 #undef aMR_BOUNDS_OK
 #define aMR_BOUNDS_OK(x, z) pc_room_bounds_ok((x), (z))
@@ -495,6 +496,7 @@ static void aMR_SaveOneFtrSwitchData(mActor_name_t ftr_name, int ut_x, int ut_z,
 #else
                 int shift = (ut_x - 1 + (ut_z - 1) * 8) & 0x3F;
 #endif
+#endif
 
                 if (ftr_actor->switch_bit) {
                     (*switch_bit_table) |= 1ull << shift;
@@ -566,12 +568,14 @@ static int aMR_CountFriendFurniture(FTR_ACTOR* ftr_actor, u8 friend_type) {
 }
 
 static int aMR_GetWeight(int type) {
+#if 0 /* Wave E DISABLED 2026-10-16: furniture loss bug */
 #ifdef USE_RUST
     /* Wave E plug: furniture weight from Rust (always 1). */
     (void)type;
     return (int)pc_furniture_weight();
 #else
     return 1;
+#endif
 #endif
 }
 
@@ -1249,11 +1253,13 @@ static void aMR_Status2MoveBgCollisionScale(FTR_ACTOR* ftr_actor, s16 status) {
 
 static void aMR_FurnitureCt(FTR_ACTOR* ftr_actor, GAME* game, int ut_x, int ut_z, mActor_name_t item, int ftr_idx,
                             s16 status, s16 layer, s16 placed_flag) {
+#if 0 /* Wave E DISABLED 2026-10-16: furniture loss bug */
 #ifdef USE_RUST
     /* Wave E plug: furniture rotation from Rust. */
     int angle = pc_ftr_get_rotation((u16)item);
 #else
     int angle = FTR_GET_ROTATION(item);
+#endif
 #endif
     static xyz_t xyz0 = { 0.0f, 0.0f, 0.0f };
     aFTR_PROFILE* profile;
@@ -1607,11 +1613,13 @@ static void aMR_MakeItemDataInFurniture(void) {
                                     FTR_ACTOR* ftr_actor = l_aMR_work.ftr_actor_list + ftr_id;
                                     aFTR_PROFILE* profile = aMR_GetFurnitureProfile(ftr_actor->name);
 
+#if 0 /* Wave E DISABLED 2026-10-16: furniture loss bug */
 #ifdef USE_RUST
                                     /* Wave E plug: storage predicate from Rust. */
                                     if (pc_ftr_is_storage(profile->interaction_type)) {
 #else
                                     if (aFTR_IS_STORAGE(profile)) {
+#endif
 #endif
                                         ftr_actor->items[idx] = *fg_top_p;
                                         *fg_top_p = EMPTY_NO;
