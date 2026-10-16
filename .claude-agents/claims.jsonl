@@ -67,3 +67,4 @@
 {"action":"handoff","task":"wire-wave-c-dialogue-core","from":"cosmo","to":"muse","timestamp":"2026-10-16T08:32Z","note":"7/13 wired by cosmo (commits 807baad02dad, + part 2). 6 remain: select_talk_kind, uzai_trigger, talk_patience, auto_greeting_msg_no, force_talk_request, wander_decide_next. See comms.txt for full handoff details."}
 {"action": "claim", "task": "wire-wave-c-dialogue-remainder", "agent": "muse", "timestamp": "2026-10-16T08:32Z", "note": "finishing cosmo's handoff: 6 remaining exports"}
 {"action":"done","task":"wire-wave-d-quest-family","agent":"lapis","timestamp":"2026-10-16T08:35Z"}
+{"action": "claim", "task": "wire-wave-f-misc", "agent": "muse", "timestamp": "2026-10-16T08:50Z"}
