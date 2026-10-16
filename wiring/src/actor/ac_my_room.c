@@ -45,7 +45,7 @@ enum {
  * The Rust plug rejected wall furniture on room load, causing progressive
  * furniture loss. Reverted to original C macro pending correct bounds. */
 #if 0
-#if 0 /* Wave E disabled 2026-10-16 */
+#ifdef USE_RUST
 #undef aMR_BOUNDS_OK
 #define aMR_BOUNDS_OK(x, z) pc_room_bounds_ok((x), (z))
 #endif
@@ -489,7 +489,7 @@ static void aMR_SaveOneFtrSwitchData(mActor_name_t ftr_name, int ut_x, int ut_z,
             FTR_ACTOR* ftr_actor = &l_aMR_work.ftr_actor_list[ftr_id];
 
             if (aMR_BOUNDS_OK(ut_x, ut_z)) {
-#if 0 /* Wave E disabled 2026-10-16 */
+#ifdef USE_RUST
                 /* Wave E plug: switch-bit index from Rust. */
                 int shift = pc_switch_bit_index(ut_x, ut_z) & 0x3F;
 #else
@@ -1607,7 +1607,7 @@ static void aMR_MakeItemDataInFurniture(void) {
                                     FTR_ACTOR* ftr_actor = l_aMR_work.ftr_actor_list + ftr_id;
                                     aFTR_PROFILE* profile = aMR_GetFurnitureProfile(ftr_actor->name);
 
-#if 0 /* Wave E disabled 2026-10-16 */
+#ifdef USE_RUST
                                     /* Wave E plug: storage predicate from Rust. */
                                     if (pc_ftr_is_storage(profile->interaction_type)) {
 #else

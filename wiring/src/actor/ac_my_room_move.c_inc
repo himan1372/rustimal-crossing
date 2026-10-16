@@ -3265,7 +3265,7 @@ static int aMR_JudgePlace2ndLayer(int ut_x, int ut_z) {
                     u8 used = l_aMR_work.used_list[ftrID];
 
                     if (used &&
-#if 0 /* Wave E disabled 2026-10-16 */
+#ifdef USE_RUST
                         /* Wave E plug: 2nd-layer judge from Rust. */
                         pc_judge_place_2nd_layer(
                             (aMR_layer_set_info[ftr_actor->name] == aFTR_SET_TYPE_SURFACE) ? 1 : 0,
