@@ -1,6 +1,5 @@
 #include "ac_quest_talk_normal_init.h"
-
-#include "pc_rust.h"  /* rustimal-crossing Wave 2 plugs (USE_RUST) */
+#include "pc_rust.h"  /* rustimal-crossing Wave C plugs (USE_RUST) */
 
 #include "m_font.h"
 #include "m_msg.h"
@@ -175,18 +174,7 @@ static int l_normal3_season[6] = { 0x1FD7, 0x1D41, 0x1F55, 0x1F6B, 0x2A13, 0x0F4
 static int l_quest_category_0[] = { mSP_KIND_FURNITURE, mSP_KIND_CARPET, mSP_KIND_WALLPAPER };
 static int l_quest_category_1[] = { mSP_KIND_CLOTH, mSP_KIND_PAPER, mSP_KIND_DIARY };
 
-#ifdef USE_RUST
-/* Wave 2 plug helper: RANDOM wrapper for pc_request_dispatch. */
-static u32 pc_rng_100(u32 n) {
-    return (u32)RANDOM(n);
-}
-#endif
-
 static int aQMgr_decide_idx_prob_table(u8* prob_table, int count) {
-#ifdef USE_RUST
-    /* Wave 2 plug: probability-table dispatch. C owns RANDOM via callback. */
-    return pc_request_dispatch(prob_table, (size_t)count, pc_rng_100);
-#else
     static u8 decide_table[100];
     int idx0;
     int idx1;
@@ -224,7 +212,6 @@ static int aQMgr_decide_idx_prob_table(u8* prob_table, int count) {
     }
 
     return res;
-#endif
 }
 
 static void aQMgr_init_normal_info(aQMgr_normal_info_c* normal_info) {
@@ -1128,8 +1115,21 @@ static void aQMgr_set_give_and_take_mode_TAKE(QUEST_MANAGER_ACTOR* manager, int 
 }
 
 static int aQMgr_decide_msg_ki_weather_time(QUEST_MANAGER_ACTOR* manager, int looks) {
+#ifdef USE_RUST
+    /* Wave C plug: KI weather/time message from Rust (6,2,2 counts baked in).
+       C keeps time/weather reads, sakura->clear remap, and RNG. */
+    {
+        int time_kind = (*manager->get_time_kind_proc)(Common_Get(time.rtc_time.hour));
+        int weather = Common_Get(weather);
+        if (weather == mEnv_WEATHER_SAKURA) {
+            weather = mEnv_WEATHER_CLEAR;
+        }
+        return pc_weather_time_msg_no(l_ki_weather_time[looks], time_kind, weather, mQst_GetRandom(2));
+    }
+#else
     int ret_msg = aQMgr_get_msg_weather_time(manager, l_ki_weather_time[looks], 6, 2, 2);
     return ret_msg;
+#endif
 }
 
 static int aQMgr_decide_msg_ki_normal(QUEST_MANAGER_ACTOR* manager, int looks) {
@@ -1603,6 +1603,10 @@ static void aQMgr_get_fj_hint_msg(int* msg_no, int hint_type, int looks) {
 }
 
 static int aQMgr_decide_fj_hint_msg_no(int looks) {
+#ifdef USE_RUST
+    /* Wave C plug: first-job hint message number from Rust. */
+    return pc_fj_hint_msg_no(mPr_GetFirstJobHintTime(Now_Private), (u8)looks);
+#else
     int hint_type;
     int ret_msg;
 
@@ -1610,6 +1614,7 @@ static int aQMgr_decide_fj_hint_msg_no(int looks) {
     hint_type = mPr_GetFirstJobHintTime(Now_Private);
     aQMgr_get_fj_hint_msg(&ret_msg, hint_type, looks);
     return ret_msg;
+#endif
 }
 
 static void aQMgr_order_change_roof_color(QUEST_MANAGER_ACTOR* manager) {

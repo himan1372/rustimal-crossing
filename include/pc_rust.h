@@ -401,6 +401,16 @@ u8 pc_normal_talk_request_gate(u8 clip_proc_present, u8 clip_proc_result);
 u8 pc_force_call_req_proc(u8 force_call_flag, u8 talk_condition_none,
                           u8 in_speak_demo, u8 in_talk_demo);
 
+/* npc_ai.rs — schedule manager step + global override (Wave C).
+ * out[0]=saved_type, out[1]=current_type, out[2]=new forced_timer. */
+void pc_schedule_step(u8 looks, u32 now_sec, u32 forced_type,
+                      i32 forced_timer, i32 forced_ticks, u32* out);
+u8 pc_schedule_global_override(u8 first_job, u8 halloween, u32* out_type);
+
+/* talk_topics.rs — first-job hint + KI weather/time message (Wave C). */
+i32 pc_fj_hint_msg_no(i32 hint_type, u8 looks);
+i32 pc_weather_time_msg_no(i32 base, i32 time_kind, i32 weather, i32 rand2);
+
 
 /* ---- Wave E furniture: furniture.rs / fg_data.rs ---- */
 /* NOTE: furniture is referenced from the pending save system, but these

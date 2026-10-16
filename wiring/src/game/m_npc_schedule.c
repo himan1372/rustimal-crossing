@@ -1,6 +1,5 @@
 #include "m_npc_schedule.h"
-
-#include "pc_rust.h"  /* rustimal-crossing Wave 2B plugs (USE_RUST) */
+#include "pc_rust.h"  /* rustimal-crossing Wave C plugs (USE_RUST) */
 
 #include "m_common_data.h"
 
@@ -108,17 +107,7 @@ extern mNPS_schedule_c* mNPS_get_schedule_area(AnmPersonalID_c* anm_id) {
 }
 
 static void mNPS_set_schedule_area(AnmPersonalID_c* anm_id) {
-  mNPS_schedule_c* schedule;
-
-#ifdef TARGET_PC
-  /* Guard against invalid looks (e.g. mNpc_LOOKS_UNSET=6 on free animal slots
-   * where CheckFreeAnimalInfo didn't catch it due to home_info not being 0xFF) */
-  if (anm_id->looks >= mNpc_LOOKS_NUM) {
-    return;
-  }
-#endif
-
-  schedule = mNPS_get_schedule_area(NULL); /* try to get an unused schedule */
+  mNPS_schedule_c* schedule = mNPS_get_schedule_area(NULL); /* try to get an unused schedule */
 
   if (schedule != NULL) {
     schedule->id = anm_id;
@@ -131,12 +120,6 @@ extern void mNPS_set_island_schedule_area(AnmPersonalID_c* anm_id) {
   if (Common_Get(npc_schedule[ANIMAL_NUM_MAX]).id != NULL) {
     return;
   }
-
-#ifdef TARGET_PC
-  if (anm_id->looks >= mNpc_LOOKS_NUM) {
-    return;
-  }
-#endif
 
   Common_Set(npc_schedule[ANIMAL_NUM_MAX].id, anm_id);
   Common_Set(npc_schedule[ANIMAL_NUM_MAX].data_table, mNPS_schedule[anm_id->looks]);
@@ -151,12 +134,19 @@ extern void mNPS_reset_schedule_area(AnmPersonalID_c* anm_id) {
   }
 }
 
-static void mNPS_schedule_manager_sub(mNPS_schedule_c* schedule, int forced_ticks) {
+static void mNPS_schedule_manager_sub(mNPS_schedule_c* schedule) {
 #ifdef USE_RUST
-  /* Wave 2B plug: base schedule type from Rust. C keeps forced/current/event overrides. */
-  if (schedule->id != NULL) {
-    schedule->saved_type = pc_npc_schedule_state((u8)schedule->id->looks,
-                                                 (u32)Common_Get(time.now_sec));
+  /* Wave C plug: schedule step from Rust; C applies the results.
+     out[0]=saved_type, out[1]=current_type, out[2]=new forced_timer.
+     looks from schedule->id; forced_ticks=1 matches the C forced_timer--. */
+  {
+    u32 out[3];
+    u8 looks = (schedule->id != NULL) ? schedule->id->looks : 0;
+    pc_schedule_step(looks, (u32)Common_Get(time.now_sec),
+                     schedule->forced_type, schedule->forced_timer, 1, out);
+    schedule->saved_type = (u8)out[0];
+    schedule->current_type = (u8)out[1];
+    schedule->forced_timer = (int)out[2];
   }
 #else
   int now_sec = Common_Get(time.now_sec);
@@ -173,17 +163,14 @@ static void mNPS_schedule_manager_sub(mNPS_schedule_c* schedule, int forced_tick
   }
 
   schedule->saved_type = schedule_entry->type;
-#endif
   if (schedule->forced_timer > 0) {
     schedule->current_type = schedule->forced_type;
-    schedule->forced_timer -= forced_ticks;
-    if (schedule->forced_timer < 0) {
-      schedule->forced_timer = 0;
-    }
+    schedule->forced_timer--;
   }
   else {
     schedule->current_type = schedule->saved_type;
   }
+#endif
 }
 
 static void mNPS_schedule_manager_sub0() {
@@ -200,31 +187,45 @@ static void mNPS_schedule_manager_sub0() {
   }
 }
 
-static void mNPS_schedule_manager_sub1(int forced_ticks) {
+static void mNPS_schedule_manager_sub1() {
   mNPS_schedule_c* schedule = Common_Get(npc_schedule);
   int i;
 
   /* Set all town animals to go about their intended schedule */
   for (i = 0; i < ANIMAL_NUM_MAX; i++) {
     if (schedule->id != NULL) {
-      mNPS_schedule_manager_sub(schedule, forced_ticks);
+      mNPS_schedule_manager_sub(schedule);
     }
 
     schedule++;
   }
 }
 
-static void mNPS_island_schedule_manager(int forced_ticks) {
+static void mNPS_island_schedule_manager() {
   mNPS_schedule_c* schedule = Common_GetPointer(npc_schedule[ANIMAL_NUM_MAX]);
 
   if (schedule->id != NULL) {
-    mNPS_schedule_manager_sub(schedule, forced_ticks);
+    mNPS_schedule_manager_sub(schedule);
   }
 }
 
 extern void mNPS_schedule_manager() {
-  static float forced_accum = 0.0f;
-  int forced_ticks = graph_dt_60hz_ticks(gamePT, &forced_accum);
+#ifdef USE_RUST
+  /* Wave C plug: global override decision from Rust; C runs the branches. */
+  {
+    u32 out_type = 0;
+    u8 override_active = pc_schedule_global_override(
+        (u8)(mEv_CheckFirstJob() == TRUE),
+        (u8)(mEv_check_status(mEv_EVENT_HALLOWEEN, mEv_STATUS_ACTIVE) == TRUE),
+        &out_type);
+    if (override_active) {
+      mNPS_schedule_manager_sub0();
+    }
+    else {
+      mNPS_schedule_manager_sub1();
+    }
+  }
+#else
   int force_outside = FALSE;
 
   if (mEv_CheckFirstJob() == TRUE || mEv_check_status(mEv_EVENT_HALLOWEEN, mEv_STATUS_ACTIVE)) {
@@ -235,10 +236,11 @@ extern void mNPS_schedule_manager() {
     mNPS_schedule_manager_sub0();
   }
   else {
-    mNPS_schedule_manager_sub1(forced_ticks);
+    mNPS_schedule_manager_sub1();
   }
+#endif
 
-  mNPS_island_schedule_manager(forced_ticks);
+  mNPS_island_schedule_manager();
 }
 
 extern void mNPS_set_all_schedule_area() {
@@ -249,7 +251,7 @@ extern void mNPS_set_all_schedule_area() {
     if (mNpc_CheckFreeAnimalInfo(animal) == FALSE) {
       mNPS_set_schedule_area(&animal->id);
     }
-
+    
     animal++;
   }
 
