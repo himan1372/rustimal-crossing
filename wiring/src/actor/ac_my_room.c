@@ -40,12 +40,15 @@ enum {
 #define aMR_BOUNDS_OK(x, z) \
     ((x) > (aMR_MIN_BOUND - 1) && (x) < (aMR_MAX_BOUND + 1) && (z) > (aMR_MIN_BOUND - 1) && (z) < (aMR_MAX_BOUND + 1))
 
+/* Wave E pc_room_bounds_ok PLUG DISABLED 2026-10-16: the 1-8 bounds match the
+ * aMR_BOUNDS_OK switch-bitfield macro, but furniture load uses wider bounds.
+ * The Rust plug rejected wall furniture on room load, causing progressive
+ * furniture loss. Reverted to original C macro pending correct bounds. */
+#if 0
 #ifdef USE_RUST
-/* Wave E plug: room-bounds check from Rust (covers all use sites below).
- * NOTE: the Rust function evaluates its args once; do not pass
- * side-effecting expressions to this macro in USE_RUST builds. */
 #undef aMR_BOUNDS_OK
 #define aMR_BOUNDS_OK(x, z) pc_room_bounds_ok((x), (z))
+#endif
 #endif
 
 enum {
