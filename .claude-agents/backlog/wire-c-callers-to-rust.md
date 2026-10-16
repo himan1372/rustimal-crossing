@@ -117,3 +117,12 @@ sites in wiring/ and the "Already wired" tables in rewiring.md.
 - include/pc_rust.h: declarations for the 5 wired exports
 - Plug logic syntax-checked standalone in both USE_RUST and vanilla modes
   (gcc -fsyntax-only -Wall clean); full-tree build needs his MSYS2 machine.
+
+## Wave F — misc (muse, 2026-10-16, commit 4293091c) — 5/41 wired
+New decls: pc_bee_spawn_eligible, pc_weather_term, pc_wind_term,
+pc_check_grow_field_rank, pc_check_grow.
+Plugs: m_player_lib.c (new), m_kankyo_weather.c_inc (new),
+m_npc.c (+2). Weather/wind tables verified byte-identical vs C.
+Also fixed i32->s32 in pc_rust.h (Wave D decls).
+Deliberately unwired: 4 m_lib helpers, 5 constants, 1 signature mismatch,
+26 unmapped (full audit in /tmp/waveF_csites.md).
