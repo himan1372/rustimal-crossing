@@ -56,8 +56,15 @@ sites in wiring/ and the "Already wired" tables in rewiring.md.
 
 ### Wire next (verified pure, clear C sites) — suggested order
 1. Mail family — letter_score precedent, clear sites:
-   leaflet.rs (7), mail.rs (4), mother_mail.rs (4), npc_event_mail.rs (5),
+   leaflet.rs (7), mail.rs (5), mother_mail.rs (4), npc_event_mail.rs (5),
    npc_reply.rs (5), special_delivery.rs (7), villager_mail.rs (1)
+   — DONE 2026-10-15 (muse, commit 0d169b73, claim wire-wave-a-mail-family).
+   8 new plug files + m_private/m_npc/m_shop extended + 34 decls +
+   villager_mail pc_ rename. Deliberately unwired: pc_leaflet_next_delivery
+   (same C site as pc_next_delivery, alternate packing), pc_mck_key_hit
+   (subsumed by pc_npc_letter_rank whole-function plug), pc_npc_receive_friendship
+   (site already wired by Wave 2 pc_letter_friendship_delta), non-post-girl
+   mPO_get_keep_mail_sum sites.
 2. Wave 1C leftovers: bg_check pc_bg_neighborhood_coords, move_bg (2),
    terrain_walls (pc_cardinal_edge_mask, pc_check_height_exactly),
    house_scene pc_house_wall_floor, dialogue_topics pc_talk_count_allowed /
