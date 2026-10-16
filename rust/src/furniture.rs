@@ -1084,7 +1084,22 @@ pub extern "C" fn pc_ftr_no_rot_2_idx(ftr_no: u16, rot: u8) -> u16 {
 /// direction (`aMR_GetSaveAngle`); returns the `mRmTp_DIRECT_*` value.
 #[no_mangle]
 pub extern "C" fn pc_ftr_save_angle(sin_v: f32, cos_v: f32) -> u8 {
-    save_angle_quantize(sin_v, cos_v) as u8
+    // Matches C aMR_GetSaveAngle exactly: two independent chains.
+    // sin chain: EAST (1) if sin>0.8, WEST (3) if sin<-0.8
+    // cos chain: SOUTH (0) if cos>0.8, NORTH (2) if cos<-0.8
+    // Returns the OR of both (C does item |= EAST etc.)
+    let mut dir: u8 = 0;
+    if sin_v > 0.8 {
+        dir |= 1; // mRmTp_DIRECT_EAST
+    } else if sin_v < -0.8 {
+        dir |= 3; // mRmTp_DIRECT_WEST
+    }
+    if cos_v > 0.8 {
+        dir |= 0; // mRmTp_DIRECT_SOUTH (no-op, kept for clarity)
+    } else if cos_v < -0.8 {
+        dir |= 2; // mRmTp_DIRECT_NORTH
+    }
+    dir
 }
 
 /// C ABI: number of storage slots per storage-capable furniture actor
