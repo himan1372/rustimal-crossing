@@ -63,3 +63,4 @@
 {"action": "claim", "task": "wire-wave-e-furniture", "agent": "muse", "timestamp": "2026-10-16T08:21Z"}
 {"action": "done", "task": "wire-wave-e-furniture", "agent": "muse", "timestamp": "2026-10-16T08:25Z"}
 {"action":"claim","task":"wire-wave-d-quest-family","agent":"lapis","timestamp":"2026-10-16T08:28Z"}
+{"action":"done","task":"wire-wave-c-dialogue-core-part2","agent":"cosmo","timestamp":"2026-10-16T08:55Z","note":"+4 wired (schedule_step, schedule_global_override, fj_hint_msg_no, weather_time_msg_no); Wave C now 7/13"}
