@@ -224,18 +224,23 @@ pub extern "C" fn pc_topic_force_gate(
 }
 
 /// Patience classification derived from talk counts.
+/// Discriminants match the C enum in `include/m_npc.h`:
+/// `mNpc_PATIENCE_MILDLY_ANNOYED = 0`, `mNpc_PATIENCE_ANNOYED = 1`
+/// (refuse to talk), `mNpc_PATIENCE_NORMAL = 2`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TalkPatience {
-    Normal = 0,
-    Impatient = 1,
-    OverImpatient = 2,
+    Impatient = 0,     // mildly annoyed (dialog shows it)
+    OverImpatient = 1, // annoyed (refuse to talk)
+    Normal = 2,
 }
 
 /// Pure talk-count gate: the C side keeps `mNpc_Talk_Info_c` state
-/// (talk_num, timer) and passes the values in; Rust owns only the
-/// comparison (`talk_num < talk_num_max`).
+/// (talk_num, timer) and passes the values in. Matches
+/// `mNpc_CountTalkNum` (m_npc.c): the talk timer is set to 1000 by
+/// `mNpc_TalkEndMove` and counts down, so `timer > 0` means "within the
+/// post-talk window" and the NPC may be talked to again.
 pub fn talk_count_allowed(talk_num: u8, talk_num_max: u8, timer: u16) -> bool {
-    timer == 0 && talk_num < talk_num_max
+    timer > 0 && talk_num < talk_num_max
 }
 
 /// Pure patience classification from the temper table values.
@@ -338,15 +343,19 @@ mod tests {
 
     #[test]
     fn talk_gates() {
-        assert!(talk_count_allowed(3, 15, 0));
+        assert!(!talk_count_allowed(3, 15, 0)); // timer expired
         assert!(!talk_count_allowed(15, 15, 0));
-        assert!(!talk_count_allowed(3, 15, 100)); // timer running
+        assert!(talk_count_allowed(3, 15, 100)); // timer running = in window
         assert_eq!(talk_patience(3, 12, 15), TalkPatience::Normal);
         assert_eq!(talk_patience(12, 12, 15), TalkPatience::Impatient);
         assert_eq!(talk_patience(15, 12, 15), TalkPatience::OverImpatient);
         assert_eq!(talk_patience_for_feeling(0, 14), TalkPatience::Impatient);
-        assert_eq!(pc_talk_count_allowed(3, 15, 0), 1);
-        assert_eq!(pc_talk_patience_raw(15, 12, 15), 2);
+        assert_eq!(pc_talk_count_allowed(3, 15, 0), 0);
+        assert_eq!(pc_talk_count_allowed(3, 15, 100), 1);
+        // Raw patience values match the C enum (m_npc.h).
+        assert_eq!(pc_talk_patience_raw(3, 12, 15), 2); // NORMAL
+        assert_eq!(pc_talk_patience_raw(12, 12, 15), 0); // MILDLY_ANNOYED
+        assert_eq!(pc_talk_patience_raw(15, 12, 15), 1); // ANNOYED
     }
 
     #[test]
