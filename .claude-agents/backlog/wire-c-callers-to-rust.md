@@ -71,6 +71,16 @@ sites in wiring/ and the "Already wired" tables in rewiring.md.
    pc_talk_patience_raw, scene pc_game_dlftbls_count, house pc_order_date_passed,
    npc pc_npc_is_asleep (helper-only), wall_priority (needs Rust fixed-buffer
    ABI export added first)
+   — DONE 2026-10-16 (muse, commits 6449a9c8 + 6092d87d, claim wire-wave-b-leftovers).
+   Wired 10: pc_bg_neighborhood_coords, pc_make_move_bg_walls, pc_move_bg_delta,
+   pc_cardinal_edge_mask, pc_check_height_exactly, pc_talk_count_allowed,
+   pc_order_date_passed, pc_house_wall_floor, pc_game_dlftbls_count (+ decl for
+   pc_talk_patience_raw). Rust bugfixes in dialogue_topics.rs (8/8 tests): timer
+   polarity, patience discriminants -> C enum. Deliberately unwired:
+   pc_talk_patience_raw (dup of Wave 2B pc_npc_patience plug), pc_npc_is_asleep /
+   pc_collision_pack (no C site), pc_collision_neighborhood (Wave 1 already wired it).
+   wall_priority deferred (needs new Rust export). CAUTION: collision plugs in the
+   acre-boundary-bug area — playtest acre transitions.
 3. Dialogue core: npc_ai.rs (5), force_call.rs (3), talk_topics.rs (3),
    talk_request.rs (2)
 4. Quest: quest.rs (7), quest_gen.rs (15)
